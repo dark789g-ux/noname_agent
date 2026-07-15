@@ -1,11 +1,5 @@
 import { lib, game, get, _status, ai, ui } from "noname";
-import { menu } from "./menu/index.js";
-import { cardPackMenu } from "./menu/pages/cardPackMenu.js";
-import { characterPackMenu } from "./menu/pages/characterPackMenu.js";
-import { extensionMenu } from "./menu/pages/exetensionMenu.js";
-import { optionsMenu } from "./menu/pages/optionsMenu.js";
-import { otherMenu } from "./menu/pages/otherMenu.js";
-import { startMenu } from "./menu/pages/startMenu.js";
+import { menu } from "./menu/vue/index.js";
 import { Pagination } from "@/util/pagination.js";
 
 export class Create {
@@ -875,18 +869,6 @@ export class Create {
 	}
 	/** 创建菜单 */
 	menu = menu;
-	/** 创建“开始”菜单 */
-	startMenu = startMenu;
-	/** 创建“选项”菜单 */
-	optionsMenu = optionsMenu;
-	/** 创建“武将”菜单 */
-	characterPackMenu = characterPackMenu;
-	/** 创建“卡牌”菜单 */
-	cardPackMenu = cardPackMenu;
-	/** 创建“扩展”菜单 */
-	extensionMenu = extensionMenu;
-	/** 创建“其他”菜单 */
-	otherMenu = otherMenu;
 	statictable() {
 		var str, row, col, position, position2, fixed, style, divposition;
 		for (var i = 0; i < arguments.length; i++) {
