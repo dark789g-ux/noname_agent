@@ -5,6 +5,7 @@ import { Player } from "./player.js";
 import type { GainAnimate } from "./Player/type";
 
 import { delay } from "@/util/index.js";
+import { tryLLMDecide } from "@/llm/index.js";
 
 // 未来再改
 export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
@@ -5174,57 +5175,65 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				event.result = "ai";
 			}
 		},
-		async (event, trigger, player) => {
-			const { forced } = event;
+			async (event, trigger, player) => {
+				const { forced } = event;
 
-			if (event.result != "ai") {
-				return;
-			}
+				if (event.result != "ai") {
+					return;
+				}
 
-			const ok = game.check();
-			if (ok) {
-				ui.click.ok();
-			} else if (ai.basic.chooseCard(event.ai1) || forced) {
-				if ((ai.basic.chooseTarget(event.ai2) || forced) && (!event.filterOk || event.filterOk())) {
+				// 🆕 LLM 前置分支：尝试用 LLM 决策，失败/超时/未启用则自然滑落本地 ai
+				const llmResult = await tryLLMDecide(event);
+				if (llmResult.handled && llmResult.result) {
+					event.result = llmResult.result;
+					game.uncheck();
+					return;
+				}
+
+				const ok = game.check();
+				if (ok) {
 					ui.click.ok();
-					event._aiexcludeclear = true;
-				} else {
-					if (!event.norestore) {
-						if (event.skill) {
-							const skill = event.skill;
-							ui.click.cancel();
-							event._aiexclude.add(skill);
-							const info = get.info(skill);
-							if (info.sourceSkill) {
-								event._aiexclude.add(info.sourceSkill);
-							}
+				} else if (ai.basic.chooseCard(event.ai1) || forced) {
+						if ((ai.basic.chooseTarget(event.ai2) || forced) && (!event.filterOk || event.filterOk())) {
+							ui.click.ok();
+							event._aiexcludeclear = true;
 						} else {
-							get.card(true).aiexclude();
-							game.uncheck();
+							if (!event.norestore) {
+								if (event.skill) {
+									const skill = event.skill;
+									ui.click.cancel();
+									event._aiexclude.add(skill);
+									const info = get.info(skill);
+									if (info.sourceSkill) {
+										event._aiexclude.add(info.sourceSkill);
+									}
+								} else {
+									get.card(true).aiexclude();
+									game.uncheck();
+								}
+								event.redo();
+								game.resume();
+							} else {
+								ui.click.cancel();
+							}
+						}
+					} else if (event.skill && !event.norestore) {
+						const skill = event.skill;
+						ui.click.cancel();
+						event._aiexclude.add(skill);
+						const info = get.info(skill);
+						if (info.sourceSkill) {
+							event._aiexclude.add(info.sourceSkill);
 						}
 						event.redo();
 						game.resume();
 					} else {
 						ui.click.cancel();
 					}
-				}
-			} else if (event.skill && !event.norestore) {
-				const skill = event.skill;
-				ui.click.cancel();
-				event._aiexclude.add(skill);
-				const info = get.info(skill);
-				if (info.sourceSkill) {
-					event._aiexclude.add(info.sourceSkill);
-				}
-				event.redo();
-				game.resume();
-			} else {
-				ui.click.cancel();
-			}
-			if (event.aidelay && event.result && event.result.bool) {
-				await game.delayx();
-			}
-		},
+					if (event.aidelay && event.result && event.result.bool) {
+						await game.delayx();
+					}
+				},
 		async (event, trigger, player) => {
 			if (event.endButton) {
 				event.endButton.close();
@@ -5451,57 +5460,65 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				}
 			}
 		},
-		async (event, trigger, player) => {
-			const { forced } = event;
+			async (event, trigger, player) => {
+				const { forced } = event;
 
-			if (event.result != "ai") {
-				return;
-			}
+				if (event.result != "ai") {
+					return;
+				}
 
-			const ok = game.check();
-			if (ok) {
-				ui.click.ok();
-			} else if (ai.basic.chooseCard(event.ai1 || event.ai) || forced) {
-				if ((ai.basic.chooseTarget(event.ai2) || forced) && (!event.filterOk || event.filterOk())) {
+				// 🆕 LLM 前置分支：尝试用 LLM 决策，失败/超时/未启用则自然滑落本地 ai
+				const llmResult = await tryLLMDecide(event);
+				if (llmResult.handled && llmResult.result) {
+					event.result = llmResult.result;
+					game.uncheck();
+					return;
+				}
+
+				const ok = game.check();
+				if (ok) {
 					ui.click.ok();
-					event._aiexcludeclear = true;
-				} else {
-					if (!event.norestore) {
-						if (event.skill) {
-							const skill = event.skill;
-							ui.click.cancel();
-							event._aiexclude.add(skill);
-							const info = get.info(skill);
-							if (info.sourceSkill) {
-								event._aiexclude.add(info.sourceSkill);
-							}
+				} else if (ai.basic.chooseCard(event.ai1 || event.ai) || forced) {
+						if ((ai.basic.chooseTarget(event.ai2) || forced) && (!event.filterOk || event.filterOk())) {
+							ui.click.ok();
+							event._aiexcludeclear = true;
 						} else {
-							get.card(true).aiexclude();
-							game.uncheck();
+							if (!event.norestore) {
+								if (event.skill) {
+									const skill = event.skill;
+									ui.click.cancel();
+									event._aiexclude.add(skill);
+									const info = get.info(skill);
+									if (info.sourceSkill) {
+										event._aiexclude.add(info.sourceSkill);
+									}
+								} else {
+									get.card(true).aiexclude();
+									game.uncheck();
+								}
+								event.redo();
+								game.resume();
+							} else {
+								ui.click.cancel();
+							}
+						}
+					} else if (event.skill && !event.norestore) {
+						const skill = event.skill;
+						ui.click.cancel();
+						event._aiexclude.add(skill);
+						const info = get.info(skill);
+						if (info.sourceSkill) {
+							event._aiexclude.add(info.sourceSkill);
 						}
 						event.redo();
 						game.resume();
 					} else {
 						ui.click.cancel();
 					}
-				}
-			} else if (event.skill && !event.norestore) {
-				const skill = event.skill;
-				ui.click.cancel();
-				event._aiexclude.add(skill);
-				const info = get.info(skill);
-				if (info.sourceSkill) {
-					event._aiexclude.add(info.sourceSkill);
-				}
-				event.redo();
-				game.resume();
-			} else {
-				ui.click.cancel();
-			}
-			if (event.aidelay && event.result && event.result.bool) {
-				game.delayx();
-			}
-		},
+					if (event.aidelay && event.result && event.result.bool) {
+						game.delayx();
+					}
+				},
 		async (event, trigger, player) => {
 			event.resume();
 			if (!event.result) {
@@ -5960,25 +5977,32 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				}
 			}
 		},
-		async (event, trigger, player) => {
-			if (event.result == "ai") {
-				if (event.processAI) {
-					event.result = event.processAI();
-				} else {
-					game.check();
-					if ((ai.basic.chooseCard(event.ai) || event.forced) && (!event.filterOk || event.filterOk())) {
-						ui.click.ok();
-					} else if (event.skill) {
-						const skill = event.skill;
-						ui.click.cancel();
-						event._aiexclude.add(skill);
-						event.redo();
-						game.resume();
+			async (event, trigger, player) => {
+				if (event.result == "ai") {
+					// 🆕 LLM 前置分支：尝试用 LLM 决策，失败/超时/未启用则自然滑落本地 ai
+					const llmResult = await tryLLMDecide(event);
+					if (llmResult.handled && llmResult.result) {
+						event.result = llmResult.result;
+						game.uncheck();
+						return;
+					}
+					if (event.processAI) {
+						event.result = event.processAI();
 					} else {
-						ui.click.cancel();
+						game.check();
+						if ((ai.basic.chooseCard(event.ai) || event.forced) && (!event.filterOk || event.filterOk())) {
+							ui.click.ok();
+						} else if (event.skill) {
+							const skill = event.skill;
+							ui.click.cancel();
+							event._aiexclude.add(skill);
+							event.redo();
+							game.resume();
+						} else {
+							ui.click.cancel();
+						}
 					}
 				}
-			}
 			if (event.rangecards) {
 				for (const card of event.rangecards) {
 					card.recheck("chooseToDiscard");
@@ -8333,6 +8357,13 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		}
 
 		if (event.result == "ai") {
+			// 🆕 LLM 前置分支：尝试用 LLM 决策，失败/超时/未启用则自然滑落本地 ai
+			const llmResult = await tryLLMDecide(event);
+			if (llmResult.handled && llmResult.result) {
+				event.result = llmResult.result;
+				game.uncheck();
+				return;
+			}
 			if (event.ai) {
 				event.choice = event.ai(event.getParent(), player);
 			}

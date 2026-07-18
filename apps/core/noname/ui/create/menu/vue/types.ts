@@ -20,9 +20,7 @@ export interface RightPaneContext {
 
 /**
  * Vue 菜单新契约（解耦 DOM）。
- * 注意：本接口与 apps/core/typings/type.d.ts:937 的旧版 `declare interface menuData` 同名。
- * 旧版耦合 DOM（nodes: HTMLElement[]、rightPaneApps: Map<HTMLElement, ...>），本版解耦。
- * 阶段 6 入口切换时，需同步更新 type.d.ts 旧定义或删除，避免混淆。
+ * 本接口与 apps/core/typings/type.d.ts 的全局 `declare interface menuData` 对应。
  */
 export interface menuData {
 	/** 左栏数据源（响应式，由组件持有） */
@@ -37,6 +35,6 @@ export interface menuData {
 	getRightPane(ctx: RightPaneContext): SelectConfigData[];
 	/** 获取默认选中项的 key（替代旧版 getDefaultActive 遍历 DOM）。返回 null 表示选第一个 */
 	getDefaultActiveKey(connectMenu: boolean): string | null;
-	/** 右栏使用哪个 Vue 组件渲染。未提供时默认用 NonameConfig 列表渲染（阶段1实现）；包类页面可返回专用组件 */
+	/** 右栏使用哪个 Vue 组件渲染。未提供时默认用 NonameConfig 列表渲染；包类页面可返回专用组件 */
 	rightPaneComponent?: Component;
 }

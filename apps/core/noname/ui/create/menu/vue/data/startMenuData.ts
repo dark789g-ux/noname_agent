@@ -1,6 +1,8 @@
+import { reactive } from "vue";
 import type { menuData, LeftPaneItem, RightPaneContext } from "../types";
 import { lib, game, get, _status } from "noname";
-import { menuUpdates } from "../index.js";
+import { menuUpdates } from "../menuState";
+import { makeConfigAdapter } from "../utils/configAdapter";
 
 // ---------------------------------------------------------------------------
 // 工厂函数：根据 connectMenu 构建开始页 / 模式页的 menuData
@@ -16,7 +18,6 @@ import { menuUpdates } from "../index.js";
 function buildLeftPaneData(connectMenu: boolean): LeftPaneItem[] {
 	let modeorder: string[] = lib.config.modeorder || [];
 	for (const i in lib.mode) {
-		// @ts-expect-error Array.prototype.add 是 noname 运行时扩展（去重 push）
 		modeorder.add(i);
 	}
 
@@ -25,10 +26,8 @@ function buildLeftPaneData(connectMenu: boolean): LeftPaneItem[] {
 			if (!lib.mode[mode].connect) return false;
 			// 初始化联机封禁数组
 			if (!lib.config["connect_" + mode + "_banned"])
-				// @ts-expect-error connect_<mode>_banned 是运行时动态属性
 				lib.config["connect_" + mode + "_banned"] = [];
 			if (!lib.config["connect_" + mode + "_bannedcards"])
-				// @ts-expect-error connect_<mode>_bannedcards 是运行时动态属性
 				lib.config["connect_" + mode + "_bannedcards"] = [];
 		}
 		if (lib.config.all.mode.includes(mode)) return true;
@@ -106,10 +105,10 @@ function getRightPane(ctx: RightPaneContext): any[] {
 	if (connectMenu && !_connectUpdatePushed) {
 		// 对应旧版 startMenu.js:141-154 的 updateConnectDisplayMap
 		const updateConnectDisplayMap = function () {
-			// TODO: Vue 版没有 cfgnode DOM，updateConnectDisplayMap 需要适配。
+			// TODO: Vue 版没有 cfgnode DOM，updateConnectDisplayMap 需要适配（当前未实现）。
 			// 旧版通过 connectDisplayMap.map[j] = cfgnode（DOM 节点）来隐藏
 			// connect_player_number / connect_versus_mode 的 display。
-			// 阶段 2A 暂不实现此 DOM 操作，待 NonameConfig 增强（如 v-show 支持或 ref 收集）后补全。
+			// 待 NonameConfig 增强（如 v-show 支持或 ref 收集）后补全。
 		};
 		menuUpdates.push(updateConnectDisplayMap);
 		_connectUpdatePushed = true;
@@ -117,16 +116,20 @@ function getRightPane(ctx: RightPaneContext): any[] {
 
 	let result: any[] = [];
 
-	// map：key → cfg 对象（SelectConfigData）
-	// 旧版 map[j] = cfgnode（DOM 节点），Vue 版改为 cfg 对象。
-	// infoconfig.update 可能通过 map[j] 修改 init / unfrequent 等数据属性触发重渲染。
-	// 如果 update 内操作了 DOM（如 classList / style），那部分会失效（需后续适配）。
+	// map：key → makeConfigAdapter 适配器（与 optionsMenuData 共用同一套桥接）
+	// 旧版 map[j] 是 DOM 节点（polyfill 注入 hide()/show()），模式自带 infoconfig.update
+	// 会直接调用这些方法（如 identity 模式的 round_one_use_fury.hide()），
+	// 纯数据对象会抛 TypeError，所以这里放适配器而不是 cfg 本身。
+	// hide/show 翻译为 cfg._hidden，由 NonameConfig 的 v-show 生效；
+	// _link / classList / updatex 由适配器 shim，updatex 内有 try/catch 兜底，
+	// 操作 DOM 的部分失效时静默跳过。
 	const map: Record<string, any> = {};
 
 	for (const j in infoconfig) {
 		if (j === "update") continue;
 
-		let cfg = get.copy(infoconfig[j]);
+		let cfg = reactive(get.copy(infoconfig[j]));
+		cfg._hidden = false;
 		cfg._name = j;
 		cfg.mode = mode;
 
@@ -174,25 +177,23 @@ function getRightPane(ctx: RightPaneContext): any[] {
 			})(cfg);
 		}
 
-		map[j] = cfg;
+		map[j] = makeConfigAdapter(cfg);
 		result.push(cfg);
 
-		// TODO: 折叠功能（fold_mode / "更多"按钮）
+		// TODO: 折叠功能（fold_mode / "更多"按钮）（当前未实现，旧版的折叠 UI，Vue 版暂无等价）
 		// 旧版把 unfrequent 项放入"更多"折叠区（startMenu.js:275-310），
 		// 有"更多"按钮 + expanded 状态 + mousewheel 展开。
 		// NonameConfig 目前是平铺 v-for 渲染所有项，不识别 unfrequent 标记。
 		// cfg.unfrequent 字段保留在 cfg 对象上，待 NonameConfig 增强（支持折叠渲染）后补全。
-		// 阶段 2A 暂平铺所有项（含 unfrequent 项）。
+		// 当前平铺所有项（含 unfrequent 项）。
 	}
 
-	// TODO: 模式排序按钮（上移↑ / 下移↓）
+	// TODO: 模式排序按钮（上移↑ / 下移↓）（当前未实现，旧版的左栏增强 UI，Vue 版暂无等价）
 	// 旧版 startMenu.js:248-273 在非联机模式下添加上移/下移按钮到隐藏区。
 	// 这属于左栏增强功能，涉及左栏 UI 交互（不在 getRightPane 返回范围）。
-	// 阶段 2A 暂不实现排序按钮。
 
-	// TODO: "隐藏此模式"按钮
+	// TODO: "隐藏此模式"按钮（当前未实现，旧版的额外 UI（非配置项），Vue 版暂无等价）
 	// 旧版 startMenu.js:312-329 在非联机模式下添加"隐藏此模式"按钮。
-	// 这也属于额外 UI（非配置项），阶段 2A 暂不实现。
 
 	// 首次构建时调用 infoconfig.update
 	if (infoconfig.update) {

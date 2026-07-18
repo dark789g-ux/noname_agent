@@ -165,7 +165,6 @@ function onZipImportClick() {
 	fileReader.readAsArrayBuffer(fileToLoad, "UTF-8");
 }
 
-// TODO: 阶段 6 —— nonameInitialized 导入路径需确认
-//   旧版通过 import { nonameInitialized } from "@/util/index.js"
+// 与旧版 @/util/index.js 导出的 nonameInitialized 等价（即 localStorage 的 noname_inited 项）
 let nonameInitialized: string = localStorage.getItem("noname_inited") || "";
 </script>

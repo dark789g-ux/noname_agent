@@ -2,6 +2,7 @@
 	<!-- clear 形态 -->
 	<div
 		v-if="isClear"
+		v-show="isVisible"
 		ref="configNodeRef"
 		class="config"
 		:class="{ pointerspan: !config.nopointer }"
@@ -12,13 +13,14 @@
 	</div>
 
 	<!-- Array.isArray(init) 的非交互 switcher 外观（旧版 void 0 分支） -->
-	<div v-else-if="isArrayInitSwitcher" class="config">
+	<div v-else-if="isArrayInitSwitcher" v-show="isVisible" class="config">
 		<span>{{ config.name }}</span>
 	</div>
 
 	<!-- switcher 形态（item 且非 Array.isArray(init)） -->
 	<div
 		v-else-if="isSwitcher"
+		v-show="isVisible"
 		ref="configNodeRef"
 		class="config switcher"
 		@click="handleSwitcherClick"
@@ -27,18 +29,19 @@
 		<div class="config-choosing">{{ choosingText }}</div>
 	</div>
 
-	<!-- range 形态（新版补实现） -->
+	<!-- range 形态（旧版 void 0 空分支，仅显示名称，无交互） -->
 	<div
 		v-else-if="isRange"
+		v-show="isVisible"
 		class="config"
 	>
 		<span>{{ config.name }}</span>
-		<input type="range" />
 	</div>
 
 	<!-- input 形态 -->
 	<div
 		v-else-if="isInput"
+		v-show="isVisible"
 		ref="configNodeRef"
 		class="config switcher"
 	>
@@ -46,6 +49,7 @@
 		<div
 			ref="inputRef"
 			:contenteditable="!config.fixed ? 'true' : undefined"
+			:data-placeholder="config.name"
 			class="config-input"
 			@keydown="handleInputKeydown"
 		></div>
@@ -54,6 +58,7 @@
 	<!-- toggle 形态（默认） -->
 	<div
 		v-else
+		v-show="isVisible"
 		ref="configNodeRef"
 		class="config toggle"
 		:class="{ on: isToggleOn }"
@@ -112,6 +117,9 @@ const isRange = computed(() => {
 	return !!props.config.range;
 });
 const isInput = computed(() => !!props.config.input);
+
+/** 是否可见（响应 update 函数适配器的 _hidden 翻转） */
+const isVisible = computed(() => !(props.config as any)._hidden);
 
 // toggle on 状态
 const isToggleOn = computed(() => props.config.init === true);
@@ -432,10 +440,7 @@ onMounted(() => {
 			// @ts-expect-error webkitUserSelect 是非标准 CSS 属性
 			input.style.webkitUserSelect = "text";
 		}
-		input.style.minWidth = "10px";
-		input.style.maxWidth = "60%";
-		input.style.overflow = "hidden";
-		input.style.whiteSpace = "nowrap";
+		// 注：min-width/max-width/overflow/white-space 由 menu.css 的 .config-input 统一控制
 		initInputOnblur(input, config);
 	}
 

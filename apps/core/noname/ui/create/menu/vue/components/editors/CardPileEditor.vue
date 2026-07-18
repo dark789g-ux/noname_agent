@@ -1,57 +1,54 @@
 <template>
-	<div ref="containerRef">
-		<!-- 编辑牌堆折叠按钮 -->
-		<div
-			class="config more pile"
-			:class="{ on: expanded }"
-			@click="toggleExpand"
-		>
-			编辑牌堆 <div>&gt;</div>
-		</div>
-
-		<!-- 操作栏 -->
-		<div
-			class="config pointerspan cardpilecfg toggle"
-			:style="{ display: expanded ? '' : 'none', marginTop: '5px' }"
-		>
-			<button @click="onToggleAddPanel">添加卡牌</button>
-			<button style="margin-left: 5px" @click="onBanAll">全部关闭</button>
-			<button style="margin-left: 5px" @click="onEnableAll">全部开启</button>
-		</div>
-
-		<!-- 添加卡牌面板 -->
-		<div
-			v-if="showAddPanel"
-			class="config toggle hidden cardpilecfg cardpilecfgadd"
-			style="white-space: nowrap"
-		>
-			<select
-				ref="addNameRef"
-				style="width: 75px; margin-right: 2px; margin-left: -1px"
-			></select>
-			<select
-				ref="addSuitRef"
-				style="width: 53px; margin-right: 2px"
-			></select>
-			<select
-				ref="addNumberRef"
-				style="width: 43px; margin-right: 2px"
-			></select>
-			<button style="width: 40px" @click="onAddCard">确定</button>
-		</div>
-
-		<!-- 已添加卡牌列表 -->
-		<div ref="addedCardsRef"></div>
-
-		<!-- 默认牌堆卡牌列表 -->
-		<div ref="defaultCardsRef"></div>
-
-		<div class="menuplaceholder"></div>
+	<!-- fragment（多根）：以下节点渲染后即 .menu-buttons 的直接子代。
+	     引擎 CSS 中 .menu-buttons div 是后代选择器，而复位规则均为直接子代选择器，
+	     故本组件不得保留无 class 的包裹层，命令式创建的行也一律直挂父组件根节点。 -->
+	<!-- 编辑牌堆折叠按钮 -->
+	<div
+		class="config more pile"
+		:class="{ on: expanded }"
+		@click="toggleExpand"
+	>
+		编辑牌堆 <div>&gt;</div>
 	</div>
+
+	<!-- 操作栏 -->
+	<div
+		class="config pointerspan cardpilecfg toggle"
+		:style="{ display: expanded ? '' : 'none', marginTop: '5px' }"
+	>
+		<button @click="onToggleAddPanel">添加卡牌</button>
+		<button style="margin-left: 5px" @click="onBanAll">全部关闭</button>
+		<button style="margin-left: 5px" @click="onEnableAll">全部开启</button>
+	</div>
+
+	<!-- 添加卡牌面板（hidden class 已由 v-if 取代：layout.css 的 .hidden 为 opacity: 0 !important，
+	     若保留会让面板恒不可见；旧版靠 toggle hidden class 显隐） -->
+	<div
+		v-if="showAddPanel"
+		class="config toggle cardpilecfg cardpilecfgadd"
+		style="white-space: nowrap"
+	>
+		<select
+			ref="addNameRef"
+			style="width: 75px; margin-right: 2px; margin-left: -1px"
+		></select>
+		<select
+			ref="addSuitRef"
+			style="width: 53px; margin-right: 2px"
+		></select>
+		<select
+			ref="addNumberRef"
+			style="width: 43px; margin-right: 2px"
+		></select>
+		<button style="width: 40px" @click="onAddCard">确定</button>
+	</div>
+
+	<!-- 命令式创建的行（added 在前、default 在后，与旧版一致）插入到此锚点之前 -->
+	<div ref="anchorRef" class="menuplaceholder"></div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from "vue";
+import { ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { lib, game, get, ui } from "noname";
 
 interface Props {
@@ -64,12 +61,17 @@ const props = defineProps<Props>();
 // 状态
 // ---------------------------------------------------------------------------
 
-const containerRef = ref<HTMLDivElement>();
+const anchorRef = ref<HTMLDivElement>();
 const addNameRef = ref<HTMLSelectElement>();
 const addSuitRef = ref<HTMLSelectElement>();
 const addNumberRef = ref<HTMLSelectElement>();
-const addedCardsRef = ref<HTMLDivElement>();
-const defaultCardsRef = ref<HTMLDivElement>();
+
+/**
+ * 所有命令式创建的行节点（.config.toggle.cardpilecfg）。
+ * 它们插在父组件的 .menu-buttons 根节点里（Vue 卸载 fragment 时不会代为清理），
+ * 故必须手动跟踪：重渲染/卸载时逐个 remove。
+ */
+const rowNodes: HTMLElement[] = [];
 
 const expanded = ref(false);
 const showAddPanel = ref(false);
@@ -119,6 +121,12 @@ function toggleCardPile(bool: boolean, modeName: string, number: number) {
 
 function toggleExpand() {
 	expanded.value = !expanded.value;
+	if (!expanded.value) {
+		showAddPanel.value = false;
+	}
+	for (let i = 0; i < rowNodes.length; i++) {
+		rowNodes[i].style.display = expanded.value ? "" : "none";
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -128,38 +136,36 @@ function toggleExpand() {
 
 function onToggleAddPanel() {
 	showAddPanel.value = !showAddPanel.value;
+	if (showAddPanel.value) {
+		// 面板为 v-if 渲染，等 DOM 就绪后再填充下拉框
+		nextTick(() => {
+			initAddSelectors();
+		});
+	}
 }
 
 function onBanAll() {
-	const container = defaultCardsRef.value;
-	if (!container) return;
-	const nodes = container.querySelectorAll(
-		".config.toggle.on[type='defaultcards']",
-	);
-	nodes.forEach((node) => {
+	for (let i = 0; i < rowNodes.length; i++) {
+		const node = rowNodes[i];
+		if (node.getAttribute("type") !== "defaultcards" || !node.classList.contains("on")) {
+			continue;
+		}
 		node.classList.remove("on");
-		// @ts-expect-error _number 是运行时挂在节点上的自定义属性
-		const number = node._number;
-		// @ts-expect-error _name 是运行时挂在节点上的自定义属性
-		const name = node._name;
-		toggleCardPile(false, name, number);
-	});
+		// @ts-expect-error _number / _name 是运行时挂在节点上的自定义属性
+		toggleCardPile(false, node._name, node._number);
+	}
 }
 
 function onEnableAll() {
-	const container = defaultCardsRef.value;
-	if (!container) return;
-	const nodes = container.querySelectorAll(
-		".config.toggle:not(.on)[type='defaultcards']",
-	);
-	nodes.forEach((node) => {
+	for (let i = 0; i < rowNodes.length; i++) {
+		const node = rowNodes[i];
+		if (node.getAttribute("type") !== "defaultcards" || node.classList.contains("on")) {
+			continue;
+		}
 		node.classList.add("on");
-		// @ts-expect-error _number 是运行时挂在节点上的自定义属性
-		const number = node._number;
-		// @ts-expect-error _name 是运行时挂在节点上的自定义属性
-		const name = node._name;
-		toggleCardPile(true, name, number);
-	});
+		// @ts-expect-error _number / _name 是运行时挂在节点上的自定义属性
+		toggleCardPile(true, node._name, node._number);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +178,8 @@ function initAddSelectors() {
 	const addSuitEl = addSuitRef.value;
 	const addNumberEl = addNumberRef.value;
 	if (!addNameEl || !addSuitEl || !addNumberEl) return;
+	// selectlist 向 select 追加 option，已填充过则跳过，避免重复初始化产生重复项
+	if (addNameEl.options.length) return;
 
 	// 构建卡牌名选择列表
 	const pileaddlist: string[][] = [];
@@ -217,12 +225,11 @@ function onAddCard() {
 	const addSuitEl = addSuitRef.value;
 	const addNumberEl = addNumberRef.value;
 	const addNameEl = addNameRef.value;
-	const addedContainer = addedCardsRef.value;
-	const addPanel = containerRef.value?.querySelector(
-		".cardpilecfgadd",
-	) as HTMLElement | null;
+	const anchor = anchorRef.value;
+	const parent = anchor?.parentElement;
+	const addPanel = parent?.querySelector(".cardpilecfgadd") as HTMLElement | null;
 
-	if (!addSuitEl || !addNumberEl || !addNameEl || !addedContainer || !addPanel) return;
+	if (!addSuitEl || !addNumberEl || !addNameEl || !anchor || !parent || !addPanel) return;
 
 	const card = [addSuitEl.value, addNumberEl.value, addNameEl.value];
 	// @ts-expect-error addedpile 是运行时动态属性
@@ -247,13 +254,10 @@ function onAddCard() {
 	cfgnodedelete.innerHTML = "删除";
 	cfgnodedelete.onclick = deleteAddedCardHandler;
 	cfgnode.appendChild(cfgnodedelete);
-
-	const refNode = addPanel.nextSibling;
-	if (refNode) {
-		addedContainer.insertBefore(cfgnode, refNode);
-	} else {
-		addedContainer.appendChild(cfgnode);
-	}
+	cfgnode.style.display = expanded.value ? "" : "none";
+	rowNodes.push(cfgnode);
+	// 旧版 page.insertBefore(cfgnode, cardpileadd.nextSibling)：新行紧跟添加面板
+	parent.insertBefore(cfgnode, addPanel.nextSibling);
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +272,10 @@ function deleteAddedCardHandler(this: HTMLElement) {
 	// @ts-expect-error _info 是运行时挂在节点上的自定义属性
 	const info = node._info;
 	node.remove();
+	const rowIndex = rowNodes.indexOf(node);
+	if (rowIndex > -1) {
+		rowNodes.splice(rowIndex, 1);
+	}
 	// @ts-expect-error addedpile 是运行时动态属性
 	const list = lib.config.addedpile[props.mode];
 	if (!list) return;
@@ -281,15 +289,28 @@ function deleteAddedCardHandler(this: HTMLElement) {
 }
 
 // ---------------------------------------------------------------------------
+// 行清理 —— 重渲染与卸载共用
+// ---------------------------------------------------------------------------
+
+function clearRows() {
+	for (let i = 0; i < rowNodes.length; i++) {
+		rowNodes[i].remove();
+	}
+	rowNodes.length = 0;
+}
+
+// ---------------------------------------------------------------------------
 // 初始化已添加卡牌列表
 // 对应旧版 440-453
+// 注意：调用方保证本函数先于 renderDefaultCards 执行（added 行在前，与旧版一致）
 // ---------------------------------------------------------------------------
 
 function renderAddedCards() {
-	const container = addedCardsRef.value;
-	if (!container) return;
+	const anchor = anchorRef.value;
+	const parent = anchor?.parentElement;
+	if (!anchor || !parent) return;
 
-	container.innerHTML = "";
+	clearRows();
 	// @ts-expect-error bannedpile 是运行时动态属性
 	if (!lib.config.bannedpile[props.mode]) {
 		// @ts-expect-error bannedpile 是运行时动态属性
@@ -319,7 +340,10 @@ function renderAddedCards() {
 		cfgnodedelete.innerHTML = "删除";
 		cfgnodedelete.onclick = deleteAddedCardHandler;
 		cfgnode.appendChild(cfgnodedelete);
-		container.appendChild(cfgnode);
+		// addedpile 行旧版无旋钮，不加
+		cfgnode.style.display = expanded.value ? "" : "none";
+		rowNodes.push(cfgnode);
+		parent.insertBefore(cfgnode, anchor);
 	}
 }
 
@@ -329,10 +353,10 @@ function renderAddedCards() {
 // ---------------------------------------------------------------------------
 
 function renderDefaultCards() {
-	const container = defaultCardsRef.value;
-	if (!container) return;
+	const anchor = anchorRef.value;
+	const parent = anchor?.parentElement;
+	if (!anchor || !parent) return;
 
-	container.innerHTML = "";
 	// @ts-expect-error lib.cardPile 是运行时对象
 	const pile = lib.cardPile[props.mode];
 	if (!pile) return;
@@ -341,7 +365,6 @@ function renderDefaultCards() {
 		const card = pile[i];
 		const cfgnode = ui.create.div(".config.toggle.cardpilecfg");
 		cfgnode.setAttribute("type", "defaultcards");
-		cfgnode.classList.add("cardpilecfg");
 		// @ts-expect-error _number 是运行时挂在节点上的自定义属性
 		cfgnode._number = i;
 		// @ts-expect-error _name 是运行时挂在节点上的自定义属性
@@ -352,6 +375,8 @@ function renderDefaultCards() {
 			" " +
 			get.translation(card[0]) +
 			get.strNumber(card[1]);
+		// 补 toggle 旋钮：旧版走 createConfig 自带 div>div 旋钮（见 NonameToggle.vue 注释）
+		ui.create.div(ui.create.div(cfgnode));
 
 		// @ts-expect-error bannedpile 是运行时动态属性
 		const isBanned = lib.config.bannedpile[props.mode]?.includes(i);
@@ -362,21 +387,16 @@ function renderDefaultCards() {
 		}
 
 		// 点击 toggle
-		// @ts-expect-error 闭包捕获 i
-		cfgnode.addEventListener("click", function () {
+		cfgnode.addEventListener("click", function (this: HTMLElement) {
 			this.classList.toggle("on");
-			// @ts-expect-error _number / _name 是运行时属性
 			const isOn = this.classList.contains("on");
-			toggleCardPile(
-				isOn,
-				// @ts-expect-error _name 是运行时挂在节点上的自定义属性
-				this._name,
-				// @ts-expect-error _number 是运行时挂在节点上的自定义属性
-				this._number,
-			);
+			// @ts-expect-error _name / _number 是运行时挂在节点上的自定义属性
+			toggleCardPile(isOn, this._name, this._number);
 		});
 
-		container.appendChild(cfgnode);
+		cfgnode.style.display = expanded.value ? "" : "none";
+		rowNodes.push(cfgnode);
+		parent.insertBefore(cfgnode, anchor);
 	}
 }
 
@@ -405,6 +425,11 @@ watch(
 		});
 	},
 );
+
+// 行插在父组件 DOM 里，Vue 卸载 fragment 时不会代为清理，必须手动清理防泄漏
+onBeforeUnmount(() => {
+	clearRows();
+});
 </script>
 
 <style>

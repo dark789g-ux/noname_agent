@@ -1,9 +1,14 @@
 /**
  * menuBridge —— index.ts 与 MenuView.vue 之间的通信桥梁。
  *
- * 用于外部 API（ui.click.menuTab、ui.click.extensionTab、ui.click.consoleMenu）
+ * 用于外部 API（ui.click.menuTab、ui.click.extensionTab、ui.click.consoleMenu、
+ * game.editExtension、game.add/removeBackgroundMusic）
  * 驱动 MenuView 的 tab 切换和左栏选中。
- * MenuView onMounted 时注册回调，onUnmounted 时置 null。
+ * setActiveTab / setActiveLeftItem 由 MenuView onMounted 注册、onUnmounted 置 null；
+ * closeMenu 由 index.ts menu() 注册；
+ * refreshCharacterPackMenu 由 characterPackMenuData 模块级注册；
+ * refreshOptionsConfig 由 optionsMenuData 模块级注册；
+ * openExtensionMaker 由 ExtensionMaker onMounted 注册、onUnmounted 置 null。
  */
 
 /**
@@ -18,4 +23,45 @@ export const menuBridge = {
 	 * 用于 extensionTab（切换到"扩展"tab + 指定扩展项）、consoleMenu（切换到"其它"tab + 命令项）。
 	 */
 	setActiveLeftItem: null as ((tab: string, itemKey: string) => void) | null,
+
+	/**
+	 * 关闭当前菜单。
+	 * 由 index.ts menu() 注册（clickContainer 闭包），
+	 * 供 OtherPane 作弊执行后关闭菜单（对应旧版 cheatButton listen 的 clickContainer）。
+	 */
+	closeMenu: null as (() => void) | null,
+
+	/**
+	 * 刷新武将包菜单（收藏变更后调用）。
+	 * 由 characterPackMenuData 模块级注册（无组件生命周期依赖）：
+	 * 重建左栏数据（收藏项显隐）并递增 favouriteVersion 驱动右栏重渲染。
+	 * 供 ui.click.favouriteCharacter 调用（替代旧版 ui.favouriteCharacter DOM 桥接）。
+	 */
+	refreshCharacterPackMenu: null as (() => void) | null,
+
+	/**
+	 * 刷新选项页指定配置项（背景音乐增删后调用）。
+	 * 由 optionsMenuData 模块级注册（无组件生命周期依赖）：
+	 * 从源数据（lib.configMenu.audio.config.background_music.item）重新拷贝合并进
+	 * 缓存的 reactive cfg.item 并调 cfg.update?.()。
+	 * 供 game.addBackgroundMusic / game.removeBackgroundMusic / 音乐导入回调调用
+	 * （替代旧版 ui.background_music_setting DOM 桥接）。
+	 * aozhan_bgm 不在选项页渲染（在国战模式 startMenu），对其调用为 no-op。
+	 */
+	refreshOptionsConfig: null as ((configName: string) => void) | null,
+
+	/**
+	 * 打开「制作扩展」页并（可选）加载指定扩展。
+	 * 由 ExtensionMaker onMounted 注册、onUnmounted 置 null
+	 * （ExtensionPane 以 v-if 挂载，未显示时为 null）。
+	 * 供 index.ts menu() 内的 game.editExtension 稳定桥调用。
+	 */
+	openExtensionMaker: null as ((name?: string) => void) | null,
+
+	/**
+	 * game.editExtension 的待消费扩展名。
+	 * openExtensionMaker 为 null（ExtensionMaker 未挂载的窗口期）时
+	 * 由 game.editExtension 写入，ExtensionMaker onMounted 消费后置回 null。
+	 */
+	pendingEditExtensionName: null as string | null | undefined,
 };

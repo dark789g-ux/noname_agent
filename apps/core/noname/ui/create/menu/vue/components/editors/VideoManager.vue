@@ -48,6 +48,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { ui, game, lib, _status, get } from "noname";
+import { menuBridge } from "../../utils/menuBridge";
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -284,16 +285,10 @@ onMounted(() => {
 			};
 
 			// 设置 ui.updateVideoMenu
-			// 对应旧版 978-989
-			// TODO: 阶段 6 —— 需要切换到录像 tab 并激活当前页
-			// 旧版通过 DOM 操作实现，Vue 版需通过事件总线或全局状态触发
+			// 对应旧版 978-989：录像结束后切换到"其它"tab 的录像左栏项
+			// （旧版同时显示播/存/删按钮；Vue 版浮动按钮由 selectedVideo 驱动，选中录像后显示）
 			ui.updateVideoMenu = function () {
-				// TODO: 阶段 6 —— 实现切换到录像 tab 的逻辑
-				// 旧版逻辑：
-				// 1. 移除当前 active
-				// 2. 激活录像页 node
-				// 3. 将 page 移到 rightPane
-				// 4. 显示播放/删除/保存按钮
+				menuBridge.setActiveLeftItem?.("其它", "video");
 			};
 		}
 	};

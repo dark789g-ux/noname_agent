@@ -713,6 +713,13 @@ declare interface SelectConfigData {
 
     /** 内部属性，记录当前配置的key */
     _name?: string;
+
+    /**
+     * Vue 重构新增：响应式可见性标记。
+     * 由 update 函数的适配器 .hide()/.show() 翻转，NonameConfig 的 v-show 响应。
+     * 旧版通过 DOM classList 的 "hidden" class 实现，新版改为数据驱动。
+     */
+    _hidden?: boolean;
 }
 
 /** 

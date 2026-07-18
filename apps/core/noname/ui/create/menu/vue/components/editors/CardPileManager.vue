@@ -1,47 +1,53 @@
 <template>
-	<div ref="containerRef" class="menu-buttons cardpile-manager">
-		<!-- 选择牌堆 -->
-		<div ref="pileChooseRef" class="config toggle cardpilecfg nomarginleft">
-			选择牌堆
-		</div>
+	<!-- fragment（多根）：cardpile 模式下 CardPackPane 仅渲染本组件，以下节点渲染后
+	     即其根 .menu-buttons.leftbutton 的直接子代，与旧版 cardpile page 全部直挂 page
+	     的 DOM 等价。引擎 CSS 复位均为直接子代选择器（.menu-buttons > .toggle、
+	     .right.pane > div > .config、.right.pane > div > .config.indent 等），
+	     原 .menu-buttons.cardpile-manager 包裹层会让保存面板 absolute 脱流、各行丢失
+	     margin 复位，故删除（与 CardPileEditor 同法）。 -->
+	<!-- 选择牌堆 -->
+	<div ref="pileChooseRef" class="config toggle cardpilecfg nomarginleft">
+		选择牌堆
+	</div>
 
-		<!-- 各自定义牌堆节点（动态插入） -->
-		<div ref="pileListContainer"></div>
+	<!-- 各自定义牌堆节点（命令式创建，直插父组件根节点、以 restartRef 为锚点，
+	     与旧版 page.insertBefore(node, restart) 一致；不得用无 class 包裹层，
+	     否则 absolute 脱流与下方行互叠） -->
 
-		<!-- 重新启动 -->
-		<div
-			class="config more"
-			:style="{ display: showRestart ? '' : 'none' }"
-			@click="game.reload"
-		>
-			重新启动
-		</div>
+	<!-- 重新启动（兼作动态牌堆节点的插入锚点） -->
+	<div
+		ref="restartRef"
+		class="config more"
+		:style="{ display: showRestart ? '' : 'none' }"
+		@click="game.reload"
+	>
+		重新启动
+	</div>
 
-		<!-- 保存当前牌堆 -->
-		<div
-			class="config more"
-			:class="{ on: saveExpanded }"
-			@click="toggleSaveExpanded"
-		>
-			保存当前牌堆 <div>&gt;</div>
-		</div>
+	<!-- 保存当前牌堆 -->
+	<div
+		class="config more"
+		:class="{ on: saveExpanded }"
+		@click="toggleSaveExpanded"
+	>
+		保存当前牌堆 <div>&gt;</div>
+	</div>
 
-		<!-- 保存面板 -->
-		<div
-			v-if="saveExpanded"
-			class="config cardpileadd indent"
-		>
-			名称：<input
-				v-model="saveName"
-				type="text"
-				style="margin-right: 3px; width: 120px"
-			/><button @click="onSavePile">确定</button>
-		</div>
+	<!-- 保存面板（直挂后命中 .right.pane > div > .config 与 .config.indent 复位，与旧版一致） -->
+	<div
+		v-if="saveExpanded"
+		class="config cardpileadd indent"
+	>
+		名称：<input
+			v-model="saveName"
+			type="text"
+			style="margin-right: 3px; width: 120px"
+		/><button @click="onSavePile">确定</button>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from "vue";
+import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { lib, game, get, ui } from "noname";
 
 // CardPileManager 仅在非联机模式下渲染（由 CardPackPane 的 mode==="cardpile" 控制）
@@ -50,9 +56,11 @@ import { lib, game, get, ui } from "noname";
 // 状态
 // ---------------------------------------------------------------------------
 
-const containerRef = ref<HTMLDivElement>();
 const pileChooseRef = ref<HTMLDivElement>();
-const pileListContainer = ref<HTMLDivElement>();
+const restartRef = ref<HTMLDivElement>();
+
+/** 命令式创建的牌堆节点（直挂父组件根节点，卸载时手动清理） */
+const pileNodes: HTMLElement[] = [];
 
 const showRestart = ref(false);
 const saveExpanded = ref(false);
@@ -135,11 +143,16 @@ function createList() {
 // ---------------------------------------------------------------------------
 
 function pileDel(this: HTMLElement) {
+	const node = this.parentNode as HTMLElement;
 	// @ts-expect-error link 是运行时挂在节点上的自定义属性
-	const name = this.parentNode.link;
+	const name = node.link;
 	// @ts-expect-error customcardpile 是运行时动态属性
 	delete lib.config.customcardpile[name];
-	this.parentNode.remove();
+	node.remove();
+	const pileIndex = pileNodes.indexOf(node);
+	if (pileIndex > -1) {
+		pileNodes.splice(pileIndex, 1);
+	}
 	game.saveConfig("customcardpile", lib.config.customcardpile);
 	// @ts-expect-error mode_config 是运行时动态属性
 	for (const i in lib.config.mode_config) {
@@ -158,9 +171,11 @@ function pileDel(this: HTMLElement) {
 // ---------------------------------------------------------------------------
 
 function createPileNode(name: string) {
-	const listContainer = pileListContainer.value;
 	const chooseEl = pileChooseRef.value;
-	if (!listContainer || !chooseEl) return;
+	const restartEl = restartRef.value;
+	// fragment 下锚点的父元素即 CardPackPane 根 .menu-buttons.leftbutton
+	const parent = restartEl?.parentElement;
+	if (!chooseEl || !restartEl || !parent) return;
 
 	const node = ui.create.div(".config.toggle.cardpilecfg.nomarginleft", name);
 	// @ts-expect-error link 是运行时挂在节点上的自定义属性
@@ -172,10 +187,11 @@ function createPileNode(name: string) {
 	del.onclick = pileDel;
 	node.appendChild(del);
 
+	pileNodes.push(node);
 	if (name === "当前牌堆") {
 		chooseEl.insertAdjacentElement("afterend", node);
 	} else {
-		listContainer.appendChild(node);
+		parent.insertBefore(node, restartEl);
 	}
 }
 
@@ -221,15 +237,15 @@ function onSavePile() {
 		}
 	}
 
-	// 移除旧的"当前牌堆"节点
-	const container = containerRef.value;
-	if (container) {
-		for (let i = 0; i < container.childElementCount; i++) {
-			// @ts-expect-error link 是运行时挂在节点上的自定义属性
-			if (container.childNodes[i].link === "当前牌堆") {
-				container.childNodes[i].remove();
-				break;
-			}
+	// 移除旧的"当前牌堆"节点（直接查 pileNodes 跟踪数组，不做 DOM 范围查询，
+	// 避免与 CardPileEditor 的 .config.toggle.cardpilecfg 行 class 相近而误选）
+	for (let i = 0; i < pileNodes.length; i++) {
+		// @ts-expect-error link 是运行时挂在节点上的自定义属性
+		if (pileNodes[i].link === "当前牌堆") {
+			const removed = pileNodes[i];
+			removed.remove();
+			pileNodes.splice(i, 1);
+			break;
 		}
 	}
 
@@ -276,22 +292,13 @@ onMounted(() => {
 		createPileNode(key);
 	}
 });
-</script>
 
-<style>
-.cardpile-manager .config.cardpilecfg.nomarginleft {
-	position: relative;
-}
-.cardpile-manager .cardpiledelete {
-	position: absolute;
-	right: 5px;
-	top: 50%;
-	transform: translateY(-50%);
-	color: #aaa;
-	cursor: pointer;
-	font-size: 12px;
-}
-.cardpile-manager .cardpiledelete:hover {
-	color: #f44;
-}
-</style>
+// 动态牌堆节点命令式插在父组件根节点里，Vue 卸载 fragment 时只清理模板节点，
+// 不会代为清理这些行，必须手动清理防泄漏（与 CardPileEditor 同法）
+onBeforeUnmount(() => {
+	for (let i = 0; i < pileNodes.length; i++) {
+		pileNodes[i].remove();
+	}
+	pileNodes.length = 0;
+});
+</script>

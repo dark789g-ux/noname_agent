@@ -1,8 +1,10 @@
-import { markRaw } from "vue";
+import { markRaw, reactive } from "vue";
 import { ui, game, get, lib, _status } from "noname";
 import type { menuData, LeftPaneItem, RightPaneContext } from "../types";
-import type { SelectConfigData } from "../../../../../../typings/type";
 import OptionsRightPane from "../components/OptionsRightPane.vue";
+import { menuInits } from "../menuState";
+import { makeConfigAdapter } from "../utils/configAdapter";
+import { menuBridge } from "../utils/menuBridge";
 
 /**
  * 选项页 menuData —— 迁移自旧版 pages/optionsMenu.js（1091 行）
@@ -115,8 +117,8 @@ function initSkillConfigPresets() {
 	}
 }
 
-// 模块加载时执行一次预设填充
-initSkillConfigPresets();
+// 注册到 menuInits，由 menu() 函数在 polyfill 加载后统一执行（避免顶层副作用过早触发）
+menuInits.push(initSkillConfigPresets);
 
 // ---------------------------------------------------------------------------
 // updateView / updateAppearence 闭包（跨 mode 共享）
@@ -134,9 +136,9 @@ let updateAppearence: (() => void) | null = null;
  * import_data_button 的 onclick —— 数据导入
  * 对应旧版 362-415
  *
- * TODO: 阶段 6 入口切换时评估 ui.import_data_button 外部 API 兼容。
- *   旧版赋值 ui.import_data_button = cfgnode（DOM 节点），外部代码通过该引用操作 DOM。
- *   Vue 版没有 cfgnode DOM，此赋值无法保留。需在阶段 6 评估是否需要保留 ref。
+ * ui.import_data_button 无外部消费方（全仓检索已证）：旧版赋值 cfgnode 仅供菜单
+ * 内部定位 file input，Vue 版由 OptionsRightPane 特殊渲染接管，数据层
+ * （导入 → game.reload）已生效，无需保留该 DOM 引用。
  */
 function handleImportDataButton() {
 	let fileToLoad = this.files[0];
@@ -191,9 +193,10 @@ function handleImportDataButton() {
  * import_music 的 onclick —— 音乐导入
  * 对应旧版 416-474
  *
- * TODO: 阶段 6 入口切换时评估 ui.background_music_setting 外部 API 兼容。
- *   旧版操作 ui.background_music_setting._link.menu（DOM 节点）来更新音乐菜单项。
- *   Vue 版没有 cfgnode DOM，这部分 DOM 操作会失效。保留逻辑，标注需适配。
+ * ui.background_music_setting 已数据驱动化：导入完成后写源配置项
+ * （lib.configMenu.audio.config.background_music.item）并经
+ * menuBridge.refreshOptionsConfig 刷新选项菜单，替代旧版对
+ * ui.background_music_setting._link.menu 的 DOM 操作。
  */
 function handleImportMusic() {
 	if (_status.music_importing) return;
@@ -238,9 +241,10 @@ function handleImportMusic() {
 			if (!_status._aozhan) {
 				game.playBackgroundMusic();
 			}
-			// TODO: 阶段 6 适配 —— 旧版这里通过 DOM 操作更新音乐菜单列表：
-			//   nodezz.item[link] = ...; ui.create.div(...); nodexx._link.config.updatex.call(nodexx, [])
-			//   Vue 版需要通过响应式数据或事件通知菜单更新。
+			// 数据驱动：写源配置项后经 menuBridge 刷新选项菜单音乐列表
+			// （替代旧版 nodezz.item[link] = ... + ui.create.div + updatex 的 DOM 操作）
+			lib.configMenu.audio.config.background_music.item[link] = musicname;
+			menuBridge.refreshOptionsConfig?.("background_music");
 		});
 	};
 	if (game.writeFile) {
@@ -280,8 +284,9 @@ function buildModeConfigs(mode: string): SelectConfigData[] {
 
 	for (let j in info.config) {
 		if (j === "update") continue;
-		let cfg = get.copy(info.config[j]) as SelectConfigData & { type?: string };
+		let cfg = reactive(get.copy(info.config[j])) as SelectConfigData & { type?: string; _hidden?: boolean };
 		cfg._name = j;
+		cfg._hidden = false;
 		if (j in config) {
 			cfg.init = config[j];
 		} else if (cfg.type != "autoskill" && cfg.type != "banskill") {
@@ -314,27 +319,26 @@ function buildModeConfigs(mode: string): SelectConfigData[] {
 
 		// 特殊配置项 onclick 覆盖
 		if (j == "import_data_button") {
-			// TODO: 阶段 6 —— ui.import_data_button 外部 API 兼容
-			//   旧版: ui.import_data_button = cfgnode; cfgnode.hide()
-			//   Vue 版没有 cfgnode，需在阶段 6 评估替代方案
-			//   这里保留 onclick 逻辑（通过 file input 的 change 事件触发）
+			// ui.import_data_button 无外部消费方：旧版 cfgnode 引用仅供菜单内部定位，
+			// Vue 版由 OptionsRightPane 特殊渲染接管（file input change 事件触发）
 			cfg.onclick = function () {
 				// No-op in Vue: import_data_button is handled by OptionsRightPane's special rendering
 			};
 		} else if (j == "import_music") {
-			// TODO: 阶段 6 —— ui.background_music_setting 外部 API 兼容
+			// ui.background_music_setting 已数据驱动化：导入完成后经
+			// menuBridge.refreshOptionsConfig 刷新（见 handleImportMusic），无需 cfgnode 引用
 			cfg.onclick = function () {
 				// No-op in Vue: import_music is handled by OptionsRightPane's special rendering
 			};
 		} else if (j == "extension_source") {
-			// TODO: 阶段 6 —— ui.extension_source 外部 API 兼容
-			//   旧版: ui.extension_source = cfgnode; cfgnode.updateInner = function() { ... }
+			// ui.extension_source 无外部消费方：旧版 cfgnode.updateInner 仅供菜单内部刷新，
+			// Vue 版数据层已生效（init/index.ts 直接写 lib.configMenu.general.config.extension_source.item）
 			cfg.onclick = function () {
 				// No-op in Vue: extension_source is handled by OptionsRightPane's special rendering
 			};
 		}
 
-		map[j] = cfg;
+		map[j] = makeConfigAdapter(cfg);
 		configs.push(cfg);
 	}
 
@@ -358,6 +362,52 @@ function getModeConfigs(mode: string): SelectConfigData[] {
 	}
 	return modeConfigsCache.get(mode)!;
 }
+
+// ---------------------------------------------------------------------------
+// refreshOptionsConfig —— 背景音乐增删后刷新选项页配置项
+// 供 game.addBackgroundMusic / game.removeBackgroundMusic / handleImportMusic
+// 经 menuBridge 调用（替代旧版 ui.background_music_setting DOM 桥接）
+// ---------------------------------------------------------------------------
+
+/**
+ * 从源数据同步 item 到缓存的 reactive cfg 并触发其 update。
+ *
+ * 实现说明：modeConfigsCache 是模块级缓存，菜单重建（menu() 重开）不会清空，
+ * 右栏渲染用的就是缓存里的同一批 reactive 对象（见 getRightPaneForMode），
+ * 因此直接改缓存里的 cfg.item 即对当前显示与所有未来渲染生效，
+ * 无需区分「选项页是否正在显示」。
+ *
+ * @param configName 配置项名（"background_music" / "aozhan_bgm"）
+ */
+function refreshOptionsConfig(configName: string) {
+	if (configName !== "background_music") {
+		// aozhan_bgm 不在选项页渲染（在国战模式 startMenu，lib.mode.guozhan.config），
+		// 其 item 已由 game.add/removeBackgroundMusic 直接写源数据，
+		// startMenu 经既有 update 链刷新，此处 no-op
+		return;
+	}
+	let source = lib.configMenu.audio?.config?.background_music;
+	let cfg = modeConfigsCache.get("audio")?.find(c => c._name === "background_music");
+	if (!source?.item || !cfg) {
+		return;
+	}
+	// 源数据拷贝后按 all.background_music 白名单过滤——对应旧版 updatex 的节点过滤
+	// 语义：removeBackgroundMusic 只 remove all 不删源 item，已移除项靠白名单隐藏
+	let item = get.copy(source.item) as Record<string, string>;
+	let allow = ["music_off", "music_custom", "music_random"].concat(lib.config.all.background_music);
+	for (let key in item) {
+		if (!allow.includes(key)) {
+			delete item[key];
+		}
+	}
+	cfg.item = item;
+	// cfg.update 在 buildModeConfigs 中已被覆写为无参闭包（内部捕获 config/map），
+	// 但 SelectConfigData.update 的声明签名要求 2 参，此处按实际无参语义调用
+	(cfg.update as (() => void) | undefined)?.();
+}
+
+// 模块级注册（无组件生命周期依赖），与 refreshCharacterPackMenu 同款模式
+menuBridge.refreshOptionsConfig = refreshOptionsConfig;
 
 // ---------------------------------------------------------------------------
 // 检测文件管理器可用性
@@ -419,7 +469,12 @@ function getRightPaneForMode(mode: string): SelectConfigData[] {
 // ---------------------------------------------------------------------------
 
 const optionsMenuData: menuData = {
-	leftPaneData: buildLeftPaneData(),
+	// 占位空数组（MenuView.vue:95 优先使用 getLeftPaneData，此字段不会被读取，仅满足接口类型）
+	leftPaneData: [],
+	// 改为 getter：延迟到 MenuView setup 时执行（避免模块加载时访问 lib.configMenu）
+	getLeftPaneData(): LeftPaneItem[] {
+		return buildLeftPaneData();
+	},
 
 	getRightPane(ctx: RightPaneContext): SelectConfigData[] {
 		let mode = ctx.item.key;

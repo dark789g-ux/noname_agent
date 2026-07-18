@@ -23,10 +23,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted } from "vue";
 import { ui, game, get, lib, _status, ai } from "noname";
 import { security } from "@/util/sandbox.js";
-import { menuUpdates } from "../../../index.js";
 import dedent from "dedent";
 
 // ---------------------------------------------------------------------------
@@ -304,18 +303,6 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 // ---------------------------------------------------------------------------
-// menuUpdates 注册 —— 联机模式下隐藏命令页
-// 对应旧版 405-418
-// ---------------------------------------------------------------------------
-function onMenuUpdate() {
-	if (_status.connectMode) {
-		// TODO: 阶段 6 —— 联机模式下隐藏命令左栏项
-		// 旧版通过 node.classList.add("off") + 切换 active
-		// Vue 版需通过 attrs.enabled 或父组件控制
-	}
-}
-
-// ---------------------------------------------------------------------------
 // 生命周期
 // ---------------------------------------------------------------------------
 onMounted(() => {
@@ -336,13 +323,6 @@ onMounted(() => {
 			"<button onclick='window.noname_shijianInterfaces.showDevTools();'>开启DevTools</button>",
 		);
 	}
-
-	menuUpdates.push(onMenuUpdate);
-});
-
-onUnmounted(() => {
-	const idx = menuUpdates.indexOf(onMenuUpdate);
-	if (idx >= 0) menuUpdates.splice(idx, 1);
 });
 </script>
 

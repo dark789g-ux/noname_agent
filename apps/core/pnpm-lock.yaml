@@ -86,6 +86,9 @@ importers:
       nosleep.js:
         specifier: ^0.12.0
         version: 0.12.0
+      openai:
+        specifier: ^6.46.0
+        version: 6.48.0(ws@8.19.0)
       path-browserify-esm:
         specifier: ^1.0.6
         version: 1.0.6
@@ -803,6 +806,26 @@ packages:
 
   nosleep.js@0.12.0:
     resolution: {integrity: sha512-9d1HbpKLh3sdWlhXMhU6MMH+wQzKkrgfRkYV0EBdvt99YJfj0ilCJrWRDYG2130Tm4GXbEoTCx5b34JSaP+HhA==}
+
+  openai@6.48.0:
+    resolution: {integrity: sha512-KhVp+FyV50QrXNextvL9hIU5l6ox5HYuKQjGVk7lIqprgJol90+dQXWONV6S1lRWsKA1bXjrow8RsUT14M1hNA==}
+    peerDependencies:
+      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
+      '@smithy/hash-node': '>=4.3.0 <5'
+      '@smithy/signature-v4': '>=5.4.0 <6'
+      ws: ^8.18.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      '@aws-sdk/credential-provider-node':
+        optional: true
+      '@smithy/hash-node':
+        optional: true
+      '@smithy/signature-v4':
+        optional: true
+      ws:
+        optional: true
+      zod:
+        optional: true
 
   p-map@7.0.4:
     resolution: {integrity: sha512-tkAQEw8ysMzmkhgw8k+1U/iPhWNhykKnSk4Rd5zLoPJCuJaGRPo6YposrZgaxHKzDHdDWWZvE/Sk7hsL2X/CpQ==}
@@ -1639,6 +1662,10 @@ snapshots:
   normalize-path@3.0.0: {}
 
   nosleep.js@0.12.0: {}
+
+  openai@6.48.0(ws@8.19.0):
+    optionalDependencies:
+      ws: 8.19.0
 
   p-map@7.0.4: {}
 

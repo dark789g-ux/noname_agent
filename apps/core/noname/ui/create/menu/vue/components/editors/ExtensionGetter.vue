@@ -180,7 +180,9 @@ function updateExtensionList() {
 
 /**
  * 下载扩展（旧 2462-2566）
- * TODO: 完整保留下载逻辑
+ * 与旧版逐行对齐：checkFileList → multiDownload → lib.init.js 加载 extension.js → 保存配置
+ * 差异：旧版 reloadnode.style.display="" 对应 Vue 的 showReload.value=true；
+ * 旧版 e.stopPropagation()/node.updated 服务于命令式节点点击与重渲染，Vue 版无对应结构，无需保留
  */
 function downloadExtension(
 	_e: Event,

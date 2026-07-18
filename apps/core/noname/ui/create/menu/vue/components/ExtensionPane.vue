@@ -16,9 +16,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick, h } from "vue";
-import { lib, game, get, ui } from "noname";
+import { ref, watch, nextTick } from "vue";
+import { lib } from "noname";
 import type { RightPaneContext } from "../types";
+import { createConfig } from "../utils/configBuilder";
 import { togglePack, buildExtensionConfigs } from "../data/extensionMenuData";
 import ExtensionMaker from "./editors/extensionMaker/ExtensionMaker.vue";
 import ExtensionGetter from "./editors/ExtensionGetter.vue";
@@ -51,14 +52,11 @@ function renderConfigs() {
 		// enable 项需要 togglePack + onswitch 回调
 		if ((cfg as any)._key === "enable") {
 			(cfg as any).onclick = function (result: any) {
-				togglePack(mode, result, menu[key].onswitch);
+				togglePack((cfg as any)._name, result, (cfg as any).onswitch);
 			};
 		}
 
-		const cfgnode = ui.create.config(cfg);
-		if ((cfg as any).onswitch) {
-			(cfgnode as any).onswitch = (cfg as any).onswitch;
-		}
+		const cfgnode = createConfig(cfg);
 		container.appendChild(cfgnode);
 	}
 }

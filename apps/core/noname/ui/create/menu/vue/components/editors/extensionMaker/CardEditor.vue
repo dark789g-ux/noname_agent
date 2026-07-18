@@ -209,7 +209,13 @@ function updateButton() {
 		return;
 	}
 	const id = name.split("|")[0];
-	if (lib.card[id] || packData.card[id]) {
+	if (currentButton) {
+		// 编辑态：仅当改成已存在的其它 id 时才禁用（旧 1317-1323）
+		if ((currentButton as any).link !== id && (lib.card[id] || packData.card[id])) {
+			editDisabled.value = true;
+			return;
+		}
+	} else if (lib.card[id] || packData.card[id]) {
 		editDisabled.value = true;
 		return;
 	}
@@ -217,6 +223,40 @@ function updateButton() {
 		editDisabled.value = true;
 		return;
 	}
+	editDisabled.value = false;
+}
+
+// ---------------------------------------------------------------------------
+// 编辑已有卡牌（旧 1336-1380 clickButton）：
+// 点击已有卡牌按钮切换编辑模式，加载卡牌数据到表单；再次点击同一按钮退出编辑
+// ---------------------------------------------------------------------------
+let currentButton: HTMLElement | null = null;
+
+function onCardButtonClick(button: HTMLElement) {
+	if (currentButton === button) {
+		resetEditor();
+		return;
+	}
+	resetEditor();
+	currentButton = button;
+	showForm.value = true;
+	const id = (button as any).link as string;
+	const translate = packData.translate[id];
+	cardName.value = translate && translate !== id ? `${id}|${translate}` : id;
+	cardDescription.value = packData.translate[id + "_info"] || "";
+	const fullskin = packData.card[id]?.fullskin ? true : false;
+	isFullskin.value = fullskin;
+	if (fullskin) {
+		cardImageStyle.backgroundImage = button.style.backgroundImage;
+		fakemeStyle.backgroundImage = "";
+	} else {
+		fakemeStyle.backgroundImage = button.style.backgroundImage;
+		cardImageStyle.backgroundImage = "";
+	}
+	fakemeInited.value = true;
+	code = "card=" + get.stringify(packData.card[id]);
+	editButtonText.value = "编辑卡牌";
+	deleteButtonText.value = "删除";
 	editDisabled.value = false;
 }
 
@@ -260,7 +300,28 @@ function onCreateCard() {
 	name = name.split("|");
 	const translate = name[1] || name[0];
 	const id = name[0];
-	if (lib.card[id] || packData.card[id]) {
+	if (currentButton) {
+		// 编辑态：id 未变走更新路径；改名则校验新 id 并迁移数据（旧 1655-1674）
+		const oldId = (currentButton as any).link as string;
+		if (oldId !== id) {
+			if (lib.card[id] || packData.card[id]) {
+				alert("卡牌名与现有卡牌重复，请更改");
+				return;
+			}
+			for (const ext of [".png", ".jpg"]) {
+				if (imageData[oldId + ext]) {
+					imageData[id + ext] = imageData[oldId + ext];
+					delete imageData[oldId + ext];
+				}
+			}
+			delete packData.card[oldId];
+			delete packData.translate[oldId];
+			delete packData.translate[oldId + "_info"];
+			(currentButton as any).link = id;
+			// 旧 updatePile：改名后旧 id 的牌堆条目一并移除
+			prunePile(oldId);
+		}
+	} else if (lib.card[id] || packData.card[id]) {
 		alert("卡牌名与现有卡牌重复，请更改");
 		return;
 	}
@@ -294,6 +355,15 @@ function onCreateCard() {
 			delete packData.card[id].fullskin;
 		}
 	}
+	if (currentButton) {
+		// 编辑态：更新已有按钮的显示（旧 1716-1731）
+		if (fakemeImage64) {
+			currentButton.style.backgroundImage = `url(${fakemeImage64})`;
+		}
+		(currentButton as any).nodename.innerHTML = translate;
+	} else {
+		createButton(id, isFullskin.value);
+	}
 	resetEditor();
 }
 
@@ -301,8 +371,16 @@ function onCreateCard() {
 // 删除卡牌（旧 1735-1747）
 // ---------------------------------------------------------------------------
 function onDeleteCard() {
-	if (deleteButtonText.value === "删除") {
-		// TODO: 删除当前编辑卡牌
+	if (deleteButtonText.value === "删除" && currentButton) {
+		const id = (currentButton as any).link as string;
+		currentButton.remove();
+		delete packData.card[id];
+		delete packData.translate[id];
+		delete packData.translate[id + "_info"];
+		delete imageData[id + ".png"];
+		delete imageData[id + ".jpg"];
+		// 旧 updatePile：删除后该 id 的牌堆条目一并移除
+		prunePile(id);
 	}
 	resetEditor();
 }
@@ -310,6 +388,19 @@ function onDeleteCard() {
 // ---------------------------------------------------------------------------
 // 牌堆编辑（旧 1766-1833）
 // ---------------------------------------------------------------------------
+// 旧 updatePile 的裁剪行为：从 pileList 与牌堆 DOM 中移除指定卡牌 id 的条目
+function prunePile(id: string) {
+	for (let i = pileList.length - 1; i >= 0; i--) {
+		if (pileList[i][2] === id) pileList.splice(i, 1);
+	}
+	if (pileRef.value) {
+		for (let i = pileRef.value.childNodes.length - 1; i >= 0; i--) {
+			const node = pileRef.value.childNodes[i] as HTMLElement;
+			if ((node as any).link?.[2] === id) node.remove();
+		}
+	}
+}
+
 function onAddPile() {
 	const card = [pileAddSuit.value, pileAddNumber.value, pileAddName.value];
 	pileList.push(card);
@@ -326,6 +417,7 @@ function onAddPile() {
 // resetEditor（旧 1477-1496）
 // ---------------------------------------------------------------------------
 function resetEditor() {
+	currentButton = null;
 	cardName.value = "";
 	cardDescription.value = "";
 	fakemeInited.value = false;
@@ -353,6 +445,7 @@ function createButton(name: string, fullskin: boolean) {
 	button.style.backgroundSize = "cover";
 	button.noclick = true;
 	button.classList.add("noclick");
+	button.onclick = () => onCardButtonClick(button as unknown as HTMLElement);
 	(button as any).nodename = ui.create.div(button, ".name", packData.translate[name]);
 	buttonsRef.value.insertBefore(button, buttonsRef.value.childNodes[0] || null);
 }
@@ -363,6 +456,8 @@ function createButton(name: string, fullskin: boolean) {
 function reset(name?: string) {
 	resetEditor();
 	imagePromises.length = 0;
+	// 切换/新建扩展时重置资源池（旧 1414）：先清空，下方再从扩展目录读图填入
+	for (const key in imageData) delete imageData[key];
 	if (buttonsRef.value) buttonsRef.value.innerHTML = "";
 	if (pileRef.value) pileRef.value.innerHTML = "";
 	if (name && lib.extensionPack[name]) {
@@ -396,7 +491,6 @@ function reset(name?: string) {
 	}
 }
 
-// TODO: 阶段 6 —— 编辑已有卡牌功能（旧版 clickButton）：点击已有卡牌按钮切换编辑模式，加载卡牌数据到表单
 // ---------------------------------------------------------------------------
 // 暴露数据/方法供 ExtensionMaker 使用
 // ---------------------------------------------------------------------------

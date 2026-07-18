@@ -150,7 +150,13 @@ function updateButton() {
 		return;
 	}
 	const id = name.split("|")[0];
-	if (lib.skill[id] || packData.skill[id]) {
+	if (currentButton) {
+		// 编辑态：仅当改成已存在的其它 id 时才禁用（旧 1878-1884）
+		if ((currentButton as any).link !== id && (lib.skill[id] || packData.skill[id])) {
+			editDisabled.value = true;
+			return;
+		}
+	} else if (lib.skill[id] || packData.skill[id]) {
 		editDisabled.value = true;
 		return;
 	}
@@ -195,12 +201,10 @@ function onEditCode() {
 }
 
 // ---------------------------------------------------------------------------
-// 引用确认（旧 2130-2175）
+// 技能对象序列化为 code（旧 2039/2133 同款，需处理 getter/setter 与 Symbol）
 // ---------------------------------------------------------------------------
-function onCiteConfirm() {
-	showCitePanel.value = false;
-	const skillInfo = lib.skill[citeTargetSelect.value];
-	code =
+function skillToCode(skillInfo: any): string {
+	return (
 		"skill=" +
 		(() => {
 			const obj = Object.defineProperty(get.copy(skillInfo), "_priority", {
@@ -226,10 +230,43 @@ function onCiteConfirm() {
 			});
 			str += "}";
 			return str;
-		})();
+		})()
+	);
+}
+
+// ---------------------------------------------------------------------------
+// 引用确认（旧 2130-2175）
+// ---------------------------------------------------------------------------
+function onCiteConfirm() {
+	showCitePanel.value = false;
+	code = skillToCode(lib.skill[citeTargetSelect.value]);
 	if (lib.translate[citeTargetSelect.value + "_info"]) {
 		skillDescription.value = lib.translate[citeTargetSelect.value + "_info"];
 	}
+}
+
+// ---------------------------------------------------------------------------
+// 编辑已有技能（旧 1914-1979 clickButton）：
+// 点击已有技能按钮切换编辑模式，加载技能数据到表单；再次点击同一按钮退出编辑
+// ---------------------------------------------------------------------------
+let currentButton: HTMLElement | null = null;
+
+function onSkillButtonClick(button: HTMLElement) {
+	if (currentButton === button) {
+		resetEditor();
+		return;
+	}
+	resetEditor();
+	currentButton = button;
+	showForm.value = true;
+	const id = (button as any).link as string;
+	const translate = packData.translate[id];
+	skillName.value = translate && translate !== id ? `${id}|${translate}` : id;
+	skillDescription.value = packData.translate[id + "_info"] || "";
+	code = skillToCode(packData.skill[id]);
+	editButtonText.value = "编辑技能";
+	deleteButtonText.value = "删除";
+	editDisabled.value = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +281,20 @@ function onCreateSkill() {
 	name = name.split("|");
 	const translate = name[1] || name[0];
 	const id = name[0];
-	if (lib.skill[id] || packData.skill[id]) {
+	if (currentButton) {
+		// 编辑态：id 未变走更新路径；改名则校验新 id 并迁移数据（旧 2204-2217）
+		const oldId = (currentButton as any).link as string;
+		if (oldId !== id) {
+			if (lib.skill[id] || packData.skill[id]) {
+				alert("技能名与现有技能重复，请更改");
+				return;
+			}
+			delete packData.skill[oldId];
+			delete packData.translate[oldId];
+			delete packData.translate[oldId + "_info"];
+			(currentButton as any).link = id;
+		}
+	} else if (lib.skill[id] || packData.skill[id]) {
 		alert("技能名与现有技能重复，请更改");
 		return;
 	}
@@ -257,6 +307,11 @@ function onCreateSkill() {
 	} catch {
 		packData.skill[id] = {};
 	}
+	if (currentButton) {
+		currentButton.innerHTML = translate;
+	} else {
+		createButton(id);
+	}
 	resetEditor();
 }
 
@@ -264,8 +319,12 @@ function onCreateSkill() {
 // 删除技能（旧 2251-2274）
 // ---------------------------------------------------------------------------
 function onDeleteSkill() {
-	if (deleteButtonText.value === "删除") {
-		// TODO: 删除当前编辑技能
+	if (deleteButtonText.value === "删除" && currentButton) {
+		const id = (currentButton as any).link as string;
+		currentButton.remove();
+		delete packData.skill[id];
+		delete packData.translate[id];
+		delete packData.translate[id + "_info"];
 	}
 	resetEditor();
 }
@@ -281,6 +340,7 @@ function onBack() {
 // resetEditor（旧 1987-2008）
 // ---------------------------------------------------------------------------
 function resetEditor() {
+	currentButton = null;
 	skillName.value = "";
 	skillDescription.value = "";
 	showForm.value = false;
@@ -299,7 +359,8 @@ function createButton(name: string) {
 	const button = ui.create.div(".menubutton");
 	(button as any).link = name;
 	button.innerHTML = packData.translate[name];
-	button.insertBefore(button, buttonsRef.value.childNodes[0]);
+	button.onclick = () => onSkillButtonClick(button as unknown as HTMLElement);
+	buttonsRef.value.insertBefore(button, buttonsRef.value.childNodes[0] || null);
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +368,8 @@ function createButton(name: string) {
 // ---------------------------------------------------------------------------
 function reset(name?: string) {
 	resetEditor();
+	// 切换/新建扩展时重置音频资源池（旧 1886）
+	for (const key in audioData) delete audioData[key];
 	if (buttonsRef.value) buttonsRef.value.innerHTML = "";
 	if (name && lib.extensionPack[name]) {
 		const pack = lib.extensionPack[name].skill || { skill: {}, translate: {} };
@@ -322,7 +385,6 @@ function reset(name?: string) {
 	}
 }
 
-// TODO: 阶段 6 —— 编辑已有技能功能（旧版 clickButton）：点击已有技能按钮切换编辑模式，加载技能数据到表单
 // ---------------------------------------------------------------------------
 // 暴露数据/方法供 ExtensionMaker 使用
 // ---------------------------------------------------------------------------

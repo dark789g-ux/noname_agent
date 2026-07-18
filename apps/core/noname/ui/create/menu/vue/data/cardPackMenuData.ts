@@ -1,7 +1,7 @@
-import { markRaw, type Component } from "vue";
+import { markRaw, ref, type Component } from "vue";
 import type { menuData, LeftPaneItem, RightPaneContext } from "../types";
 import { lib, game } from "noname";
-import { setUpdateActiveCard } from "../index.js";
+import { setUpdateActiveCard, menuUpdates } from "../menuState";
 import CardPackPane from "../components/CardPackPane.vue";
 
 // ---------------------------------------------------------------------------
@@ -9,8 +9,18 @@ import CardPackPane from "../components/CardPackPane.vue";
 // 右栏渲染由 CardPackPane.vue 负责（rightPaneComponent）
 // ---------------------------------------------------------------------------
 
-/** 已构建的卡牌包名集合（用于 refreshCardPack 去重） */
-const _createdPackNames: string[] = [];
+/** 左栏数据（模块级，refreshCardPack 动态追加新包） */
+let _leftPaneItems: LeftPaneItem[] = [];
+
+// ---------------------------------------------------------------------------
+// 响应式版本号：refreshCardPack 调用后递增，驱动左栏刷新
+// ---------------------------------------------------------------------------
+
+const _version = ref(0);
+
+function triggerUpdate() {
+	_version.value++;
+}
 
 /**
  * 工厂函数：根据 connectMenu 构建卡牌包页的 menuData。
@@ -26,13 +36,14 @@ export function createCardPackMenuData(connectMenu: boolean): menuData {
 	// Vue 版不再手动管理 DOM class，因此 updateNodes 在 Vue 版
 	// 降级为刷新 lib.config 后等待 computed 重渲染。
 	// 旧版 togglePack 调用 updateNodes() 来同步左栏显示 ——
-	// Vue 版的 leftPaneData 只构建一次，.off 状态由 CardPackPane 内部处理。
+	// Vue 版的 leftPaneData 初始构建一次（动态加载的新包由 refreshCardPack 追加），
+	// .off 状态由 CardPackPane 内部处理。
 	// 因此此处不再需要 updateNodes，togglePack 直接操作 lib.config 即可。
 
 	// ---- 旧版 44-59: setUpdateActiveCard ----
 	// Vue 版：updateActiveCard 不再需要遍历 DOM childElementCount，
 	// 而是在切换左栏项时通过 computed 重新渲染 CardPackPane。
-	// 但旧版 updateActiveCard 仍被 index.js:529 调用链间接依赖（阶段 6 切换后移除）。
+	// 旧版 index.js:529 的调用链曾间接依赖 updateActiveCard（旧版 index.js 已删除）。
 	// 保留一个空实现以保持接口兼容。
 	setUpdateActiveCard(function (_node?: any) {
 		// Vue 版：CardPackPane 通过 watch ctx.item.key 自动重新渲染，
@@ -40,15 +51,25 @@ export function createCardPackMenuData(connectMenu: boolean): menuData {
 	});
 
 	// ---- 构建左栏数据 ----
-	const leftPaneData = buildLeftPaneData(connectMenu);
+	_leftPaneItems = buildLeftPaneData(connectMenu);
 
 	// ---- 默认激活项 ----
 	// 对应旧版 510-517：选第一个非隐藏项
-	const defaultActiveKey = getDefaultActiveKey(leftPaneData, connectMenu);
+	const defaultActiveKey = getDefaultActiveKey(_leftPaneItems, connectMenu);
+
+	// ---- 注册 menuUpdates 回调：切换 tab 时触发左栏刷新 ----
+	menuUpdates.push(() => {
+		triggerUpdate();
+	});
 
 	// ---- 返回 menuData ----
 	return {
-		leftPaneData,
+		leftPaneData: _leftPaneItems,
+		getLeftPaneData() {
+			// 触发 _version 依赖，确保 refreshCardPack 追加新包后左栏能刷新
+			void _version.value;
+			return _leftPaneItems;
+		},
 		getRightPane(_ctx: RightPaneContext) {
 			// 右栏由 rightPaneComponent 渲染，返回空数组
 			return [];
@@ -107,8 +128,6 @@ function buildLeftPaneData(connectMenu: boolean): LeftPaneItem[] {
 			continue;
 		}
 		items.push(createLeftPaneItem(packName));
-		// 记录已创建
-		_createdPackNames.push(packName);
 	}
 
 	// ---- 3. 非联机补充（旧版 500-508） ----
@@ -116,21 +135,31 @@ function buildLeftPaneData(connectMenu: boolean): LeftPaneItem[] {
 		Object.keys(lib.cardPack).forEach((key) => {
 			if (!lib.config.all.cards.includes(key)) {
 				items.push(createLeftPaneItem(key));
-				_createdPackNames.push(key);
 			}
 		});
 	}
 
 	// ---- 4. "牌堆" 项（旧版 524-548，仅非联机） ----
 	if (!connectMenu) {
-		// "牌堆" 插在 lefttext（全部开启/关闭/恢复默认）之前，
-		// 但 Vue 版的 lefttext 不作为 LeftPaneItem（它们是按钮），
-		// 所以直接追加到末尾即可。
+		// 旧版将 "牌堆" 插在 lefttext（全部开启/关闭/恢复默认）之前，
+		// 这里先追加 "牌堆"，再在下面追加批量开关动作项，整体顺序与旧版一致。
 		// CardPackPane 中通过 ctx.item.key === "cardpile" 判断特殊渲染。
 		items.push({
 			name: "牌堆",
 			key: "cardpile",
 		});
+	}
+
+	// ---- 5. 批量开关动作项（旧版 650-667 的 3 个 .lefttext 按钮，仅非联机） ----
+	// key 用下划线前缀保留值，不会与卡牌包名冲突；
+	// attrs.action 供 LeftPaneItem 加 .lefttext 样式，attrs.onClick 由
+	// MenuView.onLeftItemClick 拦截执行（不参与左栏选中态）。
+	if (!connectMenu) {
+		items.push(
+			{ name: "全部开启", key: "_batch_on", attrs: { action: true, onClick: () => batchToggleCardPacks("on") } },
+			{ name: "全部关闭", key: "_batch_off", attrs: { action: true, onClick: () => batchToggleCardPacks("off") } },
+			{ name: "恢复默认", key: "_batch_default", attrs: { action: true, onClick: () => batchToggleCardPacks("default") } },
+		);
 	}
 
 	return items;
@@ -164,43 +193,51 @@ function getDefaultActiveKey(
 
 // ---------------------------------------------------------------------------
 // refreshCardPack —— 外部 API 兼容
-// 对应旧版 676-690 的返回值函数，被 ui.updateCardPackMenu.push() 调用。
-// TODO: 阶段 6 接入 —— 当新卡牌包动态加载后，需要把新包追加到 leftPaneData
-// 并触发 Vue 响应式更新。当前阶段（阶段 3F）只做标记，
-// 实际接入需要 leftPaneData 改为 reactive（如 Ref<LeftPaneItem[]>）。
+// 对应旧版 676-690 的返回值函数，被 ui.updateCardPackMenu.push() 调用
+// （push 注册已在 index.ts 的 menu() 中接入）。
+// 已按 characterPack 范式接入响应式左栏：新卡牌包动态加载后，
+// 追加到模块级 _leftPaneItems 并通过 triggerUpdate() 驱动左栏实时刷新。
 // ---------------------------------------------------------------------------
 
 /**
  * 刷新卡牌包列表（动态加载新卡牌包时调用）。
  * 对应旧版 cardPackMenu.js:676-690 的返回函数。
+ * 判断菜单栏有没有加载过这个卡牌包，没有则加入左栏数据。
  *
  * @param packName 新加载的卡牌包名
  * @param connectMenu 是否联机
  */
 export function refreshCardPack(packName: string, connectMenu: boolean): void {
-	// TODO: 阶段 6 接入 —— 将新 packName 追加到 leftPaneData（需要 reactive）
-	// 当前阶段 leftPaneData 在 createCardPackMenuData 调用时一次性构建，
-	// 不支持动态更新。
-	// 阶段 6 接入时：
-	//   1. 将 leftPaneData 改为 reactive/ref
-	//   2. 此函数追加新 LeftPaneItem 到 leftPaneData
-	//   3. 检查是否需要更新 lib.connectCardPack
+	if (_leftPaneItems.some(item => item.key === packName)) {
+		return;
+	}
 	if (!lib.connectCardPack.includes(packName) && !lib.config.all.cards.includes(packName)) {
 		if (!(connectMenu && ["mode_derivation", "mode_banned"].includes(packName))) {
-			_createdPackNames.push(packName);
+			const newItem = {
+				name: lib.translate[packName + "_card_config"] || packName,
+				key: packName,
+			};
+			// 旧版 createModeConfig(packName, start.firstChild, node1) 将新包插在
+			// 「全部开启」按钮之前，这里同样保持批量开关动作项固定在左栏底部。
+			const actionIndex = _leftPaneItems.findIndex(item => item.attrs?.action);
+			if (actionIndex === -1) {
+				_leftPaneItems.push(newItem);
+			} else {
+				_leftPaneItems.splice(actionIndex, 0, newItem);
+			}
 		}
 		if (connectMenu) {
 			// @ts-expect-error Array.prototype.add 是 noname 运行时扩展
 			lib.connectCardPack.add(packName);
 		}
+		triggerUpdate();
 	}
 }
 
 // ---------------------------------------------------------------------------
 // I2: 批量操作函数（全部开启/全部关闭/恢复默认）
 // 对应旧版卡牌包左栏底部的 3 个 .lefttext 按钮。
-// TODO: 阶段 4/6 在左栏 UI 中接入这些函数（如 LeftPaneItem 支持按钮类型，
-//   或在 CardPackPane 底部渲染按钮）。
+// 已通过 buildLeftPaneData 末尾的动作项接入左栏 UI。
 // ---------------------------------------------------------------------------
 
 /**
@@ -208,19 +245,20 @@ export function refreshCardPack(packName: string, connectMenu: boolean): void {
  * @param mode "on" 全部开启 | "off" 全部关闭 | "default" 恢复默认
  */
 export function batchToggleCardPacks(mode: "on" | "off" | "default"): void {
-	// TODO: 阶段 4/6 左栏 UI 接入 —— 当前仅导出数据层函数
-	// 旧版对应 index.js 的 allCard / removeCard / restoreCard
+	// 旧版对应 cardPackMenu.js:652-663 的 3 个 .lefttext 按钮回调：
+	// 一次 saveConfig 完成（saveConfig 本身会写入 lib.config.cards 并持久化）
 	const all = lib.config.all.cards || [];
 	if (mode === "on") {
-		// 全部开启：将所有卡牌包加入 lib.config.cards
-		lib.config.cards = all.slice();
-		game.saveConfig("cards", lib.config.cards);
+		// 全部开启：与旧版一致，集合来源为 lib.config.all.cards
+		// （slice 拷贝避免与 all.cards 共享数组引用）
+		game.saveConfig("cards", all.slice());
 	} else if (mode === "off") {
-		// 全部关闭：清空 lib.config.cards
-		lib.config.cards = [];
-		game.saveConfig("cards", lib.config.cards);
+		// 全部关闭：与旧版一致，清空 lib.config.cards
+		game.saveConfig("cards", []);
 	} else {
-		// 恢复默认
-		game.saveConfig("cards", game.getDefaultConfig("cards"));
+		// 恢复默认：旧版为 game.saveConfig("cards", lib.config.defaultcards)
+		game.saveConfig("cards", lib.config.defaultcards);
 	}
+	// 驱动左栏按最新 config 刷新（与 characterPack 版行为一致）
+	triggerUpdate();
 }

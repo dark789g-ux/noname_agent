@@ -112,7 +112,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
-defineEmits(["back", "create-skill"]);
+const emit = defineEmits(["back", "create-skill"]);
 
 // ---------------------------------------------------------------------------
 // 响应式表单状态
@@ -298,7 +298,13 @@ function updateButton() {
 		return;
 	}
 	const id = name.split("|")[0];
-	if (lib.character[id] || packData.character[id]) {
+	if (currentButton) {
+		// 编辑态：仅当改成已存在的其它 id 时才禁用（旧 650-656）
+		if ((currentButton as any).link !== id && (lib.character[id] || packData.character[id])) {
+			editDisabled.value = true;
+			return;
+		}
+	} else if (lib.character[id] || packData.character[id]) {
 		editDisabled.value = true;
 		return;
 	}
@@ -306,6 +312,101 @@ function updateButton() {
 		editDisabled.value = true;
 		return;
 	}
+	editDisabled.value = false;
+}
+
+// ---------------------------------------------------------------------------
+// 编辑已有武将（旧 671-817 clickButton）：
+// 点击已有武将按钮切换编辑模式，加载武将数据到表单；再次点击同一按钮退出编辑
+// ---------------------------------------------------------------------------
+let currentButton: HTMLElement | null = null;
+
+// 加载阵亡配音（旧 707-750/763-789）：优先取内存 audioData，否则按 ext:/db: 前缀读盘
+async function loadDieAudio(dieAudio: string) {
+	const fileName = dieAudio.slice(dieAudio.lastIndexOf("/") + 1);
+	dieAudioFile = { name: fileName } as unknown as File;
+	if (audioData[fileName]) {
+		dieAudioArrayBuffer = audioData[fileName];
+	} else if (dieAudio.startsWith("ext:") && typeof game.readFile === "function") {
+		try {
+			dieAudioArrayBuffer = await game.promises.readFile(dieAudio.replace("ext:", "extension/"));
+		} catch {
+			console.warn(`未找到${dieAudio.replace("ext:", "extension/")}阵亡配音`);
+		}
+	} else if (dieAudio.startsWith("db:")) {
+		try {
+			dieAudioArrayBuffer = await game.getDB("image", dieAudio.slice(3));
+		} catch {
+			console.warn(`未找到${dieAudio}阵亡配音`);
+		}
+	}
+	if (dieAudioArrayBuffer) {
+		dieAudioBlob = new Blob([dieAudioArrayBuffer]);
+		dieAudioUrl = URL.createObjectURL(dieAudioBlob);
+		dieAudioPreview.value = true;
+	}
+}
+
+async function onCharacterButtonClick(button: HTMLElement) {
+	if (currentButton === button) {
+		resetEditor();
+		return;
+	}
+	resetEditor();
+	currentButton = button;
+	showForm.value = true;
+	const id = (button as any).link as string;
+	const translate = packData.translate[id];
+	charName.value = translate && translate !== id ? `${id}|${translate}` : id;
+	fakemeInited.value = true;
+	fakemeStyle.backgroundImage = button.style.backgroundImage;
+	const info = packData.character[id];
+	let skills: string[] = [];
+	if (Array.isArray(info)) {
+		// 旧数组格式 [sex, group, hp, skills, tags]
+		charSex.value = info[0];
+		charGroup.value = info[1];
+		charHp.value = String(info[2]);
+		skills = info[3] || [];
+		const tags: string[] = Array.isArray(info[4]) ? info[4] : [];
+		isZhu.value = tags.includes("zhu");
+		isBoss.value = tags.includes("boss");
+		isForbidAi.value = tags.includes("forbidai");
+		isHiddenSkill.value = tags.includes("hiddenSkill");
+		for (const tag of tags) {
+			if (tag.startsWith("des:")) charDes.value = tag.slice(4);
+			if (tag.startsWith("die:")) await loadDieAudio(tag.slice(4));
+		}
+	} else {
+		charSex.value = info.sex || "male";
+		charGroup.value = info.group || "wei";
+		charHp.value = info.hujia ? `${info.hp}/${info.maxHp}/${info.hujia}` : info.maxHp != null && info.maxHp !== info.hp ? `${info.hp}/${info.maxHp}` : String(info.hp ?? "");
+		skills = info.skills || [];
+		isZhu.value = !!info.isZhugong;
+		isBoss.value = !!info.isBoss;
+		isForbidAi.value = !!info.isAiForbidden;
+		isHiddenSkill.value = !!info.hasHiddenSkill;
+		const des = (info.trashBin || []).find((tag: string) => tag.startsWith("des:"));
+		if (des) charDes.value = des.slice(4);
+		for (const dieAudio of info.dieAudios || []) {
+			await loadDieAudio(dieAudio);
+		}
+	}
+	for (const skill of skills) {
+		addedSkills.push(skill);
+		if (skillListRef.value) {
+			const btn = document.createElement("button");
+			(btn as any).skill = skill;
+			btn.innerHTML = packData.translate[skill] || lib.translate[skill] || skill;
+			btn.onclick = () => {
+				addedSkills.remove(skill);
+				btn.remove();
+			};
+			skillListRef.value.appendChild(btn);
+		}
+	}
+	editButtonText.value = "编辑武将";
+	deleteButtonText.value = "删除";
 	editDisabled.value = false;
 }
 
@@ -333,7 +434,7 @@ function onAddSkill() {
 }
 
 function onCreateSkill() {
-	// TODO: 阶段 6 —— 跳转到技能编辑器
+	// 跳转到技能编辑器（ExtensionMaker 经 @create-skill 切换 dashboard）
 	emit("create-skill");
 }
 
@@ -349,7 +450,23 @@ function onCreateCharacter() {
 	name = name.split("|");
 	const translate = name[1] || name[0];
 	const id = name[0];
-	if (lib.character[id] || packData.character[id]) {
+	if (currentButton) {
+		// 编辑态：id 未变走更新路径；改名则校验新 id 并迁移数据（旧 1163-1175）
+		const oldId = (currentButton as any).link as string;
+		if (oldId !== id) {
+			if (lib.character[id] || packData.character[id]) {
+				alert("武将名与现有武将重复，请更改");
+				return;
+			}
+			if (imageData[oldId + ".jpg"]) {
+				imageData[id + ".jpg"] = imageData[oldId + ".jpg"];
+				delete imageData[oldId + ".jpg"];
+			}
+			delete packData.character[oldId];
+			delete packData.translate[oldId];
+			(currentButton as any).link = id;
+		}
+	} else if (lib.character[id] || packData.character[id]) {
 		alert("武将名与现有武将重复，请更改");
 		return;
 	}
@@ -395,7 +512,39 @@ function onCreateCharacter() {
 		newChar.dieAudios = [dieAudio];
 	}
 	packData.translate[id] = translate;
-	packData.character[id] = newChar;
+	// 写回（旧 1243-1256）：新项直接赋值；旧数组格式写回数组；旧对象格式就地清理已取消的标记后合并
+	const oldCharacter = packData.character[id];
+	if (!oldCharacter) {
+		packData.character[id] = newChar;
+	} else if (Array.isArray(oldCharacter)) {
+		packData.character[id] = [charSex.value, charGroup.value, hp, [...addedSkills], tags];
+	} else {
+		if (!isZhu.value) delete oldCharacter.isZhugong;
+		if (!isBoss.value) {
+			delete oldCharacter.isBoss;
+			delete oldCharacter.isBossAllowed;
+		}
+		if (!isForbidAi.value) delete oldCharacter.isAiForbidden;
+		if (!isHiddenSkill.value) delete oldCharacter.hasHiddenSkill;
+		if (charDes.value) {
+			oldCharacter.trashBin = (Array.isArray(oldCharacter.trashBin) ? oldCharacter.trashBin : []).filter((tag: string) => !tag.startsWith("des:"));
+			oldCharacter.trashBin.push(`des:${charDes.value}`);
+		} else if (Array.isArray(oldCharacter.trashBin)) {
+			oldCharacter.trashBin = oldCharacter.trashBin.filter((tag: string) => !tag.startsWith("des:"));
+			if (!oldCharacter.trashBin.length) delete oldCharacter.trashBin;
+		}
+		if (!(dieAudioFile && dieAudioArrayBuffer)) delete oldCharacter.dieAudios;
+		Object.assign(oldCharacter, newChar);
+	}
+	if (currentButton) {
+		// 编辑态：更新已有按钮的显示（旧 1260-1266）
+		if (fakemeImage64) {
+			currentButton.style.backgroundImage = `url(${fakemeImage64})`;
+		}
+		(currentButton as any).nodename.innerHTML = get.verticalStr(translate);
+	} else {
+		createButton(id, fakemeImage64 as unknown as string);
+	}
 	resetEditor();
 }
 
@@ -403,13 +552,21 @@ function onCreateCharacter() {
 // 删除武将（旧 1284-1296）
 // ---------------------------------------------------------------------------
 function onDeleteCharacter() {
-	if (deleteButtonText.value === "删除") {
-		// TODO: 删除当前编辑武将
+	if (deleteButtonText.value === "删除" && currentButton) {
+		const id = (currentButton as any).link as string;
+		currentButton.remove();
+		delete packData.character[id];
+		delete packData.translate[id];
+		delete imageData[id + ".jpg"];
+		for (const key in audioData) {
+			if (key.startsWith(id + ".")) delete audioData[key];
+		}
 	}
 	resetEditor();
 }
 
 function resetEditor() {
+	currentButton = null;
 	charName.value = "";
 	charDes.value = "";
 	charHp.value = "";
@@ -427,6 +584,7 @@ function resetEditor() {
 	editButtonText.value = "创建武将";
 	deleteButtonText.value = "取消";
 	editDisabled.value = true;
+	cancelDieAudio();
 	if (skillListRef.value) skillListRef.value.innerHTML = "";
 	addedSkills.length = 0;
 }
@@ -443,6 +601,7 @@ function createButton(name: string, _image: string) {
 	button.style.backgroundSize = "cover";
 	button.noclick = true;
 	button.classList.add("noclick");
+	button.onclick = () => void onCharacterButtonClick(button as unknown as HTMLElement);
 	(button as any).nodename = ui.create.div(button, ".name", get.verticalStr(packData.translate[name]));
 	(button as any).nodename.style.top = "8px";
 	buttonsRef.value.insertBefore(button, buttonsRef.value.childNodes[0] || null);
@@ -452,6 +611,9 @@ function createButton(name: string, _image: string) {
 function reset(name?: string) {
 	resetEditor();
 	imagePromises.length = 0;
+	// 切换/新建扩展时重置资源池（旧 838/855-860）：先清空，下方再从扩展目录读图填入
+	for (const key in imageData) delete imageData[key];
+	for (const key in audioData) delete audioData[key];
 	if (buttonsRef.value) buttonsRef.value.innerHTML = "";
 	if (name && lib.extensionPack[name]) {
 		const pack = lib.extensionPack[name].character || { character: {}, translate: {} };
@@ -460,6 +622,7 @@ function reset(name?: string) {
 		for (const id in packData.character) {
 			const file = id + ".jpg";
 			const url = lib.assetURL + "extension/" + name + "/" + file;
+			createButton(id, url);
 			imagePromises.push(
 				game.promises
 					.readFile(url)
@@ -492,7 +655,6 @@ function updateSkill() {
 	}
 }
 
-// TODO: 阶段 6 —— 编辑已有武将功能（旧版 clickButton）：点击已有武将按钮切换编辑模式，加载武将数据到表单
 // ---------------------------------------------------------------------------
 // 暴露数据/方法供 ExtensionMaker 使用
 // ---------------------------------------------------------------------------

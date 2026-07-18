@@ -10,9 +10,9 @@
 import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { ui, game, get, lib, _status } from "noname";
 import type { RightPaneContext } from "../types";
-import { createConfig } from "../../index.js";
-import { setUpdateActive } from "../index.js";
-import { getConnectMenu, togglePack } from "../data/characterPackMenuData";
+import { createConfig } from "../utils/configBuilder";
+import { setUpdateActive } from "../menuState";
+import { getConnectMenu, togglePack, favouriteVersion } from "../data/characterPackMenuData";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -401,6 +401,17 @@ watch(
 		});
 	},
 );
+
+// ---------------------------------------------------------------------------
+// watch favouriteVersion：收藏变更（ui.click.favouriteCharacter →
+// menuBridge.refreshCharacterPackMenu）后，若当前正在显示 mode_favourite 页则重渲染
+// ---------------------------------------------------------------------------
+
+watch(favouriteVersion, () => {
+	if (mode.value === "mode_favourite") {
+		doRender();
+	}
+});
 
 // ---------------------------------------------------------------------------
 // onMounted：首次渲染 + 注册 updateActive

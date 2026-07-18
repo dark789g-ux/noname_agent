@@ -86,6 +86,7 @@
 import { ref, onMounted, nextTick } from "vue";
 import { lib, game, _status, ui } from "noname";
 import FileManagerImport from "./FileManagerImport.vue";
+import { openPopup, setNoclose } from "../../utils/popupHost";
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -99,6 +100,10 @@ const deleteMode = ref(false);
 const fileListRef = ref<HTMLDivElement>();
 const contentRef = ref<HTMLDivElement>();
 const isDirectoryView = ref(false);
+// 音频预览节点（对应旧版 previewnode，mp3/ogg 选中时播放）
+const audioPreviews = new Map<string, HTMLAudioElement>();
+// 对应旧版 page.clicked：文件项点击后阻止 fileList 的取消选中
+let fileClicked = false;
 
 // ---------------------------------------------------------------------------
 // Dashboard 定义
@@ -234,13 +239,36 @@ function onFileClick(_event: MouseEvent, file: { name: string; ext: string; path
 		return;
 	}
 	file.selected = !file.selected;
-	// TODO: 阶段 6 —— 音频预览（ext=mp3/ogg）需 game.playAudio 适配
+	fileClicked = true;
+	if (file.ext === "mp3" || file.ext === "ogg") {
+		if (file.selected) {
+			if (!audioPreviews.has(file.path)) {
+				// 旧版：game.playAudio(this.path.slice(6))，playAudio 内部自动补 "audio/" 前缀
+				let audio = game.playAudio(file.path.slice(6));
+				if (audio) audioPreviews.set(file.path, audio);
+			}
+		} else {
+			let audio = audioPreviews.get(file.path);
+			if (audio) {
+				audio.remove();
+				audioPreviews.delete(file.path);
+			}
+		}
+	}
 }
 
 function onFileListClick() {
+	if (fileClicked) {
+		fileClicked = false;
+		return;
+	}
 	for (let i = 0; i < currentFiles.value.length; i++) {
 		currentFiles.value[i].selected = false;
 	}
+	for (let audio of audioPreviews.values()) {
+		audio.remove();
+	}
+	audioPreviews.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -310,9 +338,13 @@ function deleteDirectory(path: string) {
 // 对应旧版 addbutton（871-914）
 // ---------------------------------------------------------------------------
 
-function onAddClick() {
-	// TODO: 阶段 6 —— 旧版 openMenu 打开添加菜单（添加文件 / 添加目录），需通过 popupHost 桥接
-	//   临时简化：直接触发文件选择
+function onAddClick(event: MouseEvent) {
+	// 对应旧版 addbutton.menu：构建 .menu 节点，通过 popupHost.openPopup 桥接旧版 openMenu
+	let menu = ui.create.div(".menu");
+	// 添加文件（菜单项内嵌全尺寸透明 fileinput，点击菜单项即触发文件选择）
+	let addFileItem = ui.create.div("", "添加文件", menu, function () {
+		setNoclose();
+	});
 	let input = document.createElement("input");
 	input.className = "fileinput";
 	input.type = "file";
@@ -329,7 +361,34 @@ function onAddClick() {
 			fileReader.readAsArrayBuffer(fileToLoad, "UTF-8");
 		}
 	};
-	input.click();
+	addFileItem.appendChild(input);
+	// 添加目录
+	ui.create.div("", "添加目录", menu, function () {
+		ui.create.templayer();
+		game.prompt("输入目录名称", function (str: string) {
+			if (str) {
+				createDirectory(str);
+			}
+		});
+	});
+	// 定位逻辑与旧版一致：在「添」按钮右侧弹出
+	let pos1 = (event.currentTarget as HTMLElement).getBoundingClientRect();
+	let pos2 = ui.window.getBoundingClientRect();
+	openPopup(menu, pos1.left + pos1.width + 5 - pos2.left, pos1.top - pos2.top);
+}
+
+function createDirectory(str: string) {
+	let refresh = function () {
+		enterDirectory(currentPath.value);
+	};
+	if (lib.node && lib.node.fs) {
+		lib.node.fs.mkdir(__dirname + "/" + currentPath.value + "/" + str, refresh);
+	} else {
+		// @ts-expect-error resolveLocalFileSystemURL 是 Cordova API
+		window.resolveLocalFileSystemURL(localStorage.getItem("noname_inited") + currentPath.value, function (entry: any) {
+			entry.getDirectory(str, { create: true }, refresh);
+		});
+	}
 }
 
 function onDeleteClick() {

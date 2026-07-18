@@ -4,11 +4,11 @@ import MenuView from "./components/MenuView.vue";
 import { menuBridge } from "./utils/menuBridge";
 import { refreshCharacterPack } from "./data/characterPackMenuData";
 import { refreshCardPack } from "./data/cardPackMenuData";
+import { menuUpdates, menuInits } from "./menuState";
 
 // ---------------------------------------------------------------------------
-// 模块级可变变量 —— 与旧版 menu/index.js 导出签名兼容
-// 阶段 6 切换入口时，外部 import { menuContainer, popupContainer, ... }
-// from "./menu/vue/index.js" 即可替代旧版 from "./menu/index.js"
+// 模块级可变导出 —— menuContainer / popupContainer 在 menu() 内赋值，
+// 作为当前菜单的容器实例供模块内共享
 // ---------------------------------------------------------------------------
 
 /**
@@ -23,50 +23,8 @@ export let menuContainer: HTMLDivElement;
  */
 export let popupContainer: HTMLDivElement;
 
-/**
- * 当前激活项的更新回调（由 tab 内部模块通过 setUpdateActive 注入）
- */
-export let updateActive: Function;
-
-/**
- * 设置 updateActive 回调
- */
-export function setUpdateActive(fun: Function) {
-	updateActive = fun;
-}
-
-/**
- * 卡牌激活项的更新回调
- */
-export let updateActiveCard: Function;
-
-/**
- * 设置 updateActiveCard 回调
- */
-export function setUpdateActiveCard(fun: Function) {
-	updateActiveCard = fun;
-}
-
-/**
- * 旧版 createMenu 返回的结构 { menu, pages }
- * 阶段 0 暂保留为 { menu: menuContainer, pages: [] }
- * TODO: 阶段 6 切换入口后，如无外部依赖可移除此导出
- */
-export let menux: { menu: HTMLDivElement; pages: HTMLDivElement[] };
-
-/**
- * 旧版各 page 的 DOM 引用
- * TODO: 阶段 6 切换入口后，如无外部依赖可移除此导出
- */
-export let menuxpages: HTMLDivElement[];
-
-/**
- * 菜单更新回调数组，打开菜单时逐个调用
- */
-export const menuUpdates: Function[] = [];
-
 // ---------------------------------------------------------------------------
-// 内部函数（阶段 0 暂不挂载到 ui.click，阶段 6 切换入口时补接）
+// 内部函数（ui.click.* 系列 API 在 menu() 内挂载，见下方第 4 步）
 // ---------------------------------------------------------------------------
 
 /**
@@ -104,21 +62,47 @@ function clickContainer(container: HTMLDivElement, connectMenu: boolean) {
 }
 
 // ---------------------------------------------------------------------------
+// 动态包刷新回调 —— 模块级稳定引用。
+// menu() 可被多次调用（普通菜单 + 联机菜单），稳定引用配合 includes 去重，
+// 保证 ui.updateCharacterPackMenu / ui.updateCardPackMenu 不重复注册。
+// ---------------------------------------------------------------------------
+
+/** 新武将包动态加载后刷新菜单（与 connectMenu 无关） */
+const updateCharacterPackMenuFn = (packName: string) => refreshCharacterPack(packName);
+
+/** 新卡牌包动态加载后刷新菜单（非联机） */
+const updateCardPackMenuFn = (packName: string) => refreshCardPack(packName, false);
+
+/** 新卡牌包动态加载后刷新菜单（联机，额外维护 lib.connectCardPack） */
+const updateCardPackMenuConnectFn = (packName: string) => refreshCardPack(packName, true);
+
+/** menuInits 是否已执行（装配期一次性初始化，重复创建菜单不重跑） */
+let menuInitsDone = false;
+
+// ---------------------------------------------------------------------------
 // 主装配函数 menu(connectMenu)
 // ---------------------------------------------------------------------------
 
 /**
  * 创建菜单容器、弹出容器，挂载 Vue 应用。
- * 与旧版 menu() 签名兼容，阶段 6 切换入口时直接替代旧版。
+ * 已替代旧版 menu/index.js 的 menu()，经 ui/create/index.js 挂到 ui.create.menu。
  *
  * @param connectMenu 是否联机菜单
  */
-export function menu(connectMenu: boolean) {
+export function menu(connectMenu: boolean = false) {
 	// 0. 重启保护计时器（旧 427-429）：非联机且非同步菜单时，1秒后重置
 	let menuTimeout: ReturnType<typeof setTimeout> | null = null;
 	if (!connectMenu && !(game as any).syncMenu) {
-		// @ts-expect-error reset 是运行时方法
 		menuTimeout = setTimeout(() => (lib.init as any).reset(), 1000);
+	}
+
+	// 执行菜单初始化钩子（由各 data 模块注册；只执行一次，重复创建菜单不重跑，
+	// 首次执行时 polyfill 已加载、lib.configMenu 已就绪）
+	if (!menuInitsDone) {
+		menuInitsDone = true;
+		for (const init of menuInits) {
+			init();
+		}
 	}
 
 	// 1. 创建 menuContainer（.menu-container.hidden，挂在 ui.window）
@@ -129,7 +113,7 @@ export function menu(connectMenu: boolean) {
 		() => {
 			clickContainer(cacheMenuContainer, connectMenu);
 		},
-		));
+	));
 
 	// 联机时添加 centermenu 类，避免被 #window.shortcutpaused > div:not(.centermenu) 设为半透明
 	if (connectMenu) {
@@ -160,15 +144,10 @@ export function menu(connectMenu: boolean) {
 	const app = createApp(MenuView, { connectMenu });
 	app.mount(cacheMenuContainer);
 
-	// 4. 赋值旧版兼容变量
-	menux = { menu: cacheMenuContainer, pages: [] };
-	menuxpages = [];
+	// 4. 补接外部 API（1:1 迁移旧版 menu/index.js:453-514）
 
-	// 5. 补接外部 API（1:1 迁移旧版 menu/index.js:453-514）
-
-	// 5a. 非联机分支：ui.menuContainer + ui.click.configMenu
+	// 4a. 非联机分支：ui.menuContainer + ui.click.configMenu
 	if (!connectMenu) {
-		// @ts-expect-error menuContainer 是运行时挂在 ui 上的属性，TS 类型声明缺失
 		ui.menuContainer = cacheMenuContainer;
 		ui.click.configMenu = function () {
 			ui.click.shortcut(false);
@@ -188,19 +167,11 @@ export function menu(connectMenu: boolean) {
 			}
 		};
 	} else {
-		// 5b. 联机分支：ui.connectMenuContainer + ui.click.connectMenu
+		// 4b. 联机分支：ui.connectMenuContainer + ui.click.connectMenu
 		// @ts-expect-error connectMenuContainer 是运行时挂在 ui 上的属性，TS 类型声明缺失
 		ui.connectMenuContainer = cacheMenuContainer;
 		ui.click.connectMenu = function () {
 			if (cacheMenuContainer.classList.contains("hidden")) {
-				// @ts-expect-error waitingForPlayer 是运行时挂在 _status 上的属性
-				if (_status.waitingForPlayer) {
-					// TODO: 联机 waitingForPlayer 的 DOM 遍历逻辑（旧版 index.js:480-496）
-					// 旧版遍历 menux.pages[0].firstChild 的子节点设置 active/unselectable。
-					// 新版数据驱动，menux.pages 为空数组，此处需要重新设计为数据驱动版本。
-					// 核心逻辑：设置启动按钮文本为"设"，高亮当前 lib.configOL.mode 对应的项。
-					// 暂保留联机菜单基本功能（hidden 切换 + menuUpdates + shortcutpaused）。
-				}
 				ui.window.classList.add("shortcutpaused");
 				cacheMenuContainer.classList.remove("hidden");
 				for (let i = 0; i < menuUpdates.length; i++) {
@@ -212,45 +183,58 @@ export function menu(connectMenu: boolean) {
 		};
 	}
 
-	// 5c. ui.click.menuTab —— 切换到指定 tab（被 identity.js、index.js 等调用）
+	// 4b2. menuBridge.closeMenu —— 供 Vue 组件关闭当前菜单
+	// （OtherPane 作弊执行后调用，对应旧版 cheatButton listen 中的 clickContainer）
+	menuBridge.closeMenu = () => clickContainer(cacheMenuContainer, connectMenu);
+
+	// 4c. ui.click.menuTab —— 切换到指定 tab（被 identity.js、index.js 等调用）
 	ui.click.menuTab = function (tab: string) {
 		menuBridge.setActiveTab?.(tab);
 	};
 
-	// 5d. ui.click.extensionTab —— 切换到"扩展"tab + 指定扩展项（被 brawl.js 调用）
+	// 4d. ui.click.extensionTab —— 切换到"扩展"tab + 指定扩展项（被 brawl.js 调用）
+	// 左栏项 key = 扩展名本身（见 extensionMenuData.ts buildLeftPaneData）
 	ui.click.extensionTab = function (name: string) {
 		ui.click.menuTab("扩展");
-		// TODO: 阶段后续 —— 切到 name 扩展的左栏项
-		// 需扩展 menuBridge 支持 setActiveLeftItem("扩展", extensionKey)
+		menuBridge.setActiveLeftItem?.("扩展", name);
 	};
 
-	// 5e. ui.click.consoleMenu —— 切换到"其它"tab + 命令页（被 otherMenu、FileManagerImport 调用）
+	// 4e. ui.click.consoleMenu —— 切换到"其它"tab + 命令页（被 otherMenu、FileManagerImport 调用）
+	// 旧版 clickMode.call(ui.commandnode) 触发命令节点点击；Vue 版经 menuBridge 切左栏
 	ui.click.consoleMenu = function () {
 		ui.click.menuTab("其它");
-		// TODO: 阶段后续 —— 切到命令左栏项
-		// 旧版 clickMode.call(ui.commandnode) 触发命令节点点击
+		menuBridge.setActiveLeftItem?.("其它", "command");
 	};
 
-	// 5f. ui.updateCharacterPackMenu / ui.updateCardPackMenu —— 动态加载包时刷新
+	// 4e2. game.editExtension —— 稳定桥：切到"扩展"tab 的"制作扩展"页并加载指定扩展
+	// （被扩展菜单"编辑此扩展"按钮调用，见 game/index.js importExtension）。
+	// ExtensionMaker 以 v-if 挂载，未挂载窗口期经 menuBridge.pendingEditExtensionName
+	// 暂存，组件 onMounted 消费（替代旧版 ExtensionMaker onMounted 直接覆写
+	// game.editExtension —— 该引用随组件卸载失效，属不稳定挂载）。
+	// @ts-expect-error game.editExtension 是旧版外部 API，TS 类型声明缺失
+	game.editExtension = (name?: string) => {
+		menuBridge.setActiveLeftItem?.("扩展", "extension_maker");
+		if (menuBridge.openExtensionMaker) {
+			menuBridge.openExtensionMaker(name);
+		} else {
+			menuBridge.pendingEditExtensionName = name;
+		}
+	};
+
+	// 4f. ui.updateCharacterPackMenu / ui.updateCardPackMenu —— 动态加载包时刷新
 	// 被 library/index.js 的 Proxy set 陷阱调用（forEach）
-	if (!ui.updateCharacterPackMenu) {
-		// @ts-expect-error updateCharacterPackMenu 是运行时属性，初始为数组
-		ui.updateCharacterPackMenu = [];
+	// 两个数组在 ui/index.js 已初始化为 []；稳定引用 + includes 去重注册
+	if (!ui.updateCharacterPackMenu.includes(updateCharacterPackMenuFn)) {
+		ui.updateCharacterPackMenu.push(updateCharacterPackMenuFn);
 	}
-	// @ts-expect-error updateCharacterPackMenu.push 传入闭包
-	ui.updateCharacterPackMenu.push((packName: string) => refreshCharacterPack(packName));
-
-	if (!ui.updateCardPackMenu) {
-		// @ts-expect-error updateCardPackMenu 是运行时属性，初始为数组
-		ui.updateCardPackMenu = [];
+	const updateCardPackFn = connectMenu ? updateCardPackMenuConnectFn : updateCardPackMenuFn;
+	if (!ui.updateCardPackMenu.includes(updateCardPackFn)) {
+		ui.updateCardPackMenu.push(updateCardPackFn);
 	}
-	// @ts-expect-error updateCardPackMenu.push 传入闭包
-	ui.updateCardPackMenu.push((packName: string) => refreshCardPack(packName, connectMenu));
 
-	// 6. 重启保护计时器清理（旧 537-541）：各 tab 已就绪，取消重启保护
+	// 5. 重启保护计时器清理（旧 537-541）：各 tab 已就绪，取消重启保护
 	if (menuTimeout) {
 		clearTimeout(menuTimeout);
-		// @ts-expect-error resetExtension 是运行时全局属性
 		delete (window as any).resetExtension;
 		localStorage.removeItem(lib.configprefix + "disable_extension");
 	}

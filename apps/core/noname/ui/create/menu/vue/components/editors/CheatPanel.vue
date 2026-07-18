@@ -53,7 +53,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { ui, game, get, lib, _status } from "noname";
-import { menuUpdates } from "../../../index.js";
+import { menuUpdates } from "../../menuState";
 
 // ---------------------------------------------------------------------------
 // 状态

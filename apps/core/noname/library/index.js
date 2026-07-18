@@ -5157,6 +5157,78 @@ export class Library {
 				},
 			},
 		},
+		llm: {
+			name: "AI / LLM",
+			config: {
+				llm_enabled: {
+					name: "启用 LLM AI 助手",
+					init: false,
+					intro: "启用后，AI 玩家决策改由 LLM 接管；失败/超时自动回退本地 AI。注意：浏览器模式需自建代理（CORS），Electron 模式可直接使用。",
+				},
+				llm_url: {
+					name: "API 地址",
+					init: "",
+					input: true,
+					intro: "OpenAI 兼容的 API baseURL（SDK 会自动拼接 /chat/completions）。如 https://api.openai.com/v1 或 http://localhost:11434/v1。浏览器模式需自建代理（CORS），Electron 模式可直接使用。",
+					onblur: function () {
+						game.saveConfig("llm_url", this.innerHTML.replace(/<br>/g, ""));
+					},
+				},
+				llm_apikey: {
+					name: "API 密钥",
+					init: "",
+					input: true,
+					intro: "API Key。敏感信息，仅存本地 IndexedDB，不会上传 git或任何远端。",
+					onblur: function () {
+						game.saveConfig("llm_apikey", this.innerHTML.replace(/<br>/g, ""));
+					},
+				},
+				llm_model: {
+					name: "模型名称",
+					init: "",
+					input: true,
+					intro: "要调用的模型，如 gpt-4o-mini、deepseek-chat 等",
+					onblur: function () {
+						game.saveConfig("llm_model", this.innerHTML.replace(/<br>/g, ""));
+					},
+				},
+				llm_thinking_effort: {
+					name: "思考深度",
+					init: "medium",
+					item: {
+						none: "无",
+						low: "低",
+						medium: "中",
+						high: "高",
+					},
+					intro: "推理模型的思考投入程度（reasoning_effort）。非推理模型选「无」。",
+				},
+				llm_max_retries: {
+					name: "最大重试次数",
+					init: "0",
+					item: {
+						0: "0（不重试）",
+						1: "1 次",
+						2: "2 次",
+						3: "3 次",
+					},
+					intro: "LLM 请求失败时的自动重试次数（由 openai SDK 执行）。0 表示不重试，与旧版行为一致。",
+				},
+				llm_timeout: {
+					name: "超时（秒）",
+					init: "30",
+					input: true,
+					intro: "LLM 请求超时秒数，超时自动回退本地 AI",
+					onblur: function () {
+						let val = parseInt(this.innerHTML.replace(/<br>/g, ""));
+						if (isNaN(val) || val < 1) val = 30;
+						if (val > 300) val = 300;
+						this.innerHTML = String(val);
+						game.saveConfig("llm_timeout", val);
+				},
+			},
+			}
+		},
 		others: {
 			name: "其它",
 			config: {

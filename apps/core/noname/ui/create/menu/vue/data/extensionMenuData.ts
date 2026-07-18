@@ -1,7 +1,6 @@
 import { markRaw, ref } from "vue";
 import { lib, game, get, ui } from "noname";
 import type { menuData, LeftPaneItem, RightPaneContext } from "../types";
-import type { SelectConfigData } from "../../../../../../typings/type";
 import ExtensionPane from "../components/ExtensionPane.vue";
 
 // ---------------------------------------------------------------------------
@@ -139,15 +138,15 @@ function getLeftPaneData(): LeftPaneItem[] {
 
 // ---------------------------------------------------------------------------
 // 外部 API 兼容性标注
-// TODO: 阶段 6 —— 以下外部 API 需要跨组件协调接入
+// 以下外部 API 均已接入
 //
-// 1. ui.click.extensionTab(name)（旧 43-51）
-//    - 需调用 menuTab("扩展") + 切换到指定扩展的左栏项
-//    - menuTab 是 MenuView 的方法，需通过事件总线或全局状态触发
+// 1. ui.click.extensionTab(name)（旧 43-51）—— 已接入
+//    - vue/index.ts 经 menuBridge.setActiveLeftItem("扩展", name) 切换
+//    - 扩展左栏项 key = 扩展名（见上方 buildLeftPaneData）
 //
-// 2. game.editExtension(name)（旧 182/259）
-//    - 需要切换到 "制作扩展" 页面并加载指定扩展
-//    - 由 ExtensionMaker 内部实现
+// 2. game.editExtension(name)（旧 182/259）—— 已接入
+//    - vue/index.ts 稳定挂载，经 menuBridge.openExtensionMaker +
+//      pendingEditExtensionName 桥接到 ExtensionMaker
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

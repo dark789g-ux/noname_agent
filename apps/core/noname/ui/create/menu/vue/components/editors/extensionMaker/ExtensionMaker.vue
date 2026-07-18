@@ -103,10 +103,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import { lib, game, get, ui } from "noname";
 import { security } from "@/util/sandbox";
 import { delay } from "@/util/index";
+import { menuBridge } from "../../../utils/menuBridge";
 import CharacterEditor from "./CharacterEditor.vue";
 import CardEditor from "./CardEditor.vue";
 import SkillEditor from "./SkillEditor.vue";
@@ -474,11 +475,21 @@ function editExtension(name?: string) {
 
 // ---------------------------------------------------------------------------
 // 外部 API 桥接（旧 182/259）
-// TODO: 阶段 6 —— game.editExtension 需要从全局接入
+// game.editExtension 稳定桥挂在 vue/index.ts menu() 内，经 menuBridge 分发：
+// 本组件以 v-if 挂载，onMounted 注册 openExtensionMaker 并消费
+// 未挂载窗口期暂存的 pendingEditExtensionName，onUnmounted 置 null。
 // ---------------------------------------------------------------------------
 onMounted(() => {
-	// @ts-expect-error game.editExtension 是旧版外部 API，阶段 6 统一接入
-	game.editExtension = editExtension;
+	menuBridge.openExtensionMaker = editExtension;
+	if (menuBridge.pendingEditExtensionName != null) {
+		const name = menuBridge.pendingEditExtensionName;
+		menuBridge.pendingEditExtensionName = null;
+		editExtension(name);
+	}
+});
+
+onUnmounted(() => {
+	menuBridge.openExtensionMaker = null;
 });
 
 // ---------------------------------------------------------------------------

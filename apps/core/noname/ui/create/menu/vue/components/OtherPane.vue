@@ -21,6 +21,9 @@
 		<!-- 录像页 -->
 		<VideoManager v-else-if="ctx.item.key === 'video'" />
 
+		<!-- LLM 日志页 -->
+		<LLMLogViewer v-else-if="ctx.item.key === 'llm_log'" />
+
 		<!-- 帮助页（key 形如 help_xxx） -->
 		<InfoPages
 			v-else-if="ctx.item.key?.startsWith('help_') && ctx.item.key !== 'help_toggle'"
@@ -37,6 +40,8 @@ import InfoPages from "./editors/InfoPages.vue";
 import CheatPanel from "./editors/CheatPanel.vue";
 import CommandConsole from "./editors/CommandConsole.vue";
 import VideoManager from "./editors/VideoManager.vue";
+import LLMLogViewer from "./editors/LLMLogViewer.vue";
+import { menuBridge } from "../utils/menuBridge";
 
 interface Props {
 	ctx: RightPaneContext;
@@ -44,17 +49,11 @@ interface Props {
 
 defineProps<Props>();
 
-defineEmits<{
-	(e: "cheat-executed"): void;
-}>();
-
 /**
  * 作弊执行后的回调
- * 对应旧版 clickContainer 调用
+ * 对应旧版 cheatButton listen 中的 clickContainer 调用：关闭菜单
  */
 function onCheatExecuted() {
-	// TODO: 阶段 6 —— 对应旧版 cheatButton listen 中的
-	// clickContainer.call(cacheMenuContainer, connectMenu)
-	// 需要从 MenuView 注入 closeMenu 方法
+	menuBridge.closeMenu?.();
 }
 </script>

@@ -1,4 +1,4 @@
-import { get, ui } from "noname";
+import { get, ui, lib } from "noname";
 import { popupContainer } from "../index";
 
 /**
@@ -84,4 +84,33 @@ export function setNoclose() {
 	if (!popupContainer) return;
 	// @ts-expect-error noclose 是运行时挂在 popupContainer 上的自定义属性
 	popupContainer.noclose = true;
+}
+
+/**
+ * openSwitcherPopup —— 1:1 迁移旧版 clickSwitcher 的定位+打开逻辑（index.js:60-98）。
+ * 三分支定位算法：visual / >10项居中 / 普通。
+ * @param menuEl 已构建好的 .menu 节点
+ * @param nodeEl 对应的 .config.switcher 节点
+ */
+export function openSwitcherPopup(menuEl: HTMLDivElement, nodeEl: HTMLElement) {
+	const pos1 = nodeEl.lastChild!.getBoundingClientRect();
+	const pos2 = ui.window.getBoundingClientRect();
+	const clientX = pos1.left + pos1.width + 5 - pos2.left;
+	let clientY = pos1.top - pos2.top;
+
+	if (menuEl.classList.contains("visual")) {
+		openPopup(menuEl, clientX, clientY, () => {
+			nodeEl.classList.remove("on");
+		});
+	} else if (menuEl.childElementCount > 10) {
+		clientY = Math.min((ui.window.offsetHeight - 400) / 2, pos1.top - pos2.top);
+		lib.setScroll(menuEl);
+		openPopup(menuEl, clientX, clientY, () => {
+			nodeEl.classList.remove("on");
+		});
+	} else {
+		openPopup(menuEl, clientX, clientY, () => {
+			nodeEl.classList.remove("on");
+		});
+	}
 }

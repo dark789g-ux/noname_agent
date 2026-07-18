@@ -15,17 +15,18 @@
 				@click="onTogglePack"
 			>
 				<span>开启</span>
+				<NonameToggle />
 			</div>
 
-			<!-- 包信息文本 -->
-			<div
+			<!-- 包信息文本（旧版 insertAdjacentHTML 的 <p>，直挂 .menu-buttons） -->
+			<p
 				v-if="modeInfoText"
-				class="card-pack-info"
+				style="padding-left: 2em;"
 				v-html="modeInfoText"
-			></div>
+			></p>
 
-			<!-- 卡牌按钮网格（命令式渲染到 container） -->
-			<div ref="buttonsContainer"></div>
+			<!-- 卡牌按钮网格（命令式渲染到 container；menu.css 中 display: contents 消除包裹层盒子） -->
+			<div ref="buttonsContainer" class="card-pack-buttons"></div>
 
 			<!-- 隐藏卡牌包（仅非联机） -->
 			<div
@@ -51,6 +52,7 @@ import { lib, game, get, _status, ui } from "noname";
 import type { RightPaneContext } from "../types";
 import CardPileEditor from "./editors/CardPileEditor.vue";
 import CardPileManager from "./editors/CardPileManager.vue";
+import NonameToggle from "./NonameToggle.vue";
 
 interface Props {
 	ctx: RightPaneContext;
@@ -162,7 +164,7 @@ const modeInfoText = computed(() => {
 	if (!info) return "";
 	// 注意：v-html 只在可信内容上使用。lib.translate 内容来自扩展数据，
 	// 与旧版 insertAdjacentHTML 一致。
-	return '<p style="padding-left: 2em;">' + info + "</p>";
+	return info;
 });
 
 // ---------------------------------------------------------------------------
@@ -255,17 +257,9 @@ function banCard(this: HTMLElement, e: Event) {
  */
 function updateBanned(this: HTMLElement) {
 	let list;
-	if (connectMenu.value) {
-		// @ts-expect-error menux 是兼容旧版的全局状态
-		const menux = (window as any).menux;
-		if (menux && menux.pages && menux.pages[0]) {
-			const activeEl = menux.pages[0].firstChild?.querySelector(".active");
-			if (activeEl && activeEl.mode) {
-				// @ts-expect-error connect_<mode>_bannedcards 是运行时动态属性
-				list = lib.config["connect_" + activeEl.mode + "_bannedcards"];
-			}
-		}
-	} else {
+	// 联机分支旧版依赖 menux.pages DOM 读取当前模式的 connect_<mode>_bannedcards，
+	// 该 DOM 已随旧版菜单移除，此分支待重新设计为数据驱动版本
+	if (!connectMenu.value) {
 		// @ts-expect-error get.mode() + _bannedcards 是运行时属性
 		list = lib.config[get.mode() + "_bannedcards"];
 	}
@@ -409,10 +403,3 @@ onMounted(() => {
 	});
 });
 </script>
-
-<style>
-.card-pack-info {
-	margin: 0;
-	padding: 0;
-}
-</style>

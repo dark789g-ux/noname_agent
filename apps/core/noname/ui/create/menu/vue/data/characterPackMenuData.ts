@@ -2,7 +2,8 @@ import { markRaw, ref } from "vue";
 import { game, get, lib } from "noname";
 import type { menuData, LeftPaneItem, RightPaneContext } from "../types";
 import CharacterPackPane from "../components/CharacterPackPane.vue";
-import { setUpdateActive, menuUpdates } from "../index.js";
+import { setUpdateActive, menuUpdates } from "../menuState";
+import { menuBridge } from "../utils/menuBridge";
 
 // ---------------------------------------------------------------------------
 // 模块级状态：当前 connectMenu 值（由工厂捕获）
@@ -61,6 +62,12 @@ const _version = ref(0);
 function triggerUpdate() {
 	_version.value++;
 }
+
+/**
+ * 收藏变更版本号：menuBridge.refreshCharacterPackMenu 触发递增，
+ * CharacterPackPane watch 后在显示 mode_favourite 页时重渲染右栏。
+ */
+export const favouriteVersion = ref(0);
 
 // ---------------------------------------------------------------------------
 // 判断一个 mode 是否处于开启状态（用于左栏 .off 标记）
@@ -173,6 +180,18 @@ function buildLeftPaneData(connectMenu: boolean): LeftPaneItem[] {
 		});
 	}
 
+	// 5. 批量开关动作项（旧版 470-492 的 3 个 .lefttext 按钮，仅非联机）
+	// key 用下划线前缀保留值，不会与武将包名冲突；
+	// attrs.action 供 LeftPaneItem 加 .lefttext 样式，attrs.onClick 由
+	// MenuView.onLeftItemClick 拦截执行（不参与左栏选中态）。
+	if (!connectMenu) {
+		items.push(
+			{ name: "全部开启", key: "_batch_on", attrs: { action: true, onClick: () => batchToggleCharacterPacks("on") } },
+			{ name: "全部关闭", key: "_batch_off", attrs: { action: true, onClick: () => batchToggleCharacterPacks("off") } },
+			{ name: "恢复默认", key: "_batch_default", attrs: { action: true, onClick: () => batchToggleCharacterPacks("default") } },
+		);
+	}
+
 	return items;
 }
 
@@ -191,12 +210,18 @@ let _leftPaneItems: LeftPaneItem[] = [];
 export function getLeftPaneItems(): LeftPaneItem[] {
 	// 触发 _version 依赖，确保 togglePack 后左栏能刷新
 	void _version.value;
-	return _leftPaneItems.map(item => ({
-		...item,
-		attrs: {
-			enabled: isPackEnabled(item.key),
-		},
-	}));
+	return _leftPaneItems.map(item => {
+		// 动作项（批量开关）不参与开关状态标记，保留原 attrs（action/onClick）
+		if (item.attrs?.action) {
+			return item;
+		}
+		return {
+			...item,
+			attrs: {
+				enabled: isPackEnabled(item.key),
+			},
+		};
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -227,13 +252,13 @@ export function createCharacterPackMenuData(connectMenu: boolean): menuData {
 	});
 
 	const data: menuData = {
-			leftPaneData: _leftPaneItems,
+		leftPaneData: _leftPaneItems,
 
-			getLeftPaneData() {
-				return getLeftPaneItems();
-			},
+		getLeftPaneData() {
+			return getLeftPaneItems();
+		},
 
-			getRightPane(_ctx: RightPaneContext) {
+		getRightPane(_ctx: RightPaneContext) {
 			// 右栏由 CharacterPackPane 渲染，不返回配置项
 			return [];
 		},
@@ -251,10 +276,9 @@ export function createCharacterPackMenuData(connectMenu: boolean): menuData {
 
 // ---------------------------------------------------------------------------
 // 外部 API：刷新武将包（旧 501-513 返回值）
-// TODO: 阶段 6 接入 ui.updateCharacterPackMenu.push(refreshCharacterPack)
-//   旧版 ui.updateCharacterPackMenu.push(characterPackMenu(connectMenu))
-//   在 index.js:524-525。阶段 6 入口切换时，在 index.ts 的 menu() 中
-//   调用 refreshCharacterPack 或将此函数推入 ui.updateCharacterPackMenu。
+// 已通过 index.ts 的 menu() 接入：
+//   ui.updateCharacterPackMenu.push(packName => refreshCharacterPack(packName))
+//   （旧版为 index.js:524-525 的 ui.updateCharacterPackMenu.push(characterPackMenu(connectMenu))）
 // ---------------------------------------------------------------------------
 
 /**
@@ -268,10 +292,18 @@ export function refreshCharacterPack(packName: string): void {
 		return;
 	}
 	if (!lib.connectCharacterPack.includes(packName) && !lib.config.all.characters.includes(packName)) {
-		_leftPaneItems.push({
+		const newItem = {
 			name: lib.translate[packName + "_character_config"] || packName,
 			key: packName,
-		});
+		};
+		// 旧版 createModeConfig(packName, start.firstChild, node1) 将新包插在
+		// 「全部开启」按钮之前，这里同样保持批量开关动作项固定在左栏底部。
+		const actionIndex = _leftPaneItems.findIndex(item => item.attrs?.action);
+		if (actionIndex === -1) {
+			_leftPaneItems.push(newItem);
+		} else {
+			_leftPaneItems.splice(actionIndex, 0, newItem);
+		}
 		if (_connectMenu) {
 			lib.connectCharacterPack.add(packName);
 		}
@@ -280,18 +312,33 @@ export function refreshCharacterPack(packName: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// TODO: 阶段 6 外部 API —— ui.favouriteCharacter
-// 旧版 414: ui.favouriteCharacter = favouriteCharacterNode.link
-// Vue 版没有 favouriteCharacterNode DOM，无法直接赋值。
-// 需要在阶段 6 评估外部代码如何使用 ui.favouriteCharacter，
-// 再决定是否提供替代方案（如 ref 引用 CharacterPackPane 实例）。
+// 外部 API：收藏变更刷新 —— 旧版 ui.favouriteCharacter 的桥接替代
+// 旧版 414: ui.favouriteCharacter = favouriteCharacterNode.link（DOM 引用），
+// Vue 版由 menuBridge.refreshCharacterPackMenu 替代：ui.click.favouriteCharacter
+// 收藏变更后调用，重建左栏数据（收藏项显隐）并递增 favouriteVersion，
+// 驱动 CharacterPackPane 重渲染当前显示的 mode_favourite 页。
+// 模块级注册：无组件生命周期依赖，菜单 app 存活期间始终可用。
 // ---------------------------------------------------------------------------
+
+/**
+ * 重建左栏数据并触发刷新（原地修改，保持 menuData.leftPaneData 等既有引用有效）。
+ * 收藏项显隐逻辑在 buildLeftPaneData 内（空收藏不生成 mode_favourite 项，
+ * 与旧版空则隐藏对齐）。
+ */
+function refreshCharacterPackMenu() {
+	const items = buildLeftPaneData(_connectMenu);
+	_leftPaneItems.length = 0;
+	_leftPaneItems.push(...items);
+	triggerUpdate();
+	favouriteVersion.value++;
+}
+
+menuBridge.refreshCharacterPackMenu = refreshCharacterPackMenu;
 
 // ---------------------------------------------------------------------------
 // I2: 批量操作函数（全部开启/全部关闭/恢复默认）
 // 对应旧版武将包左栏底部的 3 个 .lefttext 按钮。
-// TODO: 阶段 4/6 在左栏 UI 中接入这些函数（如 LeftPaneItem 支持按钮类型，
-//   或在 CharacterPackPane 底部渲染按钮）。
+// 已通过 buildLeftPaneData 末尾的动作项接入左栏 UI。
 // ---------------------------------------------------------------------------
 
 /**
@@ -299,23 +346,24 @@ export function refreshCharacterPack(packName: string): void {
  * @param mode "on" 全部开启 | "off" 全部关闭 | "default" 恢复默认
  */
 export function batchToggleCharacterPacks(mode: "on" | "off" | "default"): void {
-	// TODO: 阶段 4/6 左栏 UI 接入 —— 当前仅导出数据层函数
-	// 旧版对应 index.js 的 allCharacter / removeCharacter / restoreCharacter
+	// 旧版对应 characterPackMenu.js:472-490 的 3 个 .lefttext 按钮回调：
+	// 一次 saveConfig 完成；扩展包无 saveExtensionConfig 特殊路径，
+	// 仅以 mode_extension_ 前缀键进入 lib.config.characters
 	if (mode === "on") {
-		// 全部开启：将所有武将包加入 lib.config.characters
-		const all = lib.config.all.characters || [];
-		for (let i = 0; i < all.length; i++) {
-			togglePack(all[i], true);
-		}
+		// 全部开启：与旧版一致，集合为 Object.keys(lib.characterPack)
+		// 过滤 mode_（已安装的 stock 扩展包除外）
+		game.saveConfig(
+			"characters",
+			Object.keys(lib.characterPack).filter(name => {
+				return !name.startsWith("mode_") || (name.startsWith("mode_extension_") && lib.config.all.stockextension.includes(name.slice(15)));
+			})
+		);
 	} else if (mode === "off") {
-		// 全部关闭：将所有武将包从 lib.config.characters 移除
-		const all = lib.config.all.characters || [];
-		for (let i = 0; i < all.length; i++) {
-			togglePack(all[i], false);
-		}
+		// 全部关闭：与旧版一致，清空 lib.config.characters
+		game.saveConfig("characters", []);
 	} else {
-		// 恢复默认
-		game.saveConfig("characters", game.getDefaultConfig("characters"));
-		triggerUpdate();
+		// 恢复默认：旧版为 game.saveConfig("characters", lib.config.defaultcharacters)
+		game.saveConfig("characters", lib.config.defaultcharacters);
 	}
+	triggerUpdate();
 }

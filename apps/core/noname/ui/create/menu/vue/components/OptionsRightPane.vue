@@ -24,13 +24,13 @@
 				/>
 				<!-- import_data_button 特殊渲染 -->
 				<div v-if="hasImportDataButton" class="config" style="display: none">
-					<!-- TODO: 阶段 6 —— 旧版 ui.import_data_button = cfgnode 外部 API -->
+					<!-- ui.import_data_button 无外部消费方，数据层（导入→重载）已生效 -->
 					<input type="file" style="width: 153px" @change="onImportDataChange" />
 					<button @click="onImportDataClick">确定</button>
 				</div>
 				<!-- import_music 特殊渲染 -->
 				<div v-if="hasImportMusic" class="config">
-					<!-- TODO: 阶段 6 —— 旧版 ui.background_music_setting 外部 API -->
+					<!-- ui.background_music_setting 已数据驱动化，经 menuBridge.refreshOptionsConfig 刷新 -->
 					<input type="file" accept="audio/*" style="width: 153px" @change="onImportMusicChange" />
 					<button @click="onImportMusicClick">导入音乐</button>
 				</div>

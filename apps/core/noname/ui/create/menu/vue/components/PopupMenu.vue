@@ -1,5 +1,5 @@
 /**
- * 当前阶段未启用，NonameConfig 内联了菜单构建逻辑。保留作声明式重构参考。
+ * 当前未启用：NonameConfig 内联了菜单构建逻辑，本组件保留作声明式重构参考。
  */
 <template>
 	<!-- PopupMenu 不渲染到自己的模板位置，而是通过 popupHost 挂到全局 popupContainer -->
