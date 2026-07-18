@@ -4,6 +4,7 @@
 
 import { lib, game, get, _status, ui, ai } from "noname";
 import { isClass } from "@/util/index.js";
+import { record } from "./loadErrors.js";
 
 /**
  * 读取导入的卡牌包信息
@@ -240,6 +241,7 @@ export async function loadExtension(extension) {
 			try {
 				await extension[1].call(extension, extension[2], extension[4]);
 			} catch (e) {
+				record({ stage: "extension", name: extension[0], error: e });
 				console.log(`加载《${extension[0]}》扩展的content时出现错误。`, e);
 				if (!lib.config.ignore_error) {
 					alert(`加载《${extension[0]}》扩展的content时出现错误。
@@ -404,9 +406,10 @@ ${(e instanceof Error ? e.stack : String(e))}`);
 		}
 		delete _status.extension;
 		delete _status.evaluatingExtension;
-	} catch (e) {
-		console.error(e);
-	}
+		} catch (e) {
+			record({ stage: "extension", name: extension[0], error: e });
+			console.error(e);
+		}
 }
 
 /**

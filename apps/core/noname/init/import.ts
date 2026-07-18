@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { lib, game, _status } from "noname";
+import { record, recordDisabledExtension } from "./loadErrors.js";
 
 export async function importCardPack(name: string) {
 	await importFunction("card", `/card/${name}`);
@@ -33,15 +34,12 @@ export async function importExtension(name: string) {
 		// }
 	} catch (e) {
 		console.error(`扩展《${name}》加载失败`, e);
-		let close = confirm(`扩展《${name}》加载失败，是否关闭此扩展？错误信息: \n${e instanceof Error ? e.stack : String(e)}`);
-		if (close) {
-			game.saveConfig(`extension_${name}_enable`, false);
-			// @ts-expect-error ignore
-			await game.import("extension", await createEmptyExtension(name));
-			// if (_status.extensionLoading) {
-			// 	await Promise.all(_status.extensionLoading);
-			// }
-		}
+		// 自动禁用失败扩展 + 记录（不阻塞 boot，启动后由恢复对话框统一报告）
+		game.saveConfig(`extension_${name}_enable`, false);
+		recordDisabledExtension(name);
+		record({ stage: "extension", name, error: e });
+		// @ts-expect-error ignore
+		await game.import("extension", await createEmptyExtension(name));
 	}
 }
 

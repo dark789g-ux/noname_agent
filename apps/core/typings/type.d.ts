@@ -713,6 +713,13 @@ declare interface SelectConfigData {
 
     /** 内部属性，记录当前配置的key */
     _name?: string;
+
+    /**
+     * Vue 重构新增：响应式可见性标记。
+     * 由 update 函数的适配器 .hide()/.show() 翻转，NonameConfig 的 v-show 响应。
+     * 旧版通过 DOM classList 的 "hidden" class 实现，新版改为数据驱动。
+     */
+    _hidden?: boolean;
 }
 
 /** 
@@ -934,34 +941,33 @@ type Stat = {
     allSkills?: number;
 }
 
+declare interface LeftPaneItem {
+    /** 显示名 */
+    name: string;
+    /** 数据标识 */
+    key: string;
+    /** 附加属性 */
+    attrs?: Record<string, any>;
+}
+
+declare interface RightPaneContext {
+    /** 是否联机菜单 */
+    connectMenu: boolean;
+    /** 当前左栏选中项 */
+    item: LeftPaneItem;
+    /** 启动按钮元素引用 */
+    startButtonEl: HTMLElement | null;
+}
+
 declare interface menuData {
-    /** 菜单左方的数据列表 */
-    leftPaneData: { name: string; attrs: Record<string, any> }[][];
-    /** 缓存的vue实例 */
-    rightPaneApps: Map<
-      HTMLElement,
-      { element: HTMLElement; app: import("vue").App<HTMLElement> }
-    >;
-    /** 响应式的config */
-    configDatas: Map<string, {
-      [key: string]: SelectConfigData;
-      update: (config: any, map: any) => any;
-    }>;
-    /** 初始化菜单左方的数据列表
-     * @param connectMenu 是否是联机菜单
-     */
-    initLeftPaneData(connectMenu: boolean): { name: string; attrs: Record<string, any> }[][];
-    /** 获取默认选中的元素 */
-    getDefaultActive(
-      connectMenu: boolean,
-      nodes: HTMLElement[]
-    ): HTMLElement | void;
-    /** 初始化配置 */
-    initConfigs(
-      connectMenu: boolean,
-      node: HTMLElement,
-      startButton: HTMLElement
-    ): void;
-    /** 右方html模板 */
-    rightPaneTemplate: import("vue").Component;
+    /** 左栏数据源 */
+    leftPaneData: LeftPaneItem[];
+    /** 可选的左栏数据 getter（支持响应式更新） */
+    getLeftPaneData?: () => LeftPaneItem[];
+    /** 右栏要渲染的配置项列表 */
+    getRightPane(ctx: RightPaneContext): SelectConfigData[];
+    /** 获取默认选中项的 key */
+    getDefaultActiveKey(connectMenu: boolean): string | null;
+    /** 右栏使用哪个 Vue 组件渲染 */
+    rightPaneComponent?: import("vue").Component;
 }

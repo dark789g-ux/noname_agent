@@ -20,6 +20,7 @@ import { Check } from "./check.js";
 import { security } from "@/util/sandbox.js";
 import { save } from "@/util/config.js";
 import { debounce } from "@/util/utils.js";
+import { menuBridge } from "@/ui/create/menu/vue/utils/menuBridge";
 
 export class Game {
 	documentZoom;
@@ -916,9 +917,6 @@ export class Game {
 	 * 在设置选项中添加一首背景音乐
 	 */
 	addBackgroundMusic(link, musicName, aozhan) {
-		const backgroundMusicSetting = ui[aozhan ? "aozhan_bgm" : "background_music_setting"],
-			menu = backgroundMusicSetting._link.menu,
-			config = backgroundMusicSetting._link.config;
 		if (typeof musicName != "string") {
 			musicName = link;
 		}
@@ -926,29 +924,11 @@ export class Game {
 			lib.mode.guozhan.config.aozhan_bgm.item[link] = musicName;
 		} else {
 			lib.config.all.background_music.add(link);
+			lib.configMenu.audio.config.background_music.item[link] = musicName;
 		}
-		config.item[link] = musicName;
-		const textMenu = ui.create.div(
-			"",
-			musicName,
-			menu,
-			function () {
-				const node = this.parentNode._link,
-					config = node._link.config;
-				node._link.current = this.link;
-				const tmpName = node.lastChild.innerHTML;
-				node.lastChild.innerHTML = config.item[this._link];
-				if (config.onclick && config.onclick.call(node, this._link, this) === false) {
-					node.lastChild.innerHTML = tmpName;
-				}
-				if (config.update) {
-					config.update();
-				}
-			},
-			menu.childElementCount - 2
-		);
-		textMenu._link = link;
-		config.updatex.call(backgroundMusicSetting, []);
+		// 数据驱动：经 menuBridge 刷新 Vue 选项菜单（替代旧版 ui.background_music_setting DOM 操作）；
+		// aozhan_bgm 在国战模式 startMenu 渲染，refreshOptionsConfig 对其为 no-op
+		menuBridge.refreshOptionsConfig?.(aozhan ? "aozhan_bgm" : "background_music");
 	}
 	/**
 	 * Remove a background music from the config option
@@ -971,9 +951,9 @@ export class Game {
 			}
 			lib.config.all.background_music.remove(link);
 		}
-		const backgroundMusicSetting = ui[aozhan ? "aozhan_bgm" : "background_music_setting"],
-			config = backgroundMusicSetting._link.config;
-		config.updatex.call(backgroundMusicSetting, []);
+		// 数据驱动：经 menuBridge 刷新 Vue 选项菜单（替代旧版 ui.background_music_setting DOM 操作）；
+		// aozhan_bgm 在国战模式 startMenu 渲染，refreshOptionsConfig 对其为 no-op
+		menuBridge.refreshOptionsConfig?.(aozhan ? "aozhan_bgm" : "background_music");
 	}
 	updateBackground() {
 		const background = _status.tempBackground || lib.config.image_background;

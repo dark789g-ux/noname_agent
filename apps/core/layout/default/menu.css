@@ -143,6 +143,12 @@
 	margin-left: 3px !important;
 }
 
+/* .menu-buttons 内内容必须直挂（.menu-buttons div 为后代选择器，复位均为直接子代）；
+   卡牌按钮网格的命令式包裹层用 display: contents 消除自身盒子 */
+.menu-buttons > .card-pack-buttons {
+	display: contents;
+}
+
 .menu-buttons > .toggle.cardpilecfgadd:not(.hidden) {
 	margin-top: 0 !important;
 }
@@ -198,8 +204,8 @@
 }
 
 .menu-container > .menu.main.center {
-	left: calc(50% - 200px);
-	top: calc(50% - 150px);
+	left: calc(50% - var(--menu-w, 400px) / 2);
+	top: calc(50% - var(--menu-h, 300px) / 2);
 }
 
 .menu-container.hidden > .menu.main {
@@ -225,6 +231,9 @@
 .menu.main {
 	width: 400px;
 	height: 300px;
+	min-width: 320px;
+	min-height: 240px;
+	resize: both;
 	position: absolute;
 	overflow: hidden;
 	padding: 0;
@@ -716,8 +725,8 @@
 }
 
 .menu.main > .menu-content > div > .menubutton.round {
-	left: 335px;
-	top: 197px;
+	right: 25px;
+	bottom: 25px;
 	z-index: 3;
 	transition-property: color, box-shadow;
 	transition-duration: 0.3s;
@@ -2176,4 +2185,39 @@ div.popup-container.editor2 > div {
 
 #window:not(.nopointer) .popup-container > .prompt-container > div > div > div > .menubutton {
 	cursor: pointer;
+}
+
+/* ---- input 形态配置项的可编辑区域（contenteditable div）样式 ---- */
+.menu.main .config-input {
+	position: absolute;
+	right: 0;
+	height: 25px;
+	min-width: 120px;
+	max-width: 60%;
+	padding: 0 6px;
+	box-sizing: border-box;
+	border: 1px solid rgba(136, 136, 136, 0.6);
+	border-radius: 3px;
+	background: rgba(0, 0, 0, 0.06);
+	color: inherit;
+	font-size: 16px;
+	line-height: 25px;
+	text-align: left;
+	overflow: hidden;
+	white-space: nowrap;
+	cursor: text;
+}
+.menu.main .config-input:hover {
+	border-color: rgba(100, 100, 100, 0.9);
+}
+.menu.main .config-input:focus {
+	outline: none;
+	border-color: #3097c5;
+	background: rgba(255, 255, 255, 0.4);
+}
+/* 占位符：内容为空时显示配置项名称（取自 data-placeholder 属性，由 NonameConfig.vue 设置） */
+.menu.main .config-input:empty::before {
+	content: attr(data-placeholder);
+	color: #999;
+	font-style: italic;
 }

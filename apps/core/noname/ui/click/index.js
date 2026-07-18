@@ -1,4 +1,5 @@
 import { lib, game, get, _status, ui } from "noname";
+import { menuBridge } from "@/ui/create/menu/vue/utils/menuBridge";
 export class Click {
 	/**
 	 * @type {() => void}
@@ -635,47 +636,8 @@ export class Click {
 				this.innerHTML = "添加收藏";
 				lib.config.favouriteCharacter.remove(this.link);
 			}
-			if (ui.favouriteCharacter) {
-				if (lib.config.favouriteCharacter.includes(this.link)) {
-					for (var i = 0; i < ui.favouriteCharacter.childElementCount; i++) {
-						if (ui.favouriteCharacter.childNodes[i].link == this.link) {
-							break;
-						}
-					}
-					if (i == ui.favouriteCharacter.childElementCount) {
-						ui.create
-							.button(this.link, "character", ui.favouriteCharacter)
-							.listen(function (e) {
-								this._banning = "offline";
-								ui.click.touchpop();
-								ui.click.intro.call(this, e);
-								_status.clicked = false;
-								delete this._banning;
-							})
-							.classList.add("noclick");
-					}
-				} else {
-					for (var i = 0; i < ui.favouriteCharacter.childElementCount; i++) {
-						if (ui.favouriteCharacter.childNodes[i].link == this.link) {
-							ui.favouriteCharacter.childNodes[i].remove();
-							break;
-						}
-					}
-				}
-				var shownode = false;
-				for (var i = 0; i < lib.config.favouriteCharacter.length; i++) {
-					var favname = lib.config.favouriteCharacter[i];
-					if (lib.character[favname]) {
-						shownode = true;
-						break;
-					}
-				}
-				if (shownode) {
-					ui.favouriteCharacter.node.style.display = "";
-				} else {
-					ui.favouriteCharacter.node.style.display = "none";
-				}
-			}
+			// Vue 菜单数据驱动：经 menuBridge 刷新武将包菜单（替代旧版 ui.favouriteCharacter DOM 桥接）
+			menuBridge.refreshCharacterPackMenu?.();
 			game.saveConfig("favouriteCharacter", lib.config.favouriteCharacter);
 		}
 		e.stopPropagation();

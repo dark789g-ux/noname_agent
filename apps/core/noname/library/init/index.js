@@ -13,67 +13,91 @@ export class LibInit {
 		return this.#promises;
 	}
 
-	reset() {
-		if (window.inSplash) {
+	/**
+	 * 完整重置：清 localStorage（保留 noname_inited 和联机 key）+ 删 indexedDB data 库 + reload。
+	 * 行为与改造前桌面端分支一致，确保零回归。
+	 */
+	doFullReset() {
+		var onlineKey = localStorage.getItem(lib.configprefix + "key");
+		var nonameInited = localStorage.getItem("noname_inited");
+		localStorage.clear();
+		if (nonameInited) {
+			localStorage.setItem("noname_inited", nonameInited);
+		}
+		if (onlineKey) {
+			localStorage.setItem(lib.configprefix + "key", onlineKey);
+		}
+		if (indexedDB) {
+			indexedDB.deleteDatabase(lib.configprefix + "data");
+		}
+		setTimeout(function () {
+			window.location.reload();
+		}, 200);
+	}
+
+	/**
+	 * 启动超时或加载失败时触发，弹出三选一恢复对话框。
+	 * @param {string} [context] - 'timeout'（超时，可能只是慢）| 'error'（明确报错）| 'force'（强制弹窗，绕过 inSplash 短路）| undefined（等同 timeout）
+	 */
+	reset(context) {
+		// inSplash 期间默认静默（除非 force），保留原短路行为
+		if (window.inSplash && context !== "force") {
 			return;
 		}
-		if (window.resetExtension) {
-			if (confirm("游戏似乎未正常载入，有可能因为部分扩展未正常载入，或者因为部分扩展未载入完毕。\n是否禁用扩展并重新打开？")) {
-				window.resetExtension();
-				window.location.reload();
-			}
-		} else {
-			if (lib.device) {
-				if (navigator.notification) {
-					navigator.notification.confirm(
-						"游戏似乎未正常载入，是否重置游戏？",
-						function (index) {
-							if (index == 2) {
-								localStorage.removeItem("noname_inited");
-								window.location.reload();
-							} else if (index == 3) {
-								var noname_inited = localStorage.getItem("noname_inited");
-								var onlineKey = localStorage.getItem(lib.configprefix + "key");
-								localStorage.clear();
-								if (noname_inited) {
-									localStorage.setItem("noname_inited", noname_inited);
-								}
-								if (onlineKey) {
-									localStorage.setItem(lib.configprefix + "key", onlineKey);
-								}
-								if (indexedDB) {
-									indexedDB.deleteDatabase(lib.configprefix + "data");
-								}
-								setTimeout(function () {
-									window.location.reload();
-								}, 200);
-							}
+
+		var self = this;
+
+			// 动态导入恢复对话框 + 错误收集器（避免 boot 早期加载负担）
+			Promise.all([
+				import("./recoveryDialog.js"),
+				import("../../init/loadErrors.js"),
+			])
+				.then(function (modules) {
+					var showRecoveryDialog = modules[0].showRecoveryDialog;
+					var loadErrors = modules[1];
+					showRecoveryDialog({
+						context: context || "timeout",
+						errorSummary: loadErrors.summarize(),
+						hasFailedExtensions: loadErrors.getDisabledExtensions().length > 0,
+						onWait: function () {
+							// 用户选择继续等待：重设超时为当前 2 倍（给慢网更多时间）
+							var prev = parseInt(localStorage.getItem(lib.configprefix + "loadtime") || "10000", 10);
+								var next = Math.min(Math.max(prev * 2, 20000), 120000); // 至少 20 秒，最多 120 秒（2 分钟）
+							localStorage.setItem(lib.configprefix + "loadtime", String(next));
+							window.location.reload();
 						},
-						"确认退出",
-						["取消", "重新下载", "重置设置"]
-					);
-				} else {
+						onSkipExtensions: function () {
+							// 跳过报错扩展：禁用所有扩展并重开（保守做法，与原 resetExtension 一致）
+							if (window.resetExtension) {
+								window.resetExtension();
+							}
+							window.location.reload();
+						},
+						onReset: function () {
+							self.doFullReset();
+						},
+					});
+				})
+				.catch(function () {
+					// 对话框模块加载失败（极端情况），回退到原始 confirm 行为
 					if (confirm("游戏似乎未正常载入，是否重置游戏？")) {
-						localStorage.removeItem("noname_inited");
-						window.location.reload();
+						var onlineKey = localStorage.getItem(lib.configprefix + "key");
+						var nonameInited = localStorage.getItem("noname_inited");
+						localStorage.clear();
+						if (nonameInited) {
+							localStorage.setItem("noname_inited", nonameInited);
+						}
+						if (onlineKey) {
+							localStorage.setItem(lib.configprefix + "key", onlineKey);
+						}
+						if (indexedDB) {
+							indexedDB.deleteDatabase(lib.configprefix + "data");
+						}
+						setTimeout(function () {
+							window.location.reload();
+						}, 200);
 					}
-				}
-			} else {
-				if (confirm("游戏似乎未正常载入，是否重置游戏？")) {
-					var onlineKey = localStorage.getItem(lib.configprefix + "key");
-					localStorage.clear();
-					if (onlineKey) {
-						localStorage.setItem(lib.configprefix + "key", onlineKey);
-					}
-					if (indexedDB) {
-						indexedDB.deleteDatabase(lib.configprefix + "data");
-					}
-					setTimeout(function () {
-						window.location.reload();
-					}, 200);
-				}
-			}
-		}
+				});
 	}
 
 	startOnline = [

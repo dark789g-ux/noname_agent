@@ -7,9 +7,10 @@ import { security, initializeSandboxRealms } from "@/util/sandbox.js";
 import { CacheContext } from "@/library/cache/cacheContext.js";
 import { importCardPack, importCharacterPack, importExtension, importMode } from "./import.js";
 import { loadCard, loadCardPile, loadCharacter, loadExtension, loadMode, loadPlay } from "./loading.js";
+import * as loadErrors from "./loadErrors.js";
 
 // 无名杀，启动！
-export async function boot() {
+async function bootImpl() {
 	// 不想看，反正别动
 	if (typeof __dirname === "string" && __dirname.length) {
 		const dirsplit = __dirname.split("/");
@@ -346,21 +347,37 @@ export async function boot() {
 	toLoad.push(lib.init.promises.js(`${lib.assetURL}character`, "replace"));
 	toLoad.push(lib.init.promises.js(`${lib.assetURL}character`, "perfectPairs"));
 
-	await Promise.allSettled(toLoad);
+	{
+		const _results = await Promise.allSettled(toLoad);
+		_results.forEach(r => {
+			if (r.status === "rejected") loadErrors.record({ stage: "packs", error: r.reason });
+		});
+	}
 
 	if (_status.importing) {
 		let promises = [];
 		for (const type in _status.importing) {
 			promises.addArray(_status.importing[type]);
 		}
-		await Promise.allSettled(promises);
-		delete _status.importing;
+			{
+				const _results = await Promise.allSettled(promises);
+				_results.forEach(r => {
+					if (r.status === "rejected") loadErrors.record({ stage: "importing", error: r.reason });
+				});
+			}
+			delete _status.importing;
 	}
 
 	window.resetGameTimeout = resetGameTimeout;
 	const libOnload = lib.onload;
 	delete lib.onload;
-	libOnload.forEach(fn => fn());
+	libOnload.forEach(fn => {
+		try {
+			fn();
+		} catch (e) {
+			loadErrors.record({ stage: "onload", error: e });
+		}
+	});
 
 	ui.updated();
 	game.documentZoom = game.deviceZoom;
@@ -506,9 +523,20 @@ export async function boot() {
 
 	const libOnload2 = lib.onload2;
 	delete lib.onload2;
-	libOnload2.forEach(fn => fn());
+	libOnload2.forEach(fn => {
+		try {
+			fn();
+		} catch (e) {
+			loadErrors.record({ stage: "onload2", error: e });
+		}
+	});
 
-	await Promise.allSettled(loadingCustomStyle);
+	{
+		const _results = await Promise.allSettled(loadingCustomStyle);
+		_results.forEach(r => {
+			if (r.status === "rejected") loadErrors.record({ stage: "customstyle", error: r.reason });
+		});
+	}
 	delete window.game;
 
 	lib.connectCharacterPack = [];
@@ -586,7 +614,12 @@ export async function boot() {
 	}
 
 	if (Array.isArray(lib.extensions)) {
-		await Promise.allSettled(lib.extensions.map(loadExtension));
+		{
+			const _results = await Promise.allSettled(lib.extensions.map(loadExtension));
+			_results.forEach(r => {
+				if (r.status === "rejected") loadErrors.record({ stage: "extension", error: r.reason });
+			});
+		}
 	}
 
 	if (lib.init.startBefore) {
@@ -604,11 +637,32 @@ export async function boot() {
 	}
 	delete lib.init.start;
 	if (Array.isArray(_status.onprepare) && _status.onprepare.length) {
-		await Promise.allSettled(_status.onprepare);
+		{
+			const _results = await Promise.allSettled(_status.onprepare);
+			_results.forEach(r => {
+				if (r.status === "rejected") loadErrors.record({ stage: "onprepare", error: r.reason });
+			});
+		}
 		delete _status.onprepare;
 	}
 
-	game.loop();
+		// 正常完成时清除超时炸弹（双保险，防异步漏拆）
+		if (window.resetGameTimeout) {
+			clearTimeout(window.resetGameTimeout);
+			delete window.resetGameTimeout;
+		}
+		game.loop();
+	}
+
+export async function boot() {
+	try {
+		await bootImpl();
+	} catch (e) {
+		loadErrors.record({ stage: "boot", error: e });
+			// 触发恢复对话框（force 绕过 inSplash 短路；不 throw 以免 entry.ts 再弹 alert 造成双弹窗）
+			// @ts-expect-error lib.init.reset 接受可选 context 参数，类型定义尚未更新
+			lib.init.reset("force");
+	}
 }
 
 async function getExtensionList() {
@@ -880,6 +934,24 @@ async function loadConfig() {
 	config.set("duration", 500);
 
 	if (!config.get("gameRecord")) config.set("gameRecord", {});
+
+	// 录像简版兜底初始化（对应旧版 otherMenu.js:809）
+	// 旧版在主菜单构建时无条件执行；Vue 重构后挪进 VideoManager.vue onMounted，
+	// 导致用户未点开「录像」标签时 lib.videos / ui.create.videoNode 始终为 undefined，
+	// game.over() 结算时崩溃（index.js:7029 slice / 7093 videoNode 调用）。
+	// 此处在 IndexedDB 就绪后立即初始化简版，VideoManager 挂载时会覆盖为 DOM 增强版。
+	if (!lib.videos) {
+		lib.videos = [];
+	}
+	if (!ui.create.videoNode) {
+		ui.create.videoNode = function (video, before) {
+			lib.videos.remove(video);
+			if (_status.over) {
+				return;
+			}
+			lib.videos[before === true ? "unshift" : "push"](video);
+		};
+	}
 
 	return result;
 }

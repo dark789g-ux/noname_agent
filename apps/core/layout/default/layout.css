@@ -1497,6 +1497,14 @@ div:not(.handcards).menu-buttons > .button.card > .info {
 	transform: scale(0.9) !important;
 	transform-origin: top right;
 }
+div:not(.handcards).menu-buttons > .card-pack-buttons > .button.card > .name {
+	transform: scale(0.9) !important;
+	transform-origin: top left;
+}
+div:not(.handcards).menu-buttons > .card-pack-buttons > .button.card > .info {
+	transform: scale(0.9) !important;
+	transform-origin: top right;
+}
 div:not(.handcards) > .card:not(.thrown) > .info > span,
 .handcards > .card:last-child > .info > span {
 	display: inline !important;
