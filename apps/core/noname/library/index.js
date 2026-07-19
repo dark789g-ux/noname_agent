@@ -5160,11 +5160,19 @@ export class Library {
 		llm: {
 			name: "AI / LLM",
 			config: {
-				llm_enabled: {
-					name: "启用 LLM AI 助手",
-					init: false,
-					intro: "启用后，AI 玩家决策改由 LLM 接管；失败/超时自动回退本地 AI。注意：浏览器模式需自建代理（CORS），Electron 模式可直接使用。",
-				},
+					llm_enabled: {
+						name: "启用 LLM AI 助手",
+						init: false,
+						intro: "启用后，AI 玩家决策改由 LLM 接管；失败/超时自动回退本地 AI。注意：浏览器模式需自建代理（CORS），Electron 模式可直接使用。",
+						onclick(bool) {
+							game.saveConfig("llm_enabled", bool);
+							try {
+								if (typeof ui !== "undefined" && ui.updateAIModeIndicator) {
+									ui.updateAIModeIndicator();
+								}
+							} catch (e) {}
+						},
+					},
 				llm_url: {
 					name: "API 地址",
 					init: "",

@@ -199,6 +199,24 @@ table {
 	margin-right: 6px;
 	position: relative;
 }
+/* AI 模式指示器（剩余牌右侧） */
+#time > .ai-mode-indicator {
+	color: #888;
+	text-shadow: black 0 0 2px;
+}
+#time > .ai-mode-indicator.on {
+	color: #4caf50;
+}
+/* 手机布局：错开 cardPileNumber 位置，放在它下面一行 */
+.touchinfo.right.ai-mode-indicator {
+	right: 14px;
+	top: 28px;
+	color: #888;
+	text-shadow: black 0 0 2px;
+}
+.touchinfo.right.ai-mode-indicator.on {
+	color: #4caf50;
+}
 #shortcut {
 	width: 100%;
 	height: 100%;
@@ -2925,25 +2943,190 @@ div.select-all:not(.card):not(.player) {
 	top: 2px;
 }
 
-.identity .identitycircle {
-	position: relative;
-	width: 20px;
-	height: 20px;
-	left: 1px;
-	top: 1px;
-	border-radius: 100%;
+	.identity .identitycircle {
+		position: relative;
+		width: 20px;
+		height: 20px;
+		left: 1px;
+		top: 1px;
+		border-radius: 100%;
+	}
+
+/* LLM 日志按钮（AI 武将牌右侧） */
+.player > .llm-log-btn {
+	position: absolute;
+	right: -35px;
+	top: 5px;
+	width: 30px;
+	height: 30px;
+	border-radius: 6px;
+	background: rgba(50, 100, 200, 0.9);
+	color: white;
+	font-size: 12px;
+	font-weight: bold;
+	text-align: center;
+	line-height: 30px;
+	cursor: pointer;
+	z-index: 6;
+	user-select: none;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+	transition: background 0.2s;
+}
+.player > .llm-log-btn:hover {
+	background: rgba(80, 130, 230, 1);
+}
+/* linked 状态（铁索连环）下 avatar 旋转 90 度，按钮跟随调整 */
+.player.linked > .llm-log-btn {
+	top: 85px;
 }
 
-.identitycircle > div {
-	width: 18px;
-	height: 18px;
-	left: 1px;
-	top: 1px;
-	border-radius: 100%;
-	overflow: hidden;
-}
+		.identitycircle > div {
+			width: 18px;
+			height: 18px;
+			left: 1px;
+			top: 1px;
+			border-radius: 100%;
+			overflow: hidden;
+		}
 
-.identitycircle > div > div {
+/* Dialog 关闭按钮（openLLMPlayerLog 用） */
+.dialog .close-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	padding: 4px 12px;
+	background: rgba(180, 60, 60, 0.9);
+	color: white;
+	border-radius: 4px;
+	font-size: 12px;
+	cursor: pointer;
+	z-index: 10;
+	user-select: none;
+}
+	.dialog .close-btn:hover {
+		background: rgba(210, 80, 80, 1);
+	}
+
+	/* LLM 日志面板 Dialog（openLLMPlayerLog 用）
+	 * 默认 .dialog 透明无背景且尺寸偏小，这里覆盖：
+	 * - 深色不透明背景（0.92）确保 Vue 组件的 #ddd 浅灰文字可读
+	 * - 相对尺寸 80%，居中显示
+	 * - 左对齐文本（日志内容不应居中）
+	 * - 高 z-index 确保浮在游戏画面之上
+	 */
+		.dialog.llm-log-dialog {
+			/* 用视口单位（vw/vh）而非百分比，避免 dialog 定位上下文无明确高度链导致高度塌缩为 auto */
+			width: 80vw !important;
+			height: 80vh !important;
+			min-width: 400px;
+			min-height: 300px;
+			left: 10vw !important;
+			top: 10vh !important;
+			background: rgba(0, 0, 0, 0.92) !important;
+			border-radius: 8px;
+			box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.6);
+			text-align: left !important;
+			z-index: 15;
+			position: relative;
+			overflow: hidden;
+		}
+
+	/* 让 content-container 占满整个 dialog */
+		.dialog.llm-log-dialog > .content-container {
+			width: 100% !important;
+			height: 100% !important;
+			max-height: none !important;
+			overflow: auto !important;
+		}
+
+	/* caption 区域适配 */
+			.dialog.llm-log-dialog > .content-container > .content > .caption {
+				text-align: left !important;
+				padding: 10px 16px !important;
+				font-size: 16px !important;
+				color: #ddd !important;
+				border-bottom: 1px solid #333 !important;
+			}
+
+		/* .content 元素本身没有 height 声明（layout.css 通用 .content 是 auto），
+		 * 导致子元素 .llm-player-log-container 的百分比高度失效。
+		 * 用 flex column 让 .content 撑满 content-container 并自动分配子元素空间，
+		 * 避免依赖脆弱的像素估算（如 calc(100% - 50px)）。
+		 * 同时覆盖 .content 默认的 font-size: 0px（否则继承字体不可见）。
+		 */
+			.dialog.llm-log-dialog > .content-container > .content {
+				display: flex !important;
+				flex-direction: column !important;
+				width: 100% !important;
+				height: 100% !important;
+				font-size: 12px !important;
+				overflow: visible !important;
+			}
+
+		/* Vue 组件挂载的容器：作为 .content(flex column) 的子元素，用 flex 撑满 caption 之外的剩余空间。
+		 * min-height: 0 是 flex item 可正常 overflow 滚动的必要条件（默认 min-height: auto 会阻止收缩）。
+		 * margin: 0 覆盖 .content > div 注入的 8px/4px margin，避免布局偏移。
+		 */
+			.dialog.llm-log-dialog .llm-player-log-container {
+					flex: 1 1 auto !important;
+					min-height: 0 !important;
+					width: 100% !important;
+					margin: 0 !important;
+					overflow: auto !important;
+				}
+
+			/* === LLMPlayerLogPanel Vue 组件样式（layout.css 全局版本） ===
+			 * 原本通过 LLMPlayerLogPanel.vue 的 <style scoped> 注入，但该组件是项目中
+			 * 唯一通过「动态 import」加载的 scoped SFC，Vite dev 模式下 scoped CSS 注入不稳定，
+			 * 导致 display:flex / color 等规则完全没生效，UI 错乱。
+			 * 这里用 .llm-player-log-container 前缀实现样式隔离，通过 layout.css 的 <link> 稳定加载。
+			 * .vue 文件里的 <style scoped> 保留作为备份，不删除。
+			 */
+			.llm-player-log-container .llm-player-log-panel { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: auto; color: #ddd; font-size: 12px; }
+			.llm-player-log-container .toolbar { display: flex; align-items: center; padding: 6px 8px; border-bottom: 1px solid #444; gap: 6px; }
+			.llm-player-log-container .btn { background: #333; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+			.llm-player-log-container .btn:hover { background: #444; }
+			.llm-player-log-container .active-call { margin: 8px; border: 1px solid #4a9eff; border-radius: 4px; background: rgba(74, 158, 255, 0.08); overflow: hidden; }
+			.llm-player-log-container .active-header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-weight: bold; color: #4a9eff; }
+			.llm-player-log-container .active-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4a9eff; animation: llm-log-pulse 1s ease-in-out infinite; }
+			@keyframes llm-log-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+			.llm-player-log-container .stream-area { padding: 0 8px; }
+			.llm-player-log-container .stream-text { font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: #ccc; margin: 0; max-height: 150px; overflow: auto; background: transparent; border: none; }
+			.llm-player-log-container .active-meta { padding: 4px 8px 6px; color: #888; font-size: 11px; }
+			.llm-player-log-container .history-section { flex: 1; overflow: auto; padding: 8px; }
+			.llm-player-log-container .section-title { font-weight: bold; font-size: 13px; margin-bottom: 6px; color: #aaa; }
+			.llm-player-log-container .empty { text-align: center; padding: 40px 0; color: #666; }
+			.llm-player-log-container .history-list { display: flex; flex-direction: column; gap: 2px; }
+			.llm-player-log-container .history-item { display: flex; align-items: center; padding: 5px 8px; border-radius: 3px; cursor: pointer; gap: 8px; }
+			.llm-player-log-container .history-item:hover { background: rgba(255, 255, 255, 0.06); }
+			.llm-player-log-container .history-item .time { font-family: monospace; font-size: 11px; color: #999; white-space: nowrap; }
+			.llm-player-log-container .history-item .decision { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+			.llm-player-log-container .history-item .duration { font-family: monospace; font-size: 11px; color: #888; }
+			.llm-player-log-container .status-success { color: #4caf50; }
+			.llm-player-log-container .status-fallback { color: #ff9800; }
+			.llm-player-log-container .status-error { color: #f44336; }
+			.llm-player-log-container .status-timeout { color: #ff9800; }
+			.llm-player-log-container .detail-view { padding: 0; }
+			.llm-player-log-container .detail-card { margin: 8px; border: 1px solid #444; border-radius: 4px; overflow: hidden; }
+			.llm-player-log-container .detail-card-title { background: #333; padding: 5px 8px; font-weight: bold; color: #ccc; border-bottom: 1px solid #444; }
+			.llm-player-log-container .detail-card-body { padding: 6px 8px; }
+			.llm-player-log-container .card-error .detail-card-title { color: #f44336; }
+			.llm-player-log-container .card-fallback .detail-card-title { color: #ff9800; }
+			.llm-player-log-container .field { margin: 3px 0; word-break: break-all; }
+			.llm-player-log-container .label { color: #999; margin-right: 4px; }
+			.llm-player-log-container .code-block { background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 3px; padding: 6px 8px; margin: 4px 0; font-size: 11px; font-family: monospace; white-space: pre-wrap; word-break: break-all; overflow: auto; max-height: 200px; color: #ccc; }
+			.llm-player-log-container .msg-card { margin: 4px 0; border: 1px solid #3a3a3a; border-radius: 3px; overflow: hidden; }
+			.llm-player-log-container .msg-role { padding: 3px 6px; font-size: 11px; font-weight: bold; color: #aaa; background: #2a2a2a; border-bottom: 1px solid #3a3a3a; }
+			.llm-player-log-container .msg-system .msg-role { color: #64b5f6; }
+			.llm-player-log-container .msg-user .msg-role { color: #81c784; }
+			.llm-player-log-container .msg-assistant .msg-role { color: #ffb74d; }
+			.llm-player-log-container .msg-card .code-block { border: none; margin: 0; border-radius: 0; }
+			.llm-player-log-container details { margin: 4px 0; }
+			.llm-player-log-container details summary { cursor: pointer; color: #aaa; font-size: 12px; padding: 2px 0; }
+			.llm-player-log-container details summary:hover { color: #ddd; }
+			.llm-player-log-container details[open] summary { margin-bottom: 4px; }
+
+				.identitycircle > div > div {
 	width: 9px;
 	height: 9px;
 	left: 9px;

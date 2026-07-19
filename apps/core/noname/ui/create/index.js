@@ -2489,9 +2489,16 @@ export class Create {
 			ui.cardPileNumber = ui.create.div(ui.gameinfo);
 		}
 		if (!lib.config.show_cardpile_number) {
-			ui.cardPileNumber.style.display = "none";
-		}
-		if (ui.time3) {
+				ui.cardPileNumber.style.display = "none";
+			}
+			// AI 模式指示器（紧挨剩余牌右侧）
+			if (get.is.phoneLayout()) {
+				ui.aiModeIndicator = ui.create.div(".touchinfo.right.ai-mode-indicator", ui.window);
+			} else {
+				ui.aiModeIndicator = ui.create.div(".ai-mode-indicator", ui.gameinfo);
+			}
+			ui.updateAIModeIndicator();
+			if (ui.time3) {
 			ui.time3.starttime = get.utc();
 			ui.time3.interval = setInterval(function () {
 				var num = Math.round((get.utc() - ui.time3.starttime) / 1000);

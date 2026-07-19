@@ -799,7 +799,30 @@ export class UI {
 			ui.cardPileNumber.innerHTML = `${roundNumber}轮 剩余牌: ${cardPileNumber}`;
 		}
 	}
-}
+	updateAIModeIndicator() {
+		if (!ui.aiModeIndicator) return;
+		const enabled = !!lib.config.llm_enabled;
+		ui.aiModeIndicator.innerHTML = enabled ? "AI: 开" : "AI: 关";
+		ui.aiModeIndicator.classList.toggle("on", enabled);
+	}
+	/**
+	 * 更新所有 AI 武将牌上 LLM 日志按钮的显隐。
+	 * - LLM 关闭：所有按钮隐藏
+	 * - LLM 开启 + 玩家是 AI：显示
+	 * - LLM 开启 + 玩家是人类：隐藏
+	 *
+	 * 调用时机：gameStart、LLM 开关切换、玩家加入/离开
+	 */
+	updateLLMLogButtons() {
+		if (!game.players) return;
+		const enabled = !!lib.config.llm_enabled;
+		for (const p of game.players) {
+			if (!p.node || !p.node.llmLogBtn) continue;
+			const isAi = !p.isUnderControl();
+			p.node.llmLogBtn.style.display = enabled && isAi ? "" : "none";
+		}
+	}
+	}
 
 export let ui = new UI();
 

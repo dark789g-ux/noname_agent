@@ -96,6 +96,20 @@ export class Player extends HTMLDivElement {
 		// @ts-expect-error ignore
 		node.link.firstChild.style.backgroundSize = "cover";
 		ui.create.div(node.identity);
+		// LLM 日志按钮（仅 AI 武将显示，默认隐藏）
+		node.llmLogBtn = ui.create.div(".llm-log-btn", player);
+		node.llmLogBtn.innerHTML = "AI";
+		node.llmLogBtn.style.display = "none";
+		node.llmLogBtn.addEventListener("click", function (e) {
+			e.stopPropagation();
+			if (!lib.config.llm_enabled) return;
+			if (player.isUnderControl()) return;
+			import("@/llm/openLLMPlayerLog.js").then(({ openLLMPlayerLog }) => {
+				openLLMPlayerLog(player);
+			}).catch(() => {
+				// 加载失败静默处理
+			});
+		});
 	}
 	buildProperty() {
 		let player = this;
