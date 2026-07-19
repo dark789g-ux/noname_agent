@@ -622,12 +622,23 @@ async function bootImpl() {
 		}
 	}
 
-	if (lib.init.startBefore) {
-		lib.init.startBefore();
-		delete lib.init.startBefore;
-	}
+		if (lib.init.startBefore) {
+			lib.init.startBefore();
+			delete lib.init.startBefore;
+		}
 
-	ui.create.arena();
+		// LLM 模块初始化：动态 import 以避免与 noname.js 的循环依赖 TDZ
+		// （library/index.js:12 静态导入本模块；若本模块顶层静态 import @/llm，
+		//  会形成 noname → library → init → llm → noname 的 TDZ 循环）
+		try {
+			const { initLLMGameHooks, ensureLLMMigrated } = await import("@/llm/index.js");
+			initLLMGameHooks();
+			void ensureLLMMigrated();
+		} catch (_e) {
+			// LLM 模块加载失败不影响游戏启动
+		}
+
+		ui.create.arena();
 	game.createEvent("game", false).setContent(lib.init.start);
 	if (lib.mode[lib.config.mode] && lib.mode[lib.config.mode].fromextension) {
 		const startstr = currentMode.start.toString();

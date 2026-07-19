@@ -1,10 +1,10 @@
-import { get } from "noname";
+import { get, _status } from "noname";
 import { llmLogger } from "./logger.js";
 import { llmEnabled, llmConfigured, getLLMConfig } from "./index.js";
 import { buildContext } from "./context.js";
 import { buildTools } from "./tools.js";
 import { getCandidateCards, getCandidateSkills } from "./candidates.js";
-import { callLLMWithTimeout } from "./client.js";
+import { callLLMWithTimeout, callLLMStream } from "./client.js";
 import { translateResult } from "./apply.js";
 
 /**
@@ -12,16 +12,22 @@ import { translateResult } from "./apply.js";
  * 尝试用 LLM 做出决策，失败时返回 handled: false 让引擎回退到原生 AI。
  */
 export async function tryLLMDecide(event: any): Promise<{ handled: boolean; result?: any }> {
+	// 需求 3：本局未以 AI 模式开局 → 完全不记录日志，直接回退本地 AI
+	if (!(_status as { llmEnabledAtGameStart?: boolean }).llmEnabledAtGameStart) {
+		return { handled: false };
+	}
+
 	const decisionPoint = event.name;
 	const player = event.player;
-	const playerName = player ? get.translation(player) : "unknown";
+	const playerName = player ? player.getName() : "unknown";
+	const seatNum = player ? player.getSeatNum() : undefined;
 	const config = getLLMConfig();
 
 	const logId = llmLogger.start(decisionPoint, playerName, {
 		enabled: config.enabled,
 		configured: !!(config.url && config.apikey && config.model),
 		model: config.model,
-	});
+		}, seatNum);
 
 	try {
 		if (!llmEnabled()) {
@@ -42,8 +48,21 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 		const tools = buildTools(decisionPoint, { cards, skills });
 		llmLogger.logRequest(logId, messages, tools);
 
-		// 调 LLM
-		const toolCall = await callLLMWithTimeout(messages, tools, config);
+		// 优先走流式调用，让 UI 实时看到 args 逐字出现
+		// 服务端不支持 stream 时回退到非流式
+		let toolCall;
+		try {
+			toolCall = await callLLMStream(messages, tools, config, {
+				onChunk: partialArgs => {
+					llmLogger.logStreamChunk(logId, partialArgs);
+				},
+			});
+		} catch (streamErr) {
+			// parse 类错误（空响应、JSON 解析失败）非流式也会失败，不重试直接抛
+			if (streamErr && (streamErr as any).stage === "parse") throw streamErr;
+			// 其它错误（网络、超时、SSE 不支持）：回退到非流式
+			toolCall = await callLLMWithTimeout(messages, tools, config);
+		}
 
 		// 翻译结果
 		const result = translateResult(event, toolCall, { cards, skills });
