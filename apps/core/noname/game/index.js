@@ -9351,13 +9351,21 @@ ${e instanceof Error ? e.stack : String(e)}`);
 						value,
 						event => {
 							if (typeof onSuccess == "function") {
-								onSuccess(event);
+								try {
+									onSuccess(event);
+								} catch (e) {
+									console.error("[putDB] queued onSuccess threw:", e);
+								}
 							}
 							resolve(event);
 						},
 						event => {
 							if (typeof onError == "function") {
-								onError(event);
+								try {
+									onError(event);
+								} catch (e) {
+									console.error("[putDB] queued onError threw:", e);
+								}
 								resolve();
 							} else {
 								reject(event);
@@ -9372,7 +9380,11 @@ ${e instanceof Error ? e.stack : String(e)}`);
 			const record = lib.db.transaction([storeName], "readwrite").objectStore(storeName).put(structuredClone(value), idbValidKey);
 			record.onerror = event => {
 				if (typeof onError == "function") {
-					onError(event);
+					try {
+						onError(event);
+					} catch (e) {
+						console.error("[putDB] onError callback threw:", e);
+					}
 					game.reload2();
 					resolve();
 				} else {
@@ -9383,8 +9395,13 @@ ${e instanceof Error ? e.stack : String(e)}`);
 			record.onsuccess = event => {
 				if (typeof onSuccess == "function") {
 					_status.dburgent = true;
-					onSuccess(event);
-					delete _status.dburgent;
+					try {
+						onSuccess(event);
+					} catch (e) {
+						console.error("[putDB] onSuccess callback threw:", e);
+					} finally {
+						delete _status.dburgent;
+					}
 				}
 				game.reload2();
 				resolve(event);
@@ -9416,13 +9433,21 @@ ${e instanceof Error ? e.stack : String(e)}`);
 						query,
 						result => {
 							if (typeof onSuccess == "function") {
-								onSuccess(result);
+								try {
+									onSuccess(result);
+								} catch (e) {
+									console.error("[getDB] queued onSuccess threw:", e);
+								}
 							}
 							resolve(result);
 						},
 						event => {
 							if (typeof onError == "function") {
-								onError(event);
+								try {
+									onError(event);
+								} catch (e) {
+									console.error("[getDB] queued onError threw:", e);
+								}
 								resolve();
 							} else {
 								reject(event);
@@ -9439,7 +9464,11 @@ ${e instanceof Error ? e.stack : String(e)}`);
 					const idbRequest = lib.db.transaction([storeName], "readwrite").objectStore(storeName).get(query);
 					idbRequest.onerror = event => {
 						if (typeof onError == "function") {
-							onError(event);
+							try {
+								onError(event);
+							} catch (e) {
+								console.error("[getDB] onError callback threw:", e);
+							}
 							game.reload2();
 							resolve();
 						} else {
@@ -9451,8 +9480,13 @@ ${e instanceof Error ? e.stack : String(e)}`);
 						const result = event.target.result;
 						if (typeof onSuccess == "function") {
 							_status.dburgent = true;
-							onSuccess(result);
-							delete _status.dburgent;
+							try {
+								onSuccess(result);
+							} catch (e) {
+								console.error("[getDB] onSuccess callback threw:", e);
+							} finally {
+								delete _status.dburgent;
+							}
 						}
 						game.reload2();
 						resolve(result);
@@ -9464,7 +9498,11 @@ ${e instanceof Error ? e.stack : String(e)}`);
 						object = {};
 					idbRequest.onerror = event => {
 						if (typeof onError == "function") {
-							onError(event);
+							try {
+								onError(event);
+							} catch (e) {
+								console.error("[getDB] onError callback threw:", e);
+							}
 							game.reload2();
 							resolve();
 						} else {
@@ -9481,8 +9519,13 @@ ${e instanceof Error ? e.stack : String(e)}`);
 						}
 						if (typeof onSuccess == "function") {
 							_status.dburgent = true;
-							onSuccess(object);
-							delete _status.dburgent;
+							try {
+								onSuccess(object);
+							} catch (e) {
+								console.error("[getDB] onSuccess callback threw:", e);
+							} finally {
+								delete _status.dburgent;
+							}
 						}
 						game.reload2();
 						resolve(object);
@@ -9514,13 +9557,21 @@ ${e instanceof Error ? e.stack : String(e)}`);
 						query,
 						event => {
 							if (typeof onSuccess == "function") {
-								onSuccess(event);
+								try {
+									onSuccess(event);
+								} catch (e) {
+									console.error("[deleteDB] queued onSuccess threw:", e);
+								}
 							}
 							resolve(event);
 						},
 						event => {
 							if (typeof onError == "function") {
-								onError(event);
+								try {
+									onError(event);
+								} catch (e) {
+									console.error("[deleteDB] queued onError threw:", e);
+								}
 								resolve();
 							} else {
 								reject(event);
@@ -9536,7 +9587,11 @@ ${e instanceof Error ? e.stack : String(e)}`);
 				const record = lib.db.transaction([storeName], "readwrite").objectStore(storeName).delete(query);
 				record.onerror = event => {
 					if (typeof onError == "function") {
-						onError(event);
+						try {
+							onError(event);
+						} catch (e) {
+							console.error("[deleteDB] onError callback threw:", e);
+						}
 						game.reload2();
 						resolve();
 					} else {
@@ -9546,7 +9601,11 @@ ${e instanceof Error ? e.stack : String(e)}`);
 				};
 				record.onsuccess = event => {
 					if (typeof onSuccess == "function") {
-						onSuccess(event);
+						try {
+							onSuccess(event);
+						} catch (e) {
+							console.error("[deleteDB] onSuccess callback threw:", e);
+						}
 					}
 					game.reload2();
 					resolve(event);
