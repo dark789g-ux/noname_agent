@@ -178,8 +178,10 @@
 
 			<!-- 工具栏 -->
 			<div class="toolbar">
-				<button class="btn" @click="refresh">刷新</button>
-				<button class="btn" @click="clearLogs">清空</button>
+				<button class="btn" :disabled="isClearing" @click="refresh">刷新</button>
+				<button class="btn" :disabled="isClearing" @click="clearLogs">
+					{{ isClearing ? "清空中…" : "清空" }}
+				</button>
 			</div>
 		</template>
 	</div>
@@ -187,7 +189,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
-import { llmLogger } from "@/llm/index.js";
+import { llmLogger, type ActiveLogSnapshot, type LogEntry } from "@/llm/logger.js";
 import { lib } from "noname";
 
 const props = defineProps<{
@@ -196,67 +198,109 @@ const props = defineProps<{
 	playerName: string;
 }>();
 
-const currentCall = ref<any>(null);
+const currentCall = ref<LogEntry | null>(null);
 const streamText = ref("");
 const streamStartedAt = ref<number | null>(null);
-const history = ref<any[]>([]);
-const selectedDetail = ref<any>(null);
+const history = ref<LogEntry[]>([]);
+const selectedDetail = ref<LogEntry | null>(null);
 const elapsedMs = ref(0);
+const isClearing = ref(false);
 
-let timers: number[] = [];
+let elapsedTimer: number | null = null;
+let historyQueryGeneration = 0;
 
-// 事件处理器引用，用于 unsubscribe
-const handlers = {
-	start(entry: any) {
-		if (entry.playerSeatNum !== props.playerSeatNum) return;
-		currentCall.value = entry;
-		streamText.value = "";
-		streamStartedAt.value = Date.now();
-		const t = window.setInterval(() => {
-			if (streamStartedAt.value) {
-				elapsedMs.value = Date.now() - streamStartedAt.value;
-			}
-		}, 100);
-		timers.push(t);
-	},
-	chunk(payload: any) {
-		if (!currentCall.value || payload.logId !== currentCall.value.id) return;
-		streamText.value = payload.partialArgs;
-	},
-	end(entry: any) {
-		if (!currentCall.value || entry.id !== currentCall.value.id) return;
-		history.value.unshift(entry);
-		currentCall.value = null;
-		streamText.value = "";
-		streamStartedAt.value = null;
-		elapsedMs.value = 0;
-		timers.forEach(t => clearInterval(t));
-		timers = [];
-	},
-};
+function matchesPlayer(entry: LogEntry): boolean {
+	if ((entry.gameId || "game_unknown") !== props.gameId) return false;
+	if (entry.playerSeatNum !== undefined) return entry.playerSeatNum === props.playerSeatNum;
+	return entry.playerName === props.playerName;
+}
 
-onMounted(async () => {
-	// 初始化历史
-	history.value = await llmLogger.getLogsByGameAndPlayer(
+function mergeHistory(entries: LogEntry[]): void {
+	const merged = new Map<string, LogEntry>();
+	for (const entry of history.value) merged.set(entry.id, entry);
+	for (const entry of entries) merged.set(entry.id, entry);
+	history.value = Array.from(merged.values()).sort((a, b) => b.timestamp - a.timestamp);
+}
+
+function stopElapsedTimer(): void {
+	if (elapsedTimer === null) return;
+	window.clearInterval(elapsedTimer);
+	elapsedTimer = null;
+}
+
+function startElapsedTimer(startedAt: number): void {
+	stopElapsedTimer();
+	streamStartedAt.value = startedAt;
+	elapsedMs.value = Math.max(0, Date.now() - startedAt);
+	elapsedTimer = window.setInterval(() => {
+		if (streamStartedAt.value !== null) {
+			elapsedMs.value = Math.max(0, Date.now() - streamStartedAt.value);
+		}
+	}, 100);
+}
+
+function showActive(snapshot: ActiveLogSnapshot): void {
+	currentCall.value = snapshot.entry;
+	streamText.value = snapshot.partialArgs;
+	startElapsedTimer(snapshot.startedAt);
+}
+
+function clearActive(): void {
+	stopElapsedTimer();
+	currentCall.value = null;
+	streamText.value = "";
+	streamStartedAt.value = null;
+	elapsedMs.value = 0;
+}
+
+function restoreLatestActive(): void {
+	const active = llmLogger.getActiveLogByGameAndPlayer(
 		props.gameId,
 		props.playerName,
 		props.playerSeatNum,
 	);
+	if (active) {
+		showActive(active);
+	} else {
+		clearActive();
+	}
+}
 
-	// 订阅事件
+// 事件处理器引用，用于 unsubscribe
+const handlers = {
+	start(entry: LogEntry) {
+		if (!matchesPlayer(entry)) return;
+		showActive({ entry, partialArgs: "", startedAt: entry.timestamp });
+	},
+	chunk(payload: { logId: string; partialArgs: string }) {
+		if (!currentCall.value || payload.logId !== currentCall.value.id) return;
+		streamText.value = payload.partialArgs;
+	},
+	end(entry: LogEntry) {
+		if (!matchesPlayer(entry)) return;
+		mergeHistory([entry]);
+		if (!currentCall.value || entry.id === currentCall.value.id) {
+			restoreLatestActive();
+		}
+	},
+};
+
+onMounted(async () => {
+	// 先订阅再读快照与历史，避免查询 IndexedDB 期间漏掉实时事件。
 	// lib.announce.subscribe(name, method) 返回 method 本身（不是 unsubscribe 函数）
 	// 取消订阅需要用 lib.announce.unsubscribe(name, method)
 	lib.announce.subscribe("llm_log_start", handlers.start);
 	lib.announce.subscribe("llm_log_chunk", handlers.chunk);
 	lib.announce.subscribe("llm_log_end", handlers.end);
+	restoreLatestActive();
+	await refresh();
 });
 
 onUnmounted(() => {
 	lib.announce.unsubscribe("llm_log_start", handlers.start);
 	lib.announce.unsubscribe("llm_log_chunk", handlers.chunk);
 	lib.announce.unsubscribe("llm_log_end", handlers.end);
-	timers.forEach(t => clearInterval(t));
-	timers = [];
+	stopElapsedTimer();
 });
 
 // ---------------------------------------------------------------------------
@@ -264,24 +308,36 @@ onUnmounted(() => {
 // ---------------------------------------------------------------------------
 
 async function refresh() {
-	history.value = await llmLogger.getLogsByGameAndPlayer(
+	if (isClearing.value) return;
+	const generation = ++historyQueryGeneration;
+	const logs = await llmLogger.getLogsByGameAndPlayer(
 		props.gameId,
 		props.playerName,
 		props.playerSeatNum,
 	);
+	if (generation !== historyQueryGeneration) return;
+	mergeHistory(logs);
 }
 
 async function clearLogs() {
+	if (isClearing.value) return;
 	if (
 		!confirm(
-			`确定清空所有 AI 玩家的全部 LLM 日志吗？\n（logger 暂不支持按玩家清空，此操作会清空所有日志）`,
+			`确定清空所有 AI 玩家的全部已完成 LLM 日志吗？\n进行中的调用不会中断，结束后会重新出现在历史中。`,
 		)
 	) {
 		return;
 	}
-	await llmLogger.clearLogs();
-	history.value = [];
-	selectedDetail.value = null;
+	historyQueryGeneration++;
+	isClearing.value = true;
+	const clearedIds = new Set(history.value.map(entry => entry.id));
+	try {
+		await llmLogger.clearLogs();
+		history.value = history.value.filter(entry => !clearedIds.has(entry.id));
+		selectedDetail.value = null;
+	} finally {
+		isClearing.value = false;
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -359,18 +415,23 @@ function statusText(status: string): string {
 </script>
 
 <style scoped>
-.llm-player-log-panel { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: auto; color: #ddd; font-size: 12px; }
-.toolbar { display: flex; align-items: center; padding: 6px 8px; border-bottom: 1px solid #444; gap: 6px; }
+.llm-player-log-panel, .llm-player-log-panel div { position: static !important; }
+.llm-player-log-panel { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden; box-sizing: border-box; color: #ddd; font-size: 12px; }
+.active-call, .stream-area, .active-meta, .history-section, .section-title, .empty, .detail-view, .detail-card, .detail-card-title, .detail-card-body, .field, .msg-card, .msg-role { display: block; box-sizing: border-box; }
+.toolbar { display: flex; flex: 0 0 auto; align-items: center; padding: 6px 8px; border-bottom: 1px solid #444; gap: 6px; }
+.llm-player-log-panel > .toolbar { border-top: 1px solid #444; border-bottom: 0; }
 .btn { background: #333; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
 .btn:hover { background: #444; }
-.active-call { margin: 8px; border: 1px solid #4a9eff; border-radius: 4px; background: rgba(74, 158, 255, 0.08); overflow: hidden; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled:hover { background: #333; }
+.active-call { flex: 0 0 auto; margin: 8px; border: 1px solid #4a9eff; border-radius: 4px; background: rgba(74, 158, 255, 0.08); overflow: hidden; }
 .active-header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-weight: bold; color: #4a9eff; }
 .active-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4a9eff; animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .stream-area { padding: 0 8px; }
 .stream-text { font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: #ccc; margin: 0; max-height: 150px; overflow: auto; background: transparent; border: none; }
 .active-meta { padding: 4px 8px 6px; color: #888; font-size: 11px; }
-.history-section { flex: 1; overflow: auto; padding: 8px; }
+.history-section { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px; }
 .section-title { font-weight: bold; font-size: 13px; margin-bottom: 6px; color: #aaa; }
 .empty { text-align: center; padding: 40px 0; color: #666; }
 .history-list { display: flex; flex-direction: column; gap: 2px; }
@@ -383,7 +444,7 @@ function statusText(status: string): string {
 .status-fallback { color: #ff9800; }
 .status-error { color: #f44336; }
 .status-timeout { color: #ff9800; }
-.detail-view { padding: 0; }
+.detail-view { flex: 1 1 auto; min-height: 0; padding: 0; overflow: auto; }
 .detail-card { margin: 8px; border: 1px solid #444; border-radius: 4px; overflow: hidden; }
 .detail-card-title { background: #333; padding: 5px 8px; font-weight: bold; color: #ccc; border-bottom: 1px solid #444; }
 .detail-card-body { padding: 6px 8px; }

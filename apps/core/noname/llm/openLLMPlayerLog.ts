@@ -24,25 +24,19 @@ export function openLLMPlayerLog(player: PlayerLike): void {
 	const seatNum = player.getSeatNum();
 	const playerName = player.getName();
 
-	const dialog = ui.create.dialog(`${playerName} [座位${seatNum}] 的 LLM 思考`, [
-		[
-			(dlg: any) => {
-				const container = ui.create.div(".llm-player-log-container", dlg.content);
-				const app = createApp(LLMPlayerLogPanel, {
-					playerSeatNum: seatNum,
-					gameId,
-					playerName,
-				});
-				app.mount(container);
-				(dlg as any)._llmApp = app;
-				(dlg as any)._llmContainer = container;
-			},
-			"handle",
-		],
-	]);
+	const dialog = ui.create.dialog(`${playerName} [座位${seatNum}] 的 LLM 思考`, "hidden");
 
-	// 加自定义类以应用专属样式（深色背景、相对尺寸 80%、居中、左对齐）
-	dialog.classList.add("llm-log-dialog");
+	// 先完成专属布局配置和组件挂载，再显式打开，避免 ui.update() 按空内容压缩 Dialog。
+	dialog.classList.add("llm-log-dialog", "noupdate");
+	const container = ui.create.div(".llm-player-log-container", dialog.content);
+	const app = createApp(LLMPlayerLogPanel, {
+		playerSeatNum: seatNum,
+		gameId,
+		playerName,
+	});
+	app.mount(container);
+	(dialog as any)._llmApp = app;
+	(dialog as any)._llmContainer = container;
 
 	// 添加关闭按钮（参考 ui.click.count 模式，index.js:4769-4774）
 	const closeButton = ui.create.div(".close-btn");
@@ -73,4 +67,6 @@ export function openLLMPlayerLog(player: PlayerLike): void {
 		}
 		return origClose();
 	};
+
+	dialog.open();
 }

@@ -1,9 +1,9 @@
 # LLM 模块（AI 决策）
 
-无名杀的 LLM（大语言模型）AI 决策模块，位于 `apps/core/noname/llm/`，共 8 个文件。该模块通过官方 `openai` SDK 调用 OpenAI 兼容 API（含 function calling），在 AI 玩家决策点接管决策逻辑；调用失败或超时自动降级回传统 AI。
+无名杀的 LLM（大语言模型）AI 决策模块，位于 `apps/core/noname/llm/`，共 9 个文件。该模块通过官方 `openai` SDK 调用 OpenAI 兼容 API（含 function calling），在 AI 玩家决策点接管决策逻辑；调用失败或超时自动降级回传统 AI。
 
 > - 所有路径均相对于仓库根目录。
-> - LLM 模块位于 `apps/core/noname/llm/`，8 个文件：`index.ts` / `decide.ts` / `client.ts` / `context.ts` / `tools.ts` / `candidates.ts` / `apply.ts` / `logger.ts`。
+> - LLM 模块位于 `apps/core/noname/llm/`，9 个文件：`index.ts` / `decide.ts` / `client.ts` / `context.ts` / `tools.ts` / `candidates.ts` / `apply.ts` / `logger.ts` / `openLLMPlayerLog.ts`。
 > - 通过官方 `openai` SDK 调用 OpenAI 兼容接口（不是手搓 fetch）。
 > - 仅在 AI 玩家决策点触发（`event.result == "ai"`）。
 
@@ -53,6 +53,7 @@ library/element/content.ts
 | `apps/core/noname/llm/candidates.ts` | 候选收集：卡牌/技能/目标，含 `cardToId` 序列化与 `findCardById` 反查 |
 | `apps/core/noname/llm/apply.ts` | `translateResult` 将 LLM tool_call 翻译为引擎期望的 Result 格式 |
 | `apps/core/noname/llm/logger.ts` | 日志系统：`LLMLogger` 类，缓冲写入 IndexedDB，最大保留 500 条 |
+| `apps/core/noname/llm/openLLMPlayerLog.ts` | 打开指定 AI 武将的日志 Dialog，并挂载玩家日志面板 |
 
 ## 文档导航
 
@@ -73,7 +74,7 @@ library/element/content.ts
 | `llmEnabled` | function | `index.ts:25-27` | 判断 LLM 是否启用 |
 | `llmConfigured` | function | `index.ts:29-32` | 判断 url/apikey/model 是否均已配置 |
 | `tryLLMDecide` | function | `decide.ts:14` | 核心调度入口，唯一对外暴露的决策函数 |
-| `llmLogger` | LLMLogger | `logger.ts:127` | 日志单例，供 UI 层调用 |
+| `llmLogger` | LLMLogger | `logger.ts:263` | 日志单例，供 UI 层调用 |
 
 ## 相关文档
 
