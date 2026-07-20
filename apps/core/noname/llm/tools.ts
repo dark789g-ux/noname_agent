@@ -1,179 +1,123 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions.js";
 import type { CandidateCard } from "./candidates.js";
 
-/**
- * 构造 OpenAI tool 格式的 tools 数组。
- * 根据 decisionPoint 返回不同的可用动作集。
- */
+export type SelectionToolType = "button" | "card" | "target" | "control" | "number";
+
+/** 构造当前选择阶段可调用的工具。 */
 export function buildTools(
 	decisionPoint: string,
 	candidates: { cards: CandidateCard[]; skills: string[] },
+	stage?: { id: string; type: SelectionToolType },
+	forced = false,
 ): ChatCompletionTool[] {
+	if (stage) return [buildSelectionTool(stage)];
 	switch (decisionPoint) {
 		case "chooseToUse":
-			return buildChooseToUseTools(candidates);
+			return buildChooseToUseTools(candidates, forced);
 		case "chooseToRespond":
-			return buildChooseToRespondTools(candidates);
+			return optionalPass([cardTool("respond_card", "使用一张候选牌响应。", false), ...(candidates.skills.length ? [skillTool()] : [])], forced, "不响应，放弃出牌。");
 		case "chooseToDiscard":
-			return buildChooseToDiscardTools(candidates);
+			return optionalPass([cardsTool("discard_cards", "弃置候选牌；数量必须满足当前弃牌要求。")], forced, "跳过弃牌。");
 		case "chooseBool":
-			return buildChooseBoolTools();
+			return [boolTool("yes", "选择“是”。"), boolTool("no", "选择“否”。")];
 		default:
 			return [];
 	}
 }
 
-function buildChooseToUseTools(candidates: { cards: CandidateCard[]; skills: string[] }): ChatCompletionTool[] {
-	const tools: ChatCompletionTool[] = [];
-
-	tools.push({
-		type: "function",
-		function: {
-			name: "use_card",
-			description: "使用一张卡牌。card_id 必须在候选列表中，target_ids 为目标玩家的编号列表（从0开始），如无需目标则传空数组。",
-			parameters: {
-				type: "object",
-				properties: {
-					card_id: {
-						type: "string",
-						description: "要使用的卡牌 ID",
-					},
-					target_ids: {
-						type: "array",
-						items: { type: "integer" },
-						description: "目标玩家编号数组（从 0 开始），无目标传 []",
-					},
-				},
-				required: ["card_id", "target_ids"],
-			},
-		},
-	});
-
-	if (candidates.skills.length > 0) {
-		tools.push({
-			type: "function",
-			function: {
-				name: "use_skill",
-				description: "发动一个主动技能。skill_name 必须在可用技能列表中。",
-				parameters: {
-					type: "object",
-					properties: {
-						skill_name: {
-							type: "string",
-							description: "要发动的技能名",
-						},
-					},
-					required: ["skill_name"],
-				},
-			},
-		});
+function buildChooseToUseTools(candidates: { cards: CandidateCard[]; skills: string[] }, forced: boolean): ChatCompletionTool[] {
+	const tools = [cardTool("use_card", "使用一张候选牌。", true)];
+	if (candidates.skills.length) {
+		tools.splice(1, 0, skillTool());
 	}
-
-	tools.push({
-		type: "function",
-		function: {
-			name: "pass",
-			description: "跳过当前操作，不使用任何卡牌或技能。",
-			parameters: {
-				type: "object",
-				properties: {},
-			},
-		},
-	});
-
+	if (!forced) tools.push(passTool("跳过当前操作，不使用任何卡牌或技能。"));
 	return tools;
 }
 
-function buildChooseToRespondTools(candidates: { cards: CandidateCard[] }): ChatCompletionTool[] {
-	return [
-		{
-			type: "function",
-			function: {
-				name: "respond_card",
-				description: "使用一张卡牌来响应。card_id 必须在候选列表中。",
-				parameters: {
-					type: "object",
-					properties: {
-						card_id: {
-							type: "string",
-							description: "要使用的卡牌 ID",
-						},
-					},
-					required: ["card_id"],
-				},
-			},
+function skillTool(): ChatCompletionTool {
+	return {
+		type: "function",
+		function: {
+			name: "use_skill",
+			description: "发动候选主动技能。需要选牌或目标时，先传 skill_name，随后严格按下一轮选择工具完成。",
+			parameters: object({
+				skill_name: string("候选技能 ID"),
+				card_refs: strings("可选：已选卡牌短引用 c0/c1"),
+				target_refs: strings("可选：已选目标短引用 p0/p1"),
+				card_ids: strings("兼容旧协议的牌 ID"),
+				target_ids: array("兼容旧协议的目标数组", { type: "integer" }),
+			}, ["skill_name"]),
 		},
-		{
-			type: "function",
-			function: {
-				name: "pass",
-				description: "不响应，放弃出牌。",
-				parameters: {
-					type: "object",
-					properties: {},
-				},
-			},
-		},
-	];
+	};
 }
 
-function buildChooseToDiscardTools(candidates: { cards: CandidateCard[] }): ChatCompletionTool[] {
-	return [
-		{
-			type: "function",
-			function: {
-				name: "discard_cards",
-				description: "弃置指定卡牌。card_ids 必须在候选列表中，数量需满足弃牌要求。",
-				parameters: {
-					type: "object",
-					properties: {
-						card_ids: {
-							type: "array",
-							items: { type: "string" },
-							description: "要弃置的卡牌 ID 数组",
-						},
-					},
-					required: ["card_ids"],
-				},
-			},
-		},
-		{
-			type: "function",
-			function: {
-				name: "pass",
-				description: "跳过弃牌（仅在非强制时可选择）。",
-				parameters: {
-					type: "object",
-					properties: {},
-				},
-			},
-		},
-	];
+function optionalPass(tools: ChatCompletionTool[], forced: boolean, description: string): ChatCompletionTool[] {
+	if (!forced) tools.push(passTool(description));
+	return tools;
 }
 
-function buildChooseBoolTools(): ChatCompletionTool[] {
-	return [
-		{
-			type: "function",
-			function: {
-				name: "yes",
-				description: "选择\"是\"。",
-				parameters: {
-					type: "object",
-					properties: {},
-				},
-			},
+function cardTool(name: string, description: string, withTargets: boolean): ChatCompletionTool {
+	const properties: Record<string, any> = {
+		card_ref: string("候选卡牌短引用，例如 c0"),
+		card_id: string("兼容旧协议的卡牌 ID"),
+	};
+	if (withTargets) {
+		properties.target_refs = strings("目标短引用，例如 p0；无目标传 []");
+		properties.target_ids = array("兼容旧协议的目标下标数组", { type: "integer" });
+	}
+	return { type: "function", function: { name, description, parameters: object(properties) } };
+}
+
+function cardsTool(name: string, description: string): ChatCompletionTool {
+	return {
+		type: "function",
+		function: {
+			name,
+			description,
+			parameters: object({ card_refs: strings("候选卡牌短引用数组"), card_ids: strings("兼容旧协议的卡牌 ID 数组") }),
 		},
-		{
-			type: "function",
-			function: {
-				name: "no",
-				description: "选择\"否\"。",
-				parameters: {
-					type: "object",
-					properties: {},
-				},
-			},
+	};
+}
+
+function buildSelectionTool(stage: { id: string; type: SelectionToolType }): ChatCompletionTool {
+	const names: Record<SelectionToolType, string> = {
+		button: "select_buttons",
+		card: "select_cards",
+		target: "select_targets",
+		control: "select_controls",
+		number: "select_numbers",
+	};
+	const refsKey = `${stage.type}_refs`;
+	return {
+		type: "function",
+		function: {
+			name: names[stage.type],
+			description: `完成 ${stage.type} 选择。step_id 必须为 ${stage.id}，只能使用当前候选中的短引用。`,
+			parameters: object({ step_id: string(`当前步骤 ID：${stage.id}`), [refsKey]: array(`选择的 ${stage.type} 短引用数组`, { type: "string" }) }, ["step_id", refsKey]),
 		},
-	];
+	};
+}
+
+function passTool(description: string): ChatCompletionTool {
+	return { type: "function", function: { name: "pass", description, parameters: object({}) } };
+}
+
+function boolTool(name: string, description: string): ChatCompletionTool {
+	return { type: "function", function: { name, description, parameters: object({}) } };
+}
+
+function object(properties: Record<string, any>, required: string[] = []): any {
+	return { type: "object", properties, required, additionalProperties: false };
+}
+
+function string(description: string): any {
+	return { type: "string", description };
+}
+
+function strings(description: string): any {
+	return array(description, { type: "string" });
+}
+
+function array(description: string, items: any): any {
+	return { type: "array", items, description };
 }

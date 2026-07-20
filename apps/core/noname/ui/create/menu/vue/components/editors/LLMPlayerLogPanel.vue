@@ -109,6 +109,17 @@
 			</div>
 
 			<!-- 5. 错误 / 回退 -->
+			<div v-if="selectedDetail.turns?.length" class="detail-card">
+				<div class="detail-card-title">多轮决策（{{ selectedDetail.turns.length }}）</div>
+				<div class="detail-card-body">
+					<details v-for="turn in selectedDetail.turns" :key="turn.index">
+						<summary>第 {{ turn.index + 1 }} 轮 {{ turn.stage || "初始动作" }}</summary>
+						<pre class="code-block">{{ formatJson(turn) }}</pre>
+					</details>
+				</div>
+			</div>
+
+			<!-- 5. 错误 / 回退 -->
 			<div v-if="selectedDetail.error" class="detail-card card-error">
 				<div class="detail-card-title">错误详情</div>
 				<div class="detail-card-body">

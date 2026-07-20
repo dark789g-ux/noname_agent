@@ -10,6 +10,7 @@ import type {
 import type { LLMConfig } from "./index.js";
 
 export interface ToolCallResult {
+	id: string;
 	name: string;
 	arguments: Record<string, any>;
 }
@@ -55,9 +56,13 @@ export async function callLLMWithTimeout(
 			throwErr("parse", "No message in LLM response");
 		}
 
-		const tc = msg.tool_calls?.[0];
-		if (!tc) {
-			throwErr("parse", "No tool_calls in LLM response");
+		const calls = msg.tool_calls || [];
+		if (calls.length !== 1) {
+			throwErr("parse", calls.length ? "LLM returned multiple tool_calls" : "No tool_calls in LLM response");
+		}
+		const tc = calls[0];
+		if (!tc?.id || !tc.function?.name) {
+			throwErr("parse", "Malformed tool_call without id or function name");
 		}
 
 		const name = tc.function?.name || "";
@@ -69,7 +74,7 @@ export async function callLLMWithTimeout(
 			throwErr("parse", `Bad tool_call arguments JSON: ${rawArgs}`);
 		}
 
-		return { name, arguments: args };
+		return { id: tc.id, name, arguments: args };
 	} catch (e: any) {
 		// 内部已带 stage 的错误透传（parse 错误）
 		if (e?.stage) throw e;
@@ -155,10 +160,18 @@ export async function callLLMStream(
 		)) as any;
 
 		let functionName = "";
+		let toolCallId = "";
 		let argumentsBuffer = "";
 
 		for await (const chunk of stream) {
-			const delta = chunk.choices?.[0]?.delta?.tool_calls?.[0];
+			const calls = chunk.choices?.[0]?.delta?.tool_calls;
+			if (calls?.length > 1 || calls?.some((call: any) => (call.index ?? 0) !== 0)) {
+				throwErr("parse", "LLM stream returned multiple tool_calls");
+			}
+			const delta = calls?.[0];
+			if (delta?.id) {
+				toolCallId = delta.id;
+			}
 			if (delta?.function?.name) {
 				functionName = delta.function.name;
 			}
@@ -168,8 +181,8 @@ export async function callLLMStream(
 			}
 		}
 
-		if (!functionName) {
-				throwErr("parse", "LLM stream ended without function name");
+		if (!functionName || !toolCallId) {
+				throwErr("parse", "LLM stream ended without a complete tool_call");
 			}
 
 			// 把累积的 arguments 字符串 parse 为对象，与 callLLMWithTimeout 保持一致
@@ -180,7 +193,7 @@ export async function callLLMStream(
 				throwErr("parse", `Bad tool_call arguments JSON: ${argumentsBuffer}`);
 			}
 
-			return { name: functionName, arguments: args };
+			return { id: toolCallId, name: functionName, arguments: args };
 	} catch (e: any) {
 		// 内部已带 stage 的错误透传（parse 错误）
 		if (e?.stage) throw e;

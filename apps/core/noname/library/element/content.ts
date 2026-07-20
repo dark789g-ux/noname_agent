@@ -7,6 +7,39 @@ import type { GainAnimate } from "./Player/type";
 import { delay } from "@/util/index.js";
 import { tryLLMDecide } from "@/llm/index.js";
 
+/**
+ * Replace a local AI result only when LLM translation completed. Returning
+ * false deliberately preserves event.result === "ai" for the legacy AI.
+ */
+async function applyLLMDecision(event) {
+	const decision = await tryLLMDecide(event);
+	if (!decision?.handled || !decision.result) {
+		return false;
+	}
+	event.result = decision.result;
+	game.uncheck();
+	return true;
+}
+
+/**
+ * A child chooseButton owns an explicit headless final predicate only when its
+ * UI filter is the default accept-all predicate or the skill supplied an
+ * adapter. A legacy filterOk may read ui.selected, so omitting the contract
+ * intentionally makes LLM validation fall back instead of accepting it.
+ */
+function attachChooseButtonSelectionSpec(next, skill, event, player) {
+	const chooseButton = skill.chooseButton;
+	if (typeof chooseButton.filterOk !== "function") {
+		next.set("selectionSpec", { finalPredicate: () => true });
+		return;
+	}
+	const rawSpec = chooseButton.selectionSpec ?? skill.selectionSpec;
+	const source = typeof rawSpec === "function" ? rawSpec(event, player) : rawSpec;
+	if (source && typeof source.finalPredicate === "function") {
+		next.set("selectionSpec", { finalPredicate: source.finalPredicate });
+	}
+}
+
 // 未来再改
 export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 	async emptyEvent(event) {
@@ -299,7 +332,11 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				lib.configOL.choose_timeout = time;
 			}, event.time);
 		}
-		if ((!result || result == "ai" || (event.forced && !result.bool)) && event.processAI) {
+		const llmHandled = result == "ai" && (await applyLLMDecision(event));
+		if (llmHandled) {
+			result = event.result;
+		}
+		if (!llmHandled && (!result || result == "ai" || (event.forced && !result.bool)) && event.processAI) {
 			const numbers = event.processAI(event);
 			if (typeof numbers == "boolean") {
 				if (numbers == true) {
@@ -5182,11 +5219,8 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 					return;
 				}
 
-				// 🆕 LLM 前置分支：尝试用 LLM 决策，失败/超时/未启用则自然滑落本地 ai
-				const llmResult = await tryLLMDecide(event);
-				if (llmResult.handled && llmResult.result) {
-					event.result = llmResult.result;
-					game.uncheck();
+				// LLM 失败或拒绝该事件时保持既有本地 AI 降级。
+				if (await applyLLMDecision(event)) {
 					return;
 				}
 
@@ -5301,6 +5335,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 						})()
 					);
 					next.set("filterOk", info.chooseButton.filterOk || (() => true));
+					attachChooseButtonSelectionSpec(next, info, event, player);
 					next.set("allowChooseAll", info.chooseButton.allowChooseAll);
 					if (event.id) {
 						next._parent_id = event.id;
@@ -5326,8 +5361,13 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			}
 
 			if (result.bool || (result.control && result.control != "cancel2")) {
-				const info = get.info(event.buttoned).chooseButton;
-				lib.skill[`${event.buttoned}_backup`] = info.backup(info.chooseControl ? result : result.links, player);
+				const sourceInfo = get.info(event.buttoned);
+				const info = sourceInfo.chooseButton;
+				const backup = info.backup(info.chooseControl ? result : result.links, player);
+				if (sourceInfo.selectionSpec !== undefined) {
+					backup.selectionSpec = true;
+				}
+				lib.skill[`${event.buttoned}_backup`] = backup;
 				lib.skill[`${event.buttoned}_backup`].sourceSkill = event.buttoned;
 				if (game.online) {
 					event._sendskill = [`${event.buttoned}_backup`, lib.skill[`${event.buttoned}_backup`]];
@@ -5344,6 +5384,9 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 					);
 				}
 				event.backup(`${event.buttoned}_backup`);
+				if (backup.selectionSpec) {
+					event.selectionSpec = { finalPredicate: () => true };
+				}
 				if (info.prompt) {
 					event.openskilldialog = info.prompt(info.chooseControl ? result : result.links, player);
 				}
@@ -5467,11 +5510,8 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 					return;
 				}
 
-				// 🆕 LLM 前置分支：尝试用 LLM 决策，失败/超时/未启用则自然滑落本地 ai
-				const llmResult = await tryLLMDecide(event);
-				if (llmResult.handled && llmResult.result) {
-					event.result = llmResult.result;
-					game.uncheck();
+				// LLM 失败或拒绝该事件时保持既有本地 AI 降级。
+				if (await applyLLMDecision(event)) {
 					return;
 				}
 
@@ -5559,6 +5599,7 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 						next.set("filterButton", info.chooseButton.filter || (() => true));
 						next.set("selectButton", info.chooseButton.select || 1);
 						next.set("filterOk", info.chooseButton.filterOk || (() => true));
+						attachChooseButtonSelectionSpec(next, info, event, player);
 						next.set(
 							"complexSelect",
 							(() => {
@@ -5593,9 +5634,14 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			}
 
 			if (result.bool || (result.control && result.control != "cancel2")) {
-				const info = get.info(event.buttoned).chooseButton;
-				lib.skill[`${event.buttoned}_backup`] = info.backup(info.chooseControl ? result : result.links, player);
-				lib.skill[`${event.buttoned}_backup`].sourceSkill = event.buttoned;
+					const sourceInfo = get.info(event.buttoned);
+					const info = sourceInfo.chooseButton;
+					const backup = info.backup(info.chooseControl ? result : result.links, player);
+					if (sourceInfo.selectionSpec !== undefined) {
+						backup.selectionSpec = true;
+					}
+					lib.skill[`${event.buttoned}_backup`] = backup;
+					lib.skill[`${event.buttoned}_backup`].sourceSkill = event.buttoned;
 				if (game.online) {
 					event._sendskill = [`${event.buttoned}_backup`, lib.skill[`${event.buttoned}_backup`]];
 				} else {
@@ -5610,7 +5656,10 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 						lib.skill[`${event.buttoned}_backup`].audio
 					);
 				}
-				event.backup(`${event.buttoned}_backup`);
+					event.backup(`${event.buttoned}_backup`);
+					if (backup.selectionSpec) {
+						event.selectionSpec = { finalPredicate: () => true };
+					}
 				if (info.prompt) {
 					event.openskilldialog = info.prompt(info.chooseControl ? result : result.links, player);
 				}
@@ -5782,7 +5831,9 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event.result != "ai") {
 				return;
 			}
-			if (event.processAI) {
+			if (await applyLLMDecision(event)) {
+				return;
+			} else if (event.processAI) {
 				event.result = event.processAI();
 			} else {
 				game.check();
@@ -5979,11 +6030,8 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		},
 			async (event, trigger, player) => {
 				if (event.result == "ai") {
-					// 🆕 LLM 前置分支：尝试用 LLM 决策，失败/超时/未启用则自然滑落本地 ai
-					const llmResult = await tryLLMDecide(event);
-					if (llmResult.handled && llmResult.result) {
-						event.result = llmResult.result;
-						game.uncheck();
+					// LLM 失败或拒绝该事件时保持既有本地 AI 降级。
+					if (await applyLLMDecision(event)) {
 						return;
 					}
 					if (event.processAI) {
@@ -7521,7 +7569,9 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		async (event, trigger, player) => {
 			const { forced } = event;
 			if (event.result == "ai") {
-				if (event.processAI) {
+				if (await applyLLMDecision(event)) {
+					// Keep callback, dialog cleanup and resume behavior below.
+				} else if (event.processAI) {
 					event.result = event.processAI();
 				} else {
 					game.check();
@@ -7818,7 +7868,9 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event.result != "ai") {
 				return;
 			}
-			if (event.processAI) {
+			if (await applyLLMDecision(event)) {
+				return;
+			} else if (event.processAI) {
 				event.result = event.processAI();
 			} else {
 				game.check();
@@ -7907,7 +7959,9 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		async (event, trigger, player) => {
 			const { forced } = event;
 			if (event.result == "ai") {
-				if (event.processAI) {
+				if (await applyLLMDecision(event)) {
+					// Keep target animation and dialog cleanup below.
+				} else if (event.processAI) {
 					event.result = event.processAI();
 				} else {
 					game.check();
@@ -7967,7 +8021,9 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 			if (event.result != "ai") {
 				return;
 			}
-			if (event.processAI) {
+			if (await applyLLMDecision(event)) {
+				return;
+			} else if (event.processAI) {
 				event.result = event.processAI();
 			} else {
 				game.check();
@@ -8100,7 +8156,9 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 				return;
 			}
 
-			if (event.processAI) {
+			if (await applyLLMDecision(event)) {
+				return;
+			} else if (event.processAI) {
 				event.result = event.processAI();
 			} else {
 				game.check();
@@ -8289,16 +8347,20 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		},
 		async (event, trigger, player) => {
 			if (event.result == "ai") {
-				event.result = {};
-				if (event.ai) {
-					const result = event.ai(event.getParent(), player);
-					if (typeof result == "number") {
-						event.result.control = event.controls[result];
-					} else {
-						event.result.control = result;
-					}
+				if (await applyLLMDecision(event)) {
+					// Keep the shared cleanup below: it sets index and resumes the event.
 				} else {
-					event.result.control = event.controls[event.choice];
+					event.result = {};
+					if (event.ai) {
+						const result = event.ai(event.getParent(), player);
+						if (typeof result == "number") {
+							event.result.control = event.controls[result];
+						} else {
+							event.result.control = result;
+						}
+					} else {
+						event.result.control = event.controls[event.choice];
+					}
 				}
 			}
 			event.result.index = event.controls.indexOf(event.result.control);
@@ -8357,17 +8419,13 @@ export const Content: Record<string, ContentFuncByAll | ContentFuncsByAll> = {
 		}
 
 		if (event.result == "ai") {
-			// 🆕 LLM 前置分支：尝试用 LLM 决策，失败/超时/未启用则自然滑落本地 ai
-			const llmResult = await tryLLMDecide(event);
-			if (llmResult.handled && llmResult.result) {
-				event.result = llmResult.result;
-				game.uncheck();
-				return;
+			// LLM 失败或拒绝该事件时保持既有本地 AI 降级。
+			if (!(await applyLLMDecision(event))) {
+				if (event.ai) {
+					event.choice = event.ai(event.getParent(), player);
+				}
+				event.result = { bool: event.choice };
 			}
-			if (event.ai) {
-				event.choice = event.ai(event.getParent(), player);
-			}
-			event.result = { bool: event.choice };
 		}
 		_status.imchoosing = false;
 		event.choosing = false;

@@ -102,3 +102,13 @@ if (e instanceof APIConnectionError) {         // 后父类
 ### ⚠ 跨平台分支统一
 
 SDK 用 `dangerouslyAllowBrowser: true`（`client.ts:31`）强制所有平台（浏览器/Cordova/Electron renderer）走 browser 分支使用原生 `fetch`，避免 Electron context isolation 下 Node 分支（`http`/`https` 模块）不可用导致初始化失败。
+
+### ⚠ 多轮选择必须经过会话校验
+
+不要把 LLM 返回的数组直接写入 `event.result`，也不要为异步选择临时修改 `ui.selected` 或 `_status.event`。必须经 `DecisionSession`/`SelectionValidator` 校验候选成员、去重、动态数量、过滤器和最终 `filterOk` 后才 materialize 引擎 Result。任一阶段无效、超时、超轮次或 provider 不支持 tool-role，均返回 `{ handled:false }`。
+
+遗留事件的 `filterOk` 若依赖 DOM 全局选择态，无法由无 UI 会话可靠重放；这类事件必须通过 `selectionSpec.finalPredicate(readonlyContext, event, player)` 提供等价的纯校验，缺失时安全降级，不得跳过组合校验。
+
+`selectionSpec: true` 仅适用于已审计、可由 `filterCard`、`selectCard`、`filterTarget`、`selectTarget` 与 `viewAs` 无 UI 重放的技能。`chooseButton.backup` 技能可先返回技能中间结果并依赖引擎创建后续标准 `chooseButton` 事件；该事件必须具备可读的 `dialog.buttons[].link`，否则以精确的 `unsupported chooseButton: dialog buttons are unavailable` 回退。自定义 dialog 或私有信息未满足该条件时不能仅加标记宣称支持。
+
+标准 `chooseButton.filterOk` 未定义时，事件层会附加 `finalPredicate: () => true`，与原本的默认接受语义一致。若技能自定义了 `chooseButton.filterOk`，则必须在 `chooseButton.selectionSpec`（或技能 `selectionSpec`）提供纯 `finalPredicate`；缺失 adapter 时 LLM 会回退。已通过 LLM 校验的按钮结果生成 `${skill}_backup` 后，backup 继承 `selectionSpec: true`，使后续视为牌使用/响应继续走无 UI 校验链。

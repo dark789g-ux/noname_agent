@@ -1564,6 +1564,7 @@ const skills = {
 		},
 	},
 	xintaoluan: {
+		selectionSpec: true,
 		hiddenCard(player, name) {
 			return !player.getStorage("xintaoluan").includes(name) && player.countCards("hes") > 0 && lib.inpile.includes(name);
 		},

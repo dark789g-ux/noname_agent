@@ -5172,7 +5172,40 @@ export class Library {
 								}
 							} catch (e) {}
 						},
+						},
+				llm_multi_turn: {
+					name: "启用多轮复杂决策",
+					init: false,
+					intro: "允许 LLM 在按钮、牌、目标等多个选择步骤间连续决策。关闭时仅执行单轮简单动作。",
+				},
+				llm_max_turns: {
+					name: "最大决策轮次",
+					init: "4",
+					item: {
+						1: "1 轮",
+						2: "2 轮",
+						3: "3 轮",
+						4: "4 轮",
+						5: "5 轮",
+						6: "6 轮",
+						7: "7 轮",
+						8: "8 轮",
 					},
+					intro: "单次 LLM 决策最多请求次数。关闭多轮复杂决策时实际固定为 1。",
+				},
+				llm_decision_timeout: {
+					name: "决策总超时（秒）",
+					init: "60",
+					input: true,
+					intro: "多轮决策允许使用的总时长；单轮请求仍受「超时（秒）」限制。",
+					onblur: function () {
+						let val = parseInt(this.innerHTML.replace(/<br>/g, ""));
+						if (isNaN(val) || val < 10) val = 60;
+						if (val > 300) val = 300;
+						this.innerHTML = String(val);
+						game.saveConfig("llm_decision_timeout", val);
+					},
+				},
 				llm_url: {
 					name: "API 地址",
 					init: "",

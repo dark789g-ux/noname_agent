@@ -214,6 +214,39 @@ selectCard: -1,
 viewAs: { name: "sha" },
 ```
 
+## LLM 无 UI 选择声明
+
+`selectionSpec` 是主动技能面向 LLM 无 UI 选择器的可选声明，不影响普通 UI 或本地 AI。`selectionSpec: true` 仅表示该技能已经审计，可用既有 `filterCard`、`selectCard`、`filterTarget`、`selectTarget` 和 `viewAs` 安全重放。
+
+```js
+skillName: {
+  selectionSpec: true,
+  enable: "phaseUse",
+  filterCard: true,
+  selectCard: 1,
+  filterTarget(card, player, target) {
+    return player != target;
+  },
+}
+```
+
+复杂技能可提供对象或工厂：
+
+```js
+selectionSpec: {
+  steps: [
+    { id: "card", type: "card", select: [0, 1], required: false },
+    { id: "target", type: "target", select: [1, 2] },
+  ],
+  viewAs: { name: "sha" },
+  finalPredicate(readonlyContext, event, player) {
+    return true;
+  },
+}
+```
+
+`selectionSpec` 可以是 `true`、上述对象或 `(event, player) => HeadlessSelectionSpec` 工厂。每个 step 支持 `id`、`type`、`select`、`items`、`filter(item, player, readonlyContext, selected)` 与 `required`；对象可选 `viewAs`、`finalPredicate(readonlyContext, event, player)`。`type` 仅可为 `button`、`card`、`target`、`control` 或 `number`。按钮、自定义 dialog 和 `chooseButton.backup` 必须同时提供可序列化候选引用与后续事件适配；否则不要声明 `selectionSpec`，引擎会回退原生 AI。
+
 ## mod 规则修改
 
 `mod` 是持续性规则修改，可单独存在，不一定需要 `trigger/content`。

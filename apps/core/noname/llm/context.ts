@@ -1,6 +1,6 @@
 import { game, get, _status } from "noname";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
-import type { CandidateCard } from "./candidates.js";
+import type { CandidateCard, CandidateTarget } from "./candidates.js";
 
 /**
  * 决策点的人类可读描述映射
@@ -18,7 +18,7 @@ const DECISION_DESCRIPTIONS: Record<string, string> = {
  */
 export function buildContext(
 	event: any,
-	candidates: { cards: CandidateCard[]; skills: string[] },
+	candidates: { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] },
 ): { messages: ChatCompletionMessageParam[] } {
 	const decisionPoint = event.name || "unknown";
 	const player = event.player;
@@ -44,7 +44,7 @@ function buildSnapshot(
 	decisionPoint: string,
 	event: any,
 	player: any,
-	candidates: { cards: CandidateCard[]; skills: string[] },
+	candidates: { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] },
 ): string {
 	const lines: string[] = [];
 
@@ -138,7 +138,8 @@ function buildSnapshot(
 	if (candidates.cards.length > 0) {
 		lines.push("\n## 可用卡牌：");
 		candidates.cards.forEach((c, idx) => {
-			lines.push(`- [${idx}] ${c.name} (ID: ${c.id})`);
+		const scopes = [c.cardAction ? "直接使用" : "", ...(c.skills || []).map(skill => `技能:${skill}`)].filter(Boolean).join("，");
+		lines.push(`- ${c.ref}: ${c.name}（旧 ID: ${c.id}${scopes ? `；${scopes}` : ""}）`);
 		});
 	} else {
 		lines.push("\n## 可用卡牌：无");
@@ -147,10 +148,16 @@ function buildSnapshot(
 	// 候选技能
 	if (candidates.skills.length > 0) {
 		lines.push("\n## 可用技能：");
-		candidates.skills.forEach((s, idx) => {
-			const translated = get.translation(s) || s;
-			lines.push(`- [${idx}] ${s} (${translated})`);
+		candidates.skills.forEach(s => {
+			const translated = get.skillTranslation ? get.skillTranslation(s) : get.translation(s) || s;
+			const info = cleanSkillDescription(get.skillInfoTranslation ? get.skillInfoTranslation(s) : get.translation(`${s}_info`));
+			lines.push(`- ${s}（${translated}）：${info || "无可用规则描述"}`);
 		});
+	}
+
+	if (candidates.targets?.length) {
+		lines.push("\n## 当前可选目标：");
+		for (const target of candidates.targets) lines.push(`- ${target.ref}: ${target.name}`);
 	}
 
 	// 弃牌数量提示
@@ -164,4 +171,13 @@ function buildSnapshot(
 	}
 
 	return lines.join("\n");
+}
+
+/** 技能 info 常含 HTML、换行和动态标记；prompt 只发送有限的纯文本。 */
+export function cleanSkillDescription(value: unknown): string {
+	return String(value || "")
+		.replace(/<[^>]*>/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, 600);
 }

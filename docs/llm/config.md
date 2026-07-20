@@ -32,3 +32,13 @@
 
 - `llm_url` / `llm_apikey` / `llm_model` / `llm_timeout`：各配置项的 `onblur` 回调中调用 `game.saveConfig(key, value)` 持久化到 IndexedDB（`index.js:5174,5183,5192,5227`）。
 - `llm_enabled` / `llm_thinking_effort` / `llm_max_retries`：由 `configInteract.ts` 的 `doToggle` / `doMenuItem` 统一处理持久化（toggle/switcher 形态，无自定义 `onblur`）。
+
+## 多轮决策配置
+
+| `lib.config` key | 默认值 | 有效范围 | 说明 |
+|---|---:|---|---|
+| `llm_multi_turn` | `false` | boolean | 关闭时仅允许单轮简单动作，保持旧存档行为。 |
+| `llm_max_turns` | `4` | 1–8 | 单次决策可发送的最大请求轮次；关闭多轮时实际为 1。 |
+| `llm_decision_timeout` | `60` | 10–300 秒 | 一个多轮会话的总时限；每轮仍受 `llm_timeout` 限制，并取两者中较小的剩余时限。 |
+
+这三个值在对局开始时随 LLM 配置快照。若服务端不接受 tool-role 多轮消息，本局会记为不支持并直接降级，避免每次选择重复请求。

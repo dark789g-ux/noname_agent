@@ -81,3 +81,17 @@ llmResult = await tryLLMDecide(event)
 | `no` | `{ bool: false }` | 引擎取消选择 | `apply.ts:37-39` |
 
 未知 tool name 抛出 `stage:"translate"` 错误（`apply.ts:40-44`），被 `decide.ts` catch 后降级。
+
+## 无 UI 选择会话（多轮协议）
+
+选择规则由 `library/selection/` 的 `SelectionContext`、`SelectionSession`、`SelectionStep` 与 `SelectionValidator` 共同执行；它们不读取 `ui.selected` 或 `_status.event`。LLM 的牌、目标和按钮引用只在会话内有效，每一轮都会按实时事件重新验证。
+
+```text
+tool_call(use_skill/use_card)
+  -> DecisionSession 归一化短引用并校验
+  -> complete: materialize Result
+  -> pending: select_{button|card|target|control|number}(step_id, *_refs)
+  -> invalid/unsupported/timeout: { handled:false } -> 原生 AI
+```
+
+`content.ts` 通过同一个 `tryLLMDecide(event)` 接入 `chooseToUse`、`chooseToRespond`、`chooseToDiscard`、`chooseBool`、`chooseCard`、`chooseTarget`、`chooseButton`、`chooseToGive`、`chooseCardTarget`、`chooseButtonTarget`、`chooseControl` 与 `chooseNumbers` 的非本地、非联机 AI 分支。`choose*OL` 及涉及私有信息的流程不接入。

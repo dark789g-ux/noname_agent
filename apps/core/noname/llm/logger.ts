@@ -1,4 +1,5 @@
 import { lib, game, _status } from "noname";
+import { plainLogValue } from "./protocol.js";
 
 export type LogStatus = "success" | "fallback" | "error" | "timeout";
 export type ErrorStage = "fetch" | "parse" | "translate";
@@ -31,6 +32,15 @@ export interface LogEntry {
 		message: string;
 		httpStatus?: number;
 	};
+	/** 多轮工具调用；缺省代表由旧版本写入的单轮日志。 */
+	turns?: Array<{
+		index: number;
+		stage?: string;
+		request: { messages: any[]; tools: any[] };
+		toolCall?: { id?: string; name: string; arguments: any };
+		result?: any;
+		error?: string;
+	}>;
 }
 
 export interface ActiveLogSnapshot {
@@ -103,12 +113,12 @@ class LLMLogger {
 
 	logRequest(id: string, messages: any[], tools: any[]): void {
 		const entry = this.getActive(id);
-		if (entry) entry.request = { messages, tools };
+		if (entry) entry.request = plainLogValue({ messages, tools });
 	}
 
 	logResponse(id: string, toolCall: { name: string; arguments: any }, translatedResult?: any): void {
 		const entry = this.getActive(id);
-		if (entry) entry.response = { toolCall, translatedResult };
+		if (entry) entry.response = plainLogValue({ toolCall, translatedResult });
 	}
 
 	logError(id: string, stage: ErrorStage, message: string, httpStatus?: number): void {
@@ -234,6 +244,12 @@ class LLMLogger {
 		return all
 			.filter(e => (e.gameId || "game_unknown") === gameId)
 			.sort((a, b) => b.timestamp - a.timestamp);
+	}
+
+	logTurn(id: string, turn: NonNullable<LogEntry["turns"]>[number]): void {
+		const entry = this.getActive(id);
+		if (!entry) return;
+		(entry.turns ||= []).push(plainLogValue(turn));
 	}
 
 	/**

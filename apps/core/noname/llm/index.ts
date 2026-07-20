@@ -9,9 +9,24 @@ export interface LLMConfig {
 	thinkingEffort: "none" | "low" | "medium" | "high";
 	maxRetries: number;
 	timeoutSec: number;
+	multiTurn: boolean;
+	maxTurns: number;
+	decisionTimeoutSec: number;
 }
 
-export function getLLMConfig(): LLMConfig {
+type LLMGameStatus = {
+	llmConfigAtGameStart?: Readonly<LLMConfig>;
+	llmEnabledAtGameStart?: boolean;
+	llmGameId?: string;
+	llmMultiTurnUnsupported?: boolean;
+};
+
+export function getLLMConfig(): Readonly<LLMConfig> {
+	return (_status as LLMGameStatus).llmConfigAtGameStart ?? readLLMConfig();
+}
+
+function readLLMConfig(): LLMConfig {
+	const multiTurn = !!lib.config.llm_multi_turn;
 	return {
 		enabled: !!lib.config.llm_enabled,
 		url: String(lib.config.llm_url || ""),
@@ -20,7 +35,16 @@ export function getLLMConfig(): LLMConfig {
 		thinkingEffort: (lib.config.llm_thinking_effort as LLMConfig["thinkingEffort"]) || "medium",
 		maxRetries: Number(lib.config.llm_max_retries) || 0,
 		timeoutSec: Number(lib.config.llm_timeout) || 30,
+		multiTurn,
+		maxTurns: multiTurn ? clampNumber(lib.config.llm_max_turns, 4, 1, 8) : 1,
+		decisionTimeoutSec: clampNumber(lib.config.llm_decision_timeout, 60, 10, 300),
 	};
+}
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+	const number = Number(value);
+	if (!Number.isFinite(number)) return fallback;
+	return Math.min(max, Math.max(min, Math.floor(number)));
 }
 
 export function llmEnabled(): boolean {
@@ -56,10 +80,13 @@ export function initLLMGameHooks(): void {
 }
 
 function onGameStart(): void {
-	(_status as { llmGameId?: string }).llmGameId =
-		`game_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-	(_status as { llmEnabledAtGameStart?: boolean }).llmEnabledAtGameStart =
-		llmEnabled();
+	const status = _status as LLMGameStatus;
+	delete status.llmConfigAtGameStart;
+	const snapshot = Object.freeze({ ...readLLMConfig() });
+	status.llmConfigAtGameStart = snapshot;
+	status.llmGameId = `game_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+	status.llmEnabledAtGameStart = snapshot.enabled;
+	delete status.llmMultiTurnUnsupported;
 	ui.updateLLMLogButtons();
 }
 

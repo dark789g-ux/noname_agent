@@ -41,6 +41,12 @@ library/element/content.ts
 
 核心目录：`apps/core/noname/llm/`
 
+## 选择能力与边界
+
+LLM 通过无 UI 选择会话支持简单选牌、选目标、动态数量、`viewAs`，以及可序列化的按钮、控制项和数值步骤。技能必须声明 `selectionSpec`，或被安全的简单规则适配器识别，才会交给 LLM。
+
+目前已审计并声明 `selectionSpec` 的代表技能为：`rerende`、`olqiangxi`、`reshenxing`、`rehuoji`、`reqice`、`xintaoluan`、`mbzhaofu`。后三者先返回技能中间结果，再由引擎创建标准 `chooseButton` 子事件；只有该事件已提供可读 `dialog.buttons[].link` 时才继续多轮选择，否则以 `unsupported chooseButton: dialog buttons are unavailable` 安全回退。`choose*OL`、对比及窥视私有牌流程同样不接入。
+
 ## 文件清单
 
 | 文件 | 说明 |

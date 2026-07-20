@@ -1,10 +1,10 @@
 import { _status, get, lib, game, ui } from "noname";
+import { SelectionValidator } from "../library/selection/index.js";
 
 export class Check {
 	processSelection({ type, items, event, useCache, isSelectable }) {
 		let ok = true,
 			auto;
-		let selectableItems = false;
 		const uppercaseType = type => type[0].toUpperCase() + type.slice(1);
 		const uiSelected = ui.selected[`${type}s`];
 		const range = get.select(event[`select${uppercaseType(type)}`]);
@@ -39,27 +39,31 @@ export class Check {
 			cache = event[`_${type}Choice`][cacheId];
 		}
 
-		items.forEach(item => {
-			let selectable;
-			if (!lib.filter.cardAiIncluded(item)) {
-				selectable = false;
-			} else if (!useCache) {
-				selectable = isSelectable(item, event);
-			} else {
-				if (!firstCheck) {
-					selectable = cache.includes(item);
-				} else {
-					selectable = isSelectable(item, event);
-					if (selectable) {
-						cache.push(item);
-					}
-				}
+		const getSelectable = item => {
+			if (!useCache) {
+				return isSelectable(item, event);
 			}
+			if (!firstCheck) {
+				return cache.includes(item);
+			}
+			const selectable = isSelectable(item, event);
+			if (selectable) {
+				cache.push(item);
+			}
+			return selectable;
+		};
 
-			if (range[1] <= -1) {
+		// Legacy automatic selection predicates may read ui.selected directly.
+		// Keep their left-to-right mutation semantics until those predicates are
+		// explicitly migrated to SelectionContext.
+		if (range[1] <= -1) {
+			let selectableItems = false;
+			items.forEach(item => {
+				const selectable = lib.filter.cardAiIncluded(item) && getSelectable(item);
 				if (selectable) {
 					item.classList.add("selected");
 					uiSelected.add(item);
+					selectableItems = true;
 				} else {
 					item.classList.remove("selected");
 					uiSelected.remove(item);
@@ -67,28 +71,56 @@ export class Check {
 				if (item.updateTransform) {
 					item.updateTransform(selectable);
 				}
-			} else {
-				if (selectable && uiSelected.length < range[1]) {
+				if (!item.classList.contains("selectable") && item.classList.contains("selected")) {
 					item.classList.add("selectable");
-				} else {
-					item.classList.remove("selectable");
 				}
+				game.callHook(`check${uppercaseType(type)}`, [item, event]);
+			});
+			if (event[`${type}Required`] && uiSelected.length === 0) {
+				ok = false;
+			} else if (uiSelected.length < range[0] && (!event.forced || selectableItems || event.complexSelect)) {
+				ok = false;
+			}
+			if (typeof event.custom?.add?.[type] == "function") {
+				event.custom.add[type]();
+			}
+			return { ok, auto };
+		}
+
+		const evaluation = SelectionValidator.inspect({
+			type,
+			items,
+			selected: uiSelected,
+			range,
+			isIncluded: item => lib.filter.cardAiIncluded(item),
+			isSelectable: getSelectable,
+		});
+
+		evaluation.entries.forEach(({ item, available: selectable }) => {
+			if (selectable && uiSelected.length < range[1]) {
+				item.classList.add("selectable");
+			} else {
+				item.classList.remove("selectable");
 			}
 
-			if (item.classList.contains("selectable")) {
-				selectableItems = true;
-			} else if (item.classList.contains("selected")) {
+			if (!item.classList.contains("selectable") && item.classList.contains("selected")) {
 				item.classList.add("selectable");
 			}
 
 			game.callHook(`check${uppercaseType(type)}`, [item, event]);
 		});
 
-		if (event[`${type}Required`] && uiSelected.length === 0) {
-			ok = false;
-		} else if (uiSelected.length < range[0] && (!event.forced || selectableItems || event.complexSelect)) {
-			ok = false;
-		}
+		const outcome = SelectionValidator.complete({
+			type,
+			selected: uiSelected,
+			inspection: evaluation,
+			required: event[`${type}Required`],
+			forced: event.forced,
+			complex: event.complexSelect,
+			strict: false,
+			enforceMax: false,
+		});
+		ok = outcome.ok;
 
 		if (typeof event.custom?.add?.[type] == "function") {
 			event.custom.add[type]();

@@ -1,83 +1,126 @@
-import { get, _status } from "noname";
+import { _status } from "noname";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import { llmLogger } from "./logger.js";
 import { llmEnabled, llmConfigured, getLLMConfig } from "./index.js";
 import { buildContext } from "./context.js";
 import { buildTools } from "./tools.js";
-import { getCandidateCards, getCandidateSkills } from "./candidates.js";
-import { callLLMWithTimeout, callLLMStream } from "./client.js";
-import { translateResult } from "./apply.js";
+import { getCandidateCards, getCandidateSkills, getCandidateTargetRefs } from "./candidates.js";
+import { callLLMWithTimeout, callLLMStream, type ToolCallResult } from "./client.js";
+import { DecisionSession } from "./apply.js";
+import { assistantToolMessage, isExplicitMultiTurnRejection, remainingTimeoutSec } from "./protocol.js";
 
 /**
- * LLM 决策核心调度。
- * 尝试用 LLM 做出决策，失败时返回 handled: false 让引擎回退到原生 AI。
+ * LLM 决策核心调度。任何 provider、协议或规则校验失败都会返回
+ * handled:false，使 content.ts 自然回退到本地 AI。
  */
 export async function tryLLMDecide(event: any): Promise<{ handled: boolean; result?: any }> {
-	// 需求 3：本局未以 AI 模式开局 → 完全不记录日志，直接回退本地 AI
-	if (!(_status as { llmEnabledAtGameStart?: boolean }).llmEnabledAtGameStart) {
-		return { handled: false };
-	}
+	if (!(_status as { llmEnabledAtGameStart?: boolean }).llmEnabledAtGameStart) return { handled: false };
 
 	const decisionPoint = event.name;
 	const player = event.player;
-	const playerName = player ? player.getName() : "unknown";
-	const seatNum = player ? player.getSeatNum() : undefined;
 	const config = getLLMConfig();
-
-	const logId = llmLogger.start(decisionPoint, playerName, {
+	const logId = llmLogger.start(decisionPoint, player ? player.getName() : "unknown", {
 		enabled: config.enabled,
 		configured: !!(config.url && config.apikey && config.model),
 		model: config.model,
-		}, seatNum);
+	}, player?.getSeatNum());
 
 	try {
-		if (!llmEnabled()) {
-			llmLogger.endFallback(logId, "disabled");
-			return { handled: false };
-		}
-		if (!llmConfigured()) {
-			llmLogger.endFallback(logId, "no_config");
-			return { handled: false };
-		}
+		if (!llmEnabled()) return fallback(logId, "disabled");
+		if (!llmConfigured()) return fallback(logId, "no_config");
+		if (!event || !player) throw staged("translate", "LLM decision requires an event player");
 
-		// 收集候选
-		const cards = getCandidateCards(event, player);
 		const skills = getCandidateSkills(event, player);
+		const cards = getCandidateCards(event, player, skills);
+		const targets = getCandidateTargetRefs(event, player);
+		const decision = new DecisionSession(event, { cards, skills }, targets);
+		const { messages } = buildContext(event, { cards, skills, targets });
+		const history = messages.slice() as ChatCompletionMessageParam[];
+		if (decision.stage) history.push({ role: "user", content: describeStage(decision.stage) });
+		const providerMultiTurnUnsupported = (_status as { llmMultiTurnUnsupported?: boolean }).llmMultiTurnUnsupported;
+		const maxTurns = config.multiTurn && !providerMultiTurnUnsupported ? config.maxTurns : 1;
+		const deadline = Date.now() + config.decisionTimeoutSec * 1000;
 
-		// 构造 prompt 和 tools
-		const { messages } = buildContext(event, { cards, skills });
-		const tools = buildTools(decisionPoint, { cards, skills });
-		llmLogger.logRequest(logId, messages, tools);
-
-		// 优先走流式调用，让 UI 实时看到 args 逐字出现
-		// 服务端不支持 stream 时回退到非流式
-		let toolCall;
-		try {
-			toolCall = await callLLMStream(messages, tools, config, {
-				onChunk: partialArgs => {
-					llmLogger.logStreamChunk(logId, partialArgs);
-				},
-			});
-		} catch (streamErr) {
-			// parse 类错误（空响应、JSON 解析失败）非流式也会失败，不重试直接抛
-			if (streamErr && (streamErr as any).stage === "parse") throw streamErr;
-			// 其它错误（网络、超时、SSE 不支持）：回退到非流式
-			toolCall = await callLLMWithTimeout(messages, tools, config);
+		for (let index = 0; index < maxTurns; index++) {
+			if (Date.now() >= deadline) throw staged("fetch", "LLM decision timed out");
+			decision.revalidate();
+			const stage = decision.stage;
+			const tools = buildTools(decisionPoint, { cards, skills }, stage, !!event.forced);
+			if (!tools.length) throw staged("translate", `unsupported decision point: ${decisionPoint}`);
+			llmLogger.logRequest(logId, history, tools);
+			let toolCall: ToolCallResult;
+			try {
+				toolCall = await requestToolCall(history, tools, config, deadline, logId, index === 0);
+			} catch (error: any) {
+				if (index > 0 && isExplicitMultiTurnRejection(error)) (_status as { llmMultiTurnUnsupported?: boolean }).llmMultiTurnUnsupported = true;
+				throw error;
+			}
+			let accepted;
+			try {
+				accepted = decision.accept(toolCall);
+				llmLogger.logTurn(logId, { index, stage: stage?.id, request: { messages: history.slice(), tools }, toolCall, result: accepted.result ? decision.toLogResult(accepted.result) : accepted.pending });
+			} catch (error: any) {
+				llmLogger.logTurn(logId, { index, stage: stage?.id, request: { messages: history.slice(), tools }, toolCall, error: error?.message || String(error) });
+				throw error;
+			}
+			if (accepted.result) {
+				llmLogger.logResponse(logId, toolCall, decision.toLogResult(accepted.result));
+				llmLogger.end(logId, "success");
+				return { handled: true, result: accepted.result };
+			}
+			if (!config.multiTurn || !accepted.pending) throw staged("translate", "Action requires unsupported additional selection turn");
+			history.push(asAssistantToolMessage(toolCall), {
+				role: "tool",
+				tool_call_id: toolCall.id,
+				content: JSON.stringify({ accepted: true, next_step: accepted.pending }),
+			} as any);
 		}
-
-		// 翻译结果
-		const result = translateResult(event, toolCall, { cards, skills });
-		llmLogger.logResponse(logId, toolCall, result);
-		llmLogger.end(logId, "success");
-
-		return { handled: true, result };
-	} catch (e: any) {
-		const stage = e?.stage || "fetch";
-		const httpStatus = e?.httpStatus;
-		const message = e?.message || String(e);
-		llmLogger.logError(logId, stage, message, httpStatus);
-		// 超时归 timeout，其它归 error/fallback
-		const fallbackReason = stage === "fetch" && message.includes("timed out") ? "timeout" : message;
-		llmLogger.endFallback(logId, fallbackReason);
+		throw staged("fetch", `LLM decision exceeded ${maxTurns} turns`);
+	} catch (error: any) {
+		const stage = error?.stage || "fetch";
+		const message = error?.message || String(error);
+		llmLogger.logError(logId, stage, message, error?.httpStatus);
+		llmLogger.endFallback(logId, stage === "fetch" && message.includes("timed out") ? "timeout" : message);
 		return { handled: false };
 	}
+}
+
+async function requestToolCall(
+	messages: ChatCompletionMessageParam[],
+	tools: any[],
+	config: any,
+	deadline: number,
+	logId: string,
+	allowStream: boolean,
+): Promise<ToolCallResult> {
+	try {
+		if (!allowStream) return await callLLMWithTimeout(messages, tools, withRemainingTimeout(config, deadline));
+		return await callLLMStream(messages, tools, withRemainingTimeout(config, deadline), { onChunk: partialArgs => llmLogger.logStreamChunk(logId, partialArgs) });
+	} catch (streamError: any) {
+		if (!allowStream || streamError?.stage === "parse") throw streamError;
+		return callLLMWithTimeout(messages, tools, withRemainingTimeout(config, deadline));
+	}
+}
+
+function withRemainingTimeout(config: any, deadline: number): any {
+	return { ...config, timeoutSec: remainingTimeoutSec(config.timeoutSec, deadline) };
+}
+
+function asAssistantToolMessage(call: ToolCallResult): ChatCompletionMessageParam {
+	return assistantToolMessage(call) as ChatCompletionMessageParam;
+}
+
+function describeStage(stage: { id: string; type: string; range: [number, number]; items: { ref: string; label: string }[] }): string {
+	return `## 当前选择步骤\n- step_id: ${stage.id}\n- 类型: ${stage.type}\n- 数量: ${stage.range[0]}..${stage.range[1]}\n- 候选:\n${stage.items.map(item => `  - ${item.ref}: ${item.label}`).join("\n")}`;
+}
+
+function fallback(logId: string, reason: string): { handled: false } {
+	llmLogger.endFallback(logId, reason);
+	return { handled: false };
+}
+
+function staged(stage: string, message: string): Error {
+	const error: any = new Error(message);
+	error.stage = stage;
+	return error;
 }

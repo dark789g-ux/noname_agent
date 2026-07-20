@@ -2218,6 +2218,7 @@ const skills = {
 	},
 	// 界荀攸
 	reqice: {
+		selectionSpec: true,
 		audio: 2,
 		enable: "phaseUse",
 		usable(skill, player) {
@@ -2715,6 +2716,14 @@ const skills = {
 	},
 	//典韦
 	olqiangxi: {
+		selectionSpec(event, player) {
+			return {
+				steps: [
+					{ type: "card", select: player.hp < 1 ? 1 : [0, 1], required: player.hp < 1 },
+					{ type: "target", select: 1 },
+				],
+			};
+		},
 		audio: "qiangxi",
 		audioname: ["ol_dianwei", "boss_lvbu3"],
 		enable: "phaseUse",
@@ -6361,6 +6370,10 @@ const skills = {
 	},
 	//顾雍
 	reshenxing: {
+		selectionSpec(event, player) {
+			const count = Math.min(2, player.countMark("reshenxing_used"));
+			return count ? { steps: [{ type: "card", select: count }] } : { steps: [] };
+		},
 		audio: 2,
 		enable: "phaseUse",
 		filter(event, player) {
@@ -13767,6 +13780,7 @@ const skills = {
 		threaten: 1.5,
 	},
 	rehuoji: {
+		selectionSpec: true,
 		position: "hes",
 		audio: 2,
 		audioname: ["ol_sp_zhugeliang", "ol_pangtong"],
@@ -15497,6 +15511,7 @@ const skills = {
 		},
 	},
 	rerende: {
+		selectionSpec: true,
 		audio: 2,
 		audioname: ["gz_jun_liubei"],
 		audioname2: { shen_caopi: "rerende_shen_caopi" },

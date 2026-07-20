@@ -785,6 +785,8 @@ export class GameEvent implements PromiseLike<void> {
 			ai1: this.ai1,
 			ai2: this.ai2,
 			filterOk: this.filterOk,
+			selectionSpec: this.selectionSpec,
+			selectionSpecExists: Object.hasOwn(this, "selectionSpec"),
 		};
 		if (skill) {
 			const info = get.info(skill);
@@ -894,6 +896,11 @@ export class GameEvent implements PromiseLike<void> {
 				}
 				this.filterOk = info.filterOk;
 			}
+			if (info.selectionSpec !== undefined) {
+				this.selectionSpec = info.selectionSpec;
+			} else {
+				delete this.selectionSpec;
+			}
 			delete this.fakeforce;
 		}
 		delete this._buttonChoice;
@@ -927,6 +934,11 @@ export class GameEvent implements PromiseLike<void> {
 			this._targetChoice = this._backup._targetChoice;
 			this._skillChoice = this._backup._skillChoice;
 			this.filterOk = this._backup.filterOk;
+			if (this._backup.selectionSpecExists) {
+				this.selectionSpec = this._backup.selectionSpec;
+			} else {
+				delete this.selectionSpec;
+			}
 		}
 		delete this.skill;
 		delete this.ignoreMod;

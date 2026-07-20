@@ -155,6 +155,17 @@
 				</div>
 
 				<!-- ⑤ 错误详情 -->
+				<div v-if="view.entry.turns?.length" class="llm-log-section">
+					<div class="llm-log-section-title">多轮决策（{{ view.entry.turns.length }}）</div>
+					<div class="llm-log-section-body">
+						<details v-for="turn in view.entry.turns" :key="turn.index">
+							<summary>第 {{ turn.index + 1 }} 轮 {{ turn.stage || "初始动作" }}</summary>
+							<pre class="llm-log-json">{{ formatJson(turn) }}</pre>
+						</details>
+					</div>
+				</div>
+
+				<!-- ⑤ 错误详情 -->
 				<div v-if="view.entry.error" class="llm-log-section">
 					<div class="llm-log-section-title">错误详情</div>
 					<div class="llm-log-section-body">
@@ -250,7 +261,11 @@ function formatFullTime(ts: number): string {
 }
 
 function formatJson(data: any): string {
-	return JSON.stringify(data, null, 2);
+	try {
+		return JSON.stringify(data, null, 2);
+	} catch {
+		return String(data);
+	}
 }
 
 function statusClass(status: LogEntry["status"]): string {

@@ -118,6 +118,7 @@ const skills = {
 	},
 	//手杀丁尚涴------by 清风
 	mbzhaofu: {
+		selectionSpec: true,
 		audio: 2,
 		enable: "chooseToUse",
 		usable: 1,
