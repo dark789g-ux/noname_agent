@@ -1,5 +1,6 @@
 import { lib, _status, ui } from "noname";
 import { llmLogger } from "./logger.js";
+import { end, reset, start, type PlayerButtonLogEntry } from "./player-button-state.js";
 
 export interface LLMConfig {
 	enabled: boolean;
@@ -76,17 +77,30 @@ export function initLLMGameHooks(): void {
 
 	if (typeof lib !== "undefined" && lib.announce?.subscribe) {
 		lib.announce.subscribe("gameStart", onGameStart);
+		lib.announce.subscribe("llm_log_start", onLLMLogStart);
+		lib.announce.subscribe("llm_log_end", onLLMLogEnd);
 	}
 }
 
 function onGameStart(): void {
 	const status = _status as LLMGameStatus;
+	reset();
 	delete status.llmConfigAtGameStart;
 	const snapshot = Object.freeze({ ...readLLMConfig() });
 	status.llmConfigAtGameStart = snapshot;
 	status.llmGameId = `game_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 	status.llmEnabledAtGameStart = snapshot.enabled;
 	delete status.llmMultiTurnUnsupported;
+	ui.updateLLMLogButtons();
+}
+
+function onLLMLogStart(entry: PlayerButtonLogEntry): void {
+	start(entry);
+	ui.updateLLMLogButtons();
+}
+
+function onLLMLogEnd(entry: PlayerButtonLogEntry): void {
+	end(entry);
 	ui.updateLLMLogButtons();
 }
 

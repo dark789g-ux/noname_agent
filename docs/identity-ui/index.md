@@ -42,6 +42,7 @@ identity.start 数组  [mode/identity.js:10-472]
 | `apps/core/noname/ui/` | UI 类与 DOM 创建工厂 |
 | `apps/core/layout/default/layout.css` | 身份颜色/身份牌定位主样式 |
 | `apps/core/noname/library/element/player.js` | Player DOM 子节点构造 |
+| `apps/core/noname/ui/index.js` | 通用 Player UI 状态同步（含 LLM 日志按钮） |
 
 ## 文档导航
 
@@ -51,6 +52,8 @@ identity.start 数组  [mode/identity.js:10-472]
 | [player-dom.md](player-dom.md) | Player DOM 结构（buildNode/buildExtra 子节点表）+ 身份相关方法 |
 | [identity-card.md](identity-card.md) | 身份牌渲染/颜色/猜测交互 + 4 子模式差异 |
 | [css-layout.md](css-layout.md) | 布局主题/座位排布/配置项（identity 配置块 L5773-6676） |
+
+LLM 日志按钮也是通用 Player DOM 的一部分：活动 LLM 决策期间会保持蓝色高亮，样式定义在 `layout/default/layout.css`，状态由 `llm/player-button-state.ts` 纯模块派生，不属于身份玩法专属逻辑。
 
 ## 相关文档
 

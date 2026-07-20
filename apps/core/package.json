@@ -24,7 +24,8 @@
         "build:types": "tsc -p tsconfig.types.json",
         "generateAsset": "tsx scripts/generateAsset.ts",
 		"lint": "pnpm eslint noname/**",
-		"test:selection": "tsx --test test/selection/index.test.js noname/llm/protocol.test.ts"
+		"test:selection": "tsx --test test/selection/index.test.js noname/llm/protocol.test.ts",
+		"test:llm-player-button": "tsx --test noname/llm/player-button-state.test.ts"
     },
     "dependencies": {
         "@codemirror/autocomplete": "^6.20.0",

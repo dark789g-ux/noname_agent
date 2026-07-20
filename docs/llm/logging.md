@@ -80,6 +80,18 @@ LLMPlayerLogPanel.vue     先订阅 start/chunk/end
 
 玩家面板的事件订阅必须早于活动快照和 IndexedDB 查询，防止打开面板期间结束的调用丢失。刷新和实时结束事件都使用相同的按 ID 合并逻辑，因此查询结果不会覆盖刚收到的日志。
 
+### 玩家日志 Dialog 交互契约
+
+游戏画面全局最多存在一个玩家 LLM 日志 Dialog。同一玩家的「AI」按钮再次点击时关闭当前面板；点击另一玩家的按钮时，先关闭旧面板，再打开新玩家的面板。
+
+关闭 Dialog 只卸载面板 UI，并从 `ui.dialogs` 清理对应引用，不会取消、超时或中断正在执行的 LLM 请求。之后重新打开该玩家面板时，组件会读取最新的 active snapshot，恢复当前生成内容与计时状态。
+
+### 武将牌活动指示器
+
+`llm/index.ts` 在 `initLLMGameHooks()` 中仅订阅一次 `llm_log_start` 与 `llm_log_end`。订阅回调把完整 `LogEntry` 交给 `player-button-state.ts` 的 `Map<logId, entry>`，并刷新 `game.players` 和 `game.dead` 的按钮；新对局开始时清空该 Map。
+
+玩家优先按 `gameId + playerSeatNum` 匹配活动日志；旧日志缺失座位号时按同局 `playerName` 回退。多个日志可同时绑定同一武将，只有最后一个结束后才取消活动状态。`derive()` 使活动日志的按钮始终可见、可点击且亮蓝呼吸，即使 LLM 配置被关闭或玩家控制权变化；无障碍的 `prefers-reduced-motion` 环境会保留静态高亮而不播放动画。
+
 “清空”会清除所有 AI 玩家已完成的日志，但不会清理 `activeLogs`、取消请求或隐藏进行中区域；活动调用结束后会重新进入历史。
 
 ## 多轮日志

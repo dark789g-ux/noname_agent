@@ -2970,10 +2970,26 @@ div.select-all:not(.card):not(.player) {
 	z-index: 6;
 	user-select: none;
 	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-	transition: background 0.2s;
+	transition: background 0.2s, box-shadow 0.2s;
 }
 .player > .llm-log-btn:hover {
 	background: rgba(80, 130, 230, 1);
+}
+.player > .llm-log-btn.llm-log-btn-active {
+	background: rgba(65, 150, 255, 1);
+	box-shadow: 0 0 12px rgba(85, 170, 255, 0.95);
+	animation: llm-log-btn-active-pulse 1.2s ease-in-out infinite;
+}
+@keyframes llm-log-btn-active-pulse {
+	50% {
+		background: rgba(105, 185, 255, 1);
+		box-shadow: 0 0 18px rgba(125, 195, 255, 1);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.player > .llm-log-btn.llm-log-btn-active {
+		animation: none;
+	}
 }
 /* linked 状态（铁索连环）下 avatar 旋转 90 度，按钮跟随调整 */
 .player.linked > .llm-log-btn {

@@ -7,6 +7,8 @@ interface PlayerLike {
 	getSeatNum(): number;
 }
 
+let activeDialog: { player: PlayerLike; dialog: { close(): unknown } } | undefined;
+
 /**
  * 打开某 AI 武将的 LLM 日志面板。
  * 在游戏画面上弹出一个 Dialog，挂载 LLMPlayerLogPanel 组件。
@@ -16,10 +18,15 @@ interface PlayerLike {
  * 2. 本文件由 player.js 的 click handler 通过动态 import 调用（避免循环依赖 TDZ）
  */
 export function openLLMPlayerLog(player: PlayerLike): void {
-	const gameId = (_status as { llmGameId?: string }).llmGameId;
-	if (!gameId) {
-		return;
+	if (activeDialog) {
+		if (activeDialog.player === player) {
+			activeDialog.dialog.close();
+			return;
+		}
+		activeDialog.dialog.close();
 	}
+
+	const gameId = (_status as { llmGameId?: string }).llmGameId || "game_unknown";
 
 	const seatNum = player.getSeatNum();
 	const playerName = player.getName();
@@ -34,9 +41,39 @@ export function openLLMPlayerLog(player: PlayerLike): void {
 		gameId,
 		playerName,
 	});
-	app.mount(container);
-	(dialog as any)._llmApp = app;
-	(dialog as any)._llmContainer = container;
+	const origClose = dialog.close.bind(dialog);
+	let closed = false;
+	dialog.close = function () {
+		if (closed) {
+			return dialog;
+		}
+		closed = true;
+		try {
+			try {
+				app.unmount();
+			} catch (_e) {
+				/* unmount 失败不阻断 close */
+			}
+			try {
+				container.remove();
+			} catch (_e) {
+				/* 移除失败不阻断 close */
+			}
+			if (activeDialog?.dialog === dialog) {
+				activeDialog = undefined;
+			}
+		} finally {
+			origClose();
+		}
+		return dialog;
+	};
+
+	try {
+		app.mount(container);
+	} catch (error) {
+		dialog.close();
+		throw error;
+	}
 
 	// 添加关闭按钮（参考 ui.click.count 模式，index.js:4769-4774）
 	const closeButton = ui.create.div(".close-btn");
@@ -46,27 +83,11 @@ export function openLLMPlayerLog(player: PlayerLike): void {
 		dialog.close();
 	};
 
-	const origClose = dialog.close.bind(dialog);
-	dialog.close = function (this: any) {
-		const dlg = this;
-		if (dlg._llmApp) {
-			try {
-				dlg._llmApp.unmount();
-			} catch (_e) {
-				/* unmount 失败不阻断 close */
-			}
-			dlg._llmApp = null;
-		}
-		if (dlg._llmContainer) {
-			try {
-				dlg._llmContainer.remove();
-			} catch (_e) {
-				/* 移除失败不阻断 close */
-			}
-			dlg._llmContainer = null;
-		}
-		return origClose();
-	};
-
-	dialog.open();
+	activeDialog = { player, dialog };
+	try {
+		dialog.open();
+	} catch (error) {
+		dialog.close();
+		throw error;
+	}
 }

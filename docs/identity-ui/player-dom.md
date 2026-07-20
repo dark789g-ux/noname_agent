@@ -38,7 +38,7 @@
 - L63-81：`equips` 挂载 `MutationObserver`，监听子节点变动以触发 `$handleEquipChange()`。
 - L81-85：`expansions` 初始 `display:none`；`chain` 内按 `game.layout` 生成 64（default）或 40 个 `.cardbg` 子节点。
 
-## 2. buildExtra()：identity 内层与 link 标记
+## 2. buildExtra()：identity 内层、link 标记与 LLM 按钮
 
 `Player.prototype.buildExtra()` 定义在 `apps/core/noname/library/element/player.js:88-99`。
 
@@ -49,8 +49,11 @@
 | L91-93 | `player.mark(" ", ...)` → `node.link` | 铁索标记节点，通过 `player.mark()` 创建（非 `ui.create.div()` 直接创建） |
 | L95-97 | `setBackgroundImage("image/card/tiesuo_mark.png")` | 设置 link 标记的背景图 |
 | L98 | `ui.create.div(node.identity)` | 在 identity 节点内创建内层 div（用于显示身份文字） |
+| L100+ | `node.llmLogBtn` | AI 武将牌旁的 LLM 日志入口；创建后调用 `ui.updateLLMLogButton(player)` 同步当前显示状态 |
 
 `setIdentity()` 写入的是 L98 创建的这个内层 div 的 `innerHTML`（即 `node.identity.firstChild`）。
+
+`node.llmLogBtn` 的普通显示条件是“LLM 已启用且玩家未受本地控制”。只要该玩家存在未结束的 LLM 决策，按钮会保持可见、可点击并带蓝色高亮，即使期间关闭了 LLM 配置或切换了控制对象；对应决策结束后再恢复普通条件。
 
 ## 3. 身份相关 Player 方法
 
@@ -98,7 +101,7 @@
 
 ## 修改指引
 
-- **加新 Player 子节点**：编辑 `apps/core/noname/library/element/player.js:38-86` 的 `buildNode()`，在对应位置 `node.xxx = ui.create.div(...)`；同时考虑 `buildExtra()`（L88+）。
+- **加新 Player 子节点**：编辑 `apps/core/noname/library/element/player.js:38-86` 的 `buildNode()`，在对应位置 `node.xxx = ui.create.div(...)`；同时考虑 `buildExtra()`（L88+）。对于需随运行状态更新的节点，创建后调用对应的单节点同步方法，避免在每个 Player 上重复订阅全局事件。
 - **调整身份标记样式**：编辑 `setIdentity()`（L5728-5739），改 `dataset.color` 或 `innerHTML` 逻辑；同步 CSS `.identity[data-color="..."]`（详见 identity-card.md）。
 - **新增身份公开逻辑**：在 `mode/identity.js` 中通过 mode mixin 扩展 `Player.prototype.showIdentity`，而非修改 player.js。
 

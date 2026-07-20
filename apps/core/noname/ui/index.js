@@ -1,4 +1,5 @@
 import { lib, game, get, _status } from "noname";
+import { derive as deriveLLMLogButtonState } from "@/llm/player-button-state.js";
 import { Click } from "./click/index.js";
 import { Create } from "./create/index.js";
 
@@ -807,20 +808,33 @@ export class UI {
 	}
 	/**
 	 * 更新所有 AI 武将牌上 LLM 日志按钮的显隐。
-	 * - LLM 关闭：所有按钮隐藏
-	 * - LLM 开启 + 玩家是 AI：显示
-	 * - LLM 开启 + 玩家是人类：隐藏
+	 * 活动日志始终显示并高亮，避免配置或控制权变化时中断查看入口。
 	 *
 	 * 调用时机：gameStart、LLM 开关切换、玩家加入/离开
 	 */
 	updateLLMLogButtons() {
-		if (!game.players) return;
-		const enabled = !!lib.config.llm_enabled;
-		for (const p of game.players) {
-			if (!p.node || !p.node.llmLogBtn) continue;
-			const isAi = !p.isUnderControl();
-			p.node.llmLogBtn.style.display = enabled && isAi ? "" : "none";
-		}
+		const players = new Set([...(game.players || []), ...(game.dead || [])]);
+		for (const player of players) this.updateLLMLogButton(player);
+	}
+	/** @param { any } player */
+	updateLLMLogButton(player) {
+		const button = player?.node?.llmLogBtn;
+		if (!button) return;
+		const playerName = player.getName();
+		const state = deriveLLMLogButtonState(
+			{
+				gameId: /** @type {{ llmGameId?: string }} */ (_status).llmGameId,
+				playerName,
+				playerSeatNum: player.getSeatNum(),
+			},
+			{
+				enabled: !!lib.config.llm_enabled,
+				isUnderControl: player.isUnderControl(),
+			}
+		);
+		button.style.display = state.visible ? "" : "none";
+		button.classList.toggle("llm-log-btn-active", state.highlighted);
+		button.title = state.active ? `${playerName} 正在调用 LLM；点击查看日志` : `查看 ${playerName} 的 LLM 日志`;
 	}
 	}
 

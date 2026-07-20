@@ -4,6 +4,7 @@ import { ChildNodesWatcher } from "../cache/childNodesWatcher.js";
 import { security } from "@/util/sandbox.js";
 import { ContentCompiler } from "./gameEvent.js";
 import { AsyncFunction } from "@/util/index.js";
+import { derive as deriveLLMLogButtonState } from "@/llm/player-button-state.js";
 import dedent from "dedent";
 
 export class Player extends HTMLDivElement {
@@ -102,14 +103,25 @@ export class Player extends HTMLDivElement {
 		node.llmLogBtn.style.display = "none";
 		node.llmLogBtn.addEventListener("click", function (e) {
 			e.stopPropagation();
-			if (!lib.config.llm_enabled) return;
-			if (player.isUnderControl()) return;
+			const state = deriveLLMLogButtonState(
+				{
+					gameId: /** @type {{ llmGameId?: string }} */ (_status).llmGameId,
+					playerName: player.getName(),
+					playerSeatNum: player.getSeatNum(),
+				},
+				{
+					enabled: !!lib.config.llm_enabled,
+					isUnderControl: player.isUnderControl(),
+				}
+			);
+			if (!state.visible) return;
 			import("@/llm/openLLMPlayerLog.js").then(({ openLLMPlayerLog }) => {
 				openLLMPlayerLog(player);
 			}).catch(() => {
 				// 加载失败静默处理
 			});
 		});
+		ui.updateLLMLogButton(player);
 	}
 	buildProperty() {
 		let player = this;
