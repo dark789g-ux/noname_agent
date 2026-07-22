@@ -19,6 +19,7 @@
 | `request` | `{messages, tools}?` | 请求数据 | `logger-types.ts` |
 | `response` | `{toolCall?, translatedResult?}?` | 响应数据；新日志的 `toolCall.reason` 为模型选择原因 | `logger-types.ts` |
 | `error` | `{stage, message, httpStatus?}?` | 错误详情 | `logger-types.ts` |
+| `requestTimings` | `RequestTiming[]?` | provider 请求尝试的时序；缺失代表旧日志或未启用该遥测 | `logger-types.ts` |
 
 `ActiveLogSnapshot` 表示尚未结束的调用，包含 `entry`、当前累计的 `partialArgs` 和精确的 `startedAt`。玩家面板中途打开时通过快照恢复最新一条活动调用及已流式生成的内容。
 
@@ -33,7 +34,10 @@
 | `logError(id, stage, message, httpStatus)` | 记录错误详情 | `logger.ts:114-117` |
 | `end(id, status)` | 结束日志，计算耗时并立即排入异步持久化队列 | `logger.ts` |
 | `endFallback(id, reason)` | 记录降级原因，调用 `end(id, "fallback")` | `logger.ts:144-148` |
-| `logStreamChunk(logId, partialArgs)` | 更新活动快照并发布流式事件 | `logger.ts:156-166` |
+| `startRequestAttempt(id, turn, attempt, transport)` | 创建一次独立 provider 请求尝试并写活动检查点 | `logger.ts` |
+| `markRequestFirstChunk` / `markRequestTTFT` | 标记首个 SSE chunk / 首个有效 token；TTFT 只触发一次活动检查点 | `logger.ts` |
+| `finishRequestAttempt` | 标记请求成功或错误及完整响应耗时；最终随 `end()` 落库 | `logger.ts` |
+| `logStreamChunk(logId, partialArgs)` | 更新活动快照并发布流式事件 | `logger.ts` |
 | `flush()` | 等待当前持久化队列排空 | `logger.ts` |
 | `getLogs()` | 等待队列屏障后查询 IndexedDB，并合并暂存的失败记录 | `logger.ts` |
 | `getLogsByGameAndPlayer(gameId, playerName, seatNum?)` | 按对局和玩家筛选完成日志 | `logger.ts:244-247` |
@@ -58,7 +62,17 @@
 
 新写入由串行 Promise 队列处理，普通失败按退避重试，配额不足时先清理最旧完成日志后重试。最终仍未写入的记录保留在内存 pending 集合，并在后续写入、查询或页面隐藏时再次尝试；持久化失败不会影响游戏决策。
 
-`start()` 会异步写入活动检查点；每轮完整决策完成后更新检查点；`end()` 在同一个事务内写入完成记录并删除检查点。流式 token 和不完整 arguments 仅保存在内存，不持久化。
+`start()` 与每个请求 attempt 开始会异步写入活动检查点；每轮完整决策完成后更新检查点；首个 TTFT 只额外写入一次检查点；`end()` 在同一个事务内写入完成记录并删除检查点。其余流式 token、首 chunk 与不完整 arguments 仅保存在内存，不会造成逐 chunk 的 IndexedDB 写入。
+
+## 首 Token 延迟与请求尝试
+
+`requestTimings` 的每一项对应一次调用 provider 的 HTTP 请求：`turnIndex`/`attemptIndex` 从 0 开始，`transport` 为 `stream` 或 `nonstream`，`startedAtOffsetMs` 相对日志条目开始；`firstChunkMs`、`ttftMs`、`responseMs` 相对该 attempt 开始。`outcome` 为 `pending`、`success` 或 `error`；失败时可带 `errorStage`。
+
+流式请求的首 chunk 指 SDK 解析出的第一个 SSE chunk，即使它只有 role、id/name 或空 delta。TTFT 只在首次出现非空 `delta.content`、`tool_calls[*].function.arguments` 或兼容的 `function_call.arguments` 时记录。因此 role-only、工具名、空分片都不会被误当作首 Token；非流式请求没有分片，首 chunk 与 TTFT 显示为 `--`。所有遥测回调均被隔离，回调本身抛错不能改变请求结果。
+
+首轮流式失败并回退非流式时，会记录两个 attempt：失败的 `stream`（可保留其真实 TTFT）和后续 `nonstream`。全局列表只展示成功 attempt 的 TTFT，避免把失败流式调用冒充为最终成功请求；详情表会完整展示所有尝试。多轮决策每一轮都有独立的 attempt 序列，SDK 内部重试仍归入同一 attempt。
+
+页面关闭或崩溃发生在完成前时，活动检查点可能保留 `pending` attempt；其没有 `responseMs` 和最终 outcome，这属于可恢复的中断现场而非成功请求。为保持兼容性，不升级 IndexedDB 版本或索引，旧日志缺少 `requestTimings` 时 UI 一律显示 `--`。
 
 每个标签页维护 30 秒心跳、90 秒有效期的实例租约，并用带配置前缀的 `BroadcastChannel` 确认 owner 是否存活。启动时及每分钟扫描活动检查点；只有 owner 在 300ms 内不响应、租约已过期且决策 deadline 额外过期 60 秒后，才把记录原子地转为 `interrupted`。`BroadcastChannel` 不可用时退化为租约和 deadline 判定。中断日志保留已完成轮次，并显示“页面关闭、崩溃或页面实例失活”的说明；它不表示已回退本地 AI。
 

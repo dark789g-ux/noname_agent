@@ -1,5 +1,20 @@
 export type LogStatus = "success" | "fallback" | "error" | "timeout" | "interrupted";
 export type ErrorStage = "fetch" | "parse" | "translate";
+export type RequestTransport = "stream" | "nonstream";
+export type RequestOutcome = "pending" | "success" | "error";
+
+/** 单次 provider 请求的时序；startedAtOffsetMs 相对日志开始，其余时长相对本次请求开始。 */
+export interface RequestTiming {
+	turnIndex: number;
+	attemptIndex: number;
+	transport: RequestTransport;
+	startedAtOffsetMs: number;
+	firstChunkMs?: number;
+	ttftMs?: number;
+	responseMs?: number;
+	outcome: RequestOutcome;
+	errorStage?: ErrorStage;
+}
 
 export interface LogTurn {
 	index: number;
@@ -27,6 +42,8 @@ export interface LogEntry {
 	error?: { stage: ErrorStage; message: string; httpStatus?: number };
 	/** 多轮工具调用；缺省代表由旧版本写入的单轮日志。 */
 	turns?: LogTurn[];
+	/** 每轮的 provider 请求尝试；缺省代表旧版本或非遥测日志。 */
+	requestTimings?: RequestTiming[];
 }
 
 export interface ActiveLogSnapshot {

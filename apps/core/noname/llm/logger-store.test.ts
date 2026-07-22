@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LLMLogLease, type LLMLogBroadcastChannel } from "./logger-lease.js";
 import { activeCheckpointMatches, canFinalizeActive, canPutActive, canRecoverActive, isRecoveryEntryForActive, migrationSourceMatches, selectLegacyEntries, shouldMigrateSource, type ActiveLogRecord, type LegacyMigrationSourceSnapshot, type LLMLogEntryRecord } from "./logger-store.js";
+import { createRequestTiming, finishRequestTiming, markRequestTiming } from "./logger-timing.js";
 
 const entry = (id: string, timestamp = 1): LLMLogEntryRecord => ({ id, gameId: "game_1", timestamp });
 const active = (ownerId = "tab_1", updatedAt = 10): ActiveLogRecord => ({ id: "log_1", ownerId, gameId: "game_1", status: "active", timestamp: 1, updatedAt, deadlineAt: 20, entry: entry("log_1") });
@@ -108,6 +109,23 @@ test("discard/finalize checkpoint matching rejects a newer replacement", () => {
 	assert.equal(activeCheckpointMatches(expected, expected), true);
 	assert.equal(canFinalizeActive(expected, { ...expected, revision: 3 }, false), false);
 	assert.equal(canFinalizeActive(expected, { ...expected, ownerId: "tab_2" }, false), false);
+});
+
+test("request timing records stream fallback and later turns without mistaking zero for missing", () => {
+	const stream = createRequestTiming(0, 0, "stream", 0);
+	assert.equal(markRequestTiming(stream, "firstChunkMs", 0), true);
+	assert.equal(markRequestTiming(stream, "ttftMs", 0), true);
+	assert.equal(markRequestTiming(stream, "ttftMs", 3), false, "TTFT only checkpoints once");
+	finishRequestTiming(stream, "error", 4, "fetch");
+	const fallback = createRequestTiming(0, 1, "nonstream", 4);
+	finishRequestTiming(fallback, "success", 5);
+	const laterTurn = createRequestTiming(1, 0, "nonstream", 9);
+	finishRequestTiming(laterTurn, "error", 2, "parse");
+	assert.deepEqual([stream, fallback, laterTurn], [
+		{ turnIndex: 0, attemptIndex: 0, transport: "stream", startedAtOffsetMs: 0, firstChunkMs: 0, ttftMs: 0, responseMs: 4, outcome: "error", errorStage: "fetch" },
+		{ turnIndex: 0, attemptIndex: 1, transport: "nonstream", startedAtOffsetMs: 4, responseMs: 5, outcome: "success" },
+		{ turnIndex: 1, attemptIndex: 0, transport: "nonstream", startedAtOffsetMs: 9, responseMs: 2, outcome: "error", errorStage: "parse" },
+	]);
 });
 
 class FakeChannel implements LLMLogBroadcastChannel {

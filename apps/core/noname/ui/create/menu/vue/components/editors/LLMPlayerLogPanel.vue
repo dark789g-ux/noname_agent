@@ -87,6 +87,17 @@
 			</div>
 
 			<!-- 5. 错误 / 回退 -->
+			<div v-if="selectedDetail.requestTimings?.length" class="detail-card">
+				<div class="detail-card-title">请求尝试</div>
+				<div class="detail-card-body timing-table-wrap">
+					<table class="timing-table">
+						<thead><tr><th>轮</th><th>尝试</th><th>传输</th><th>首 Chunk</th><th>首 Token</th><th>完整响应</th><th>结果</th></tr></thead>
+						<tbody><tr v-for="timing in selectedDetail.requestTimings" :key="`${timing.turnIndex}-${timing.attemptIndex}`"><td>{{ timing.turnIndex + 1 }}</td><td>{{ timing.attemptIndex + 1 }}</td><td>{{ timing.transport }}</td><td>{{ formatMs(timing.firstChunkMs) }}</td><td>{{ formatMs(timing.ttftMs) }}</td><td>{{ formatMs(timing.responseMs) }}</td><td>{{ timing.outcome }}{{ timing.errorStage ? ` (${timing.errorStage})` : "" }}</td></tr></tbody>
+					</table>
+				</div>
+			</div>
+
+			<!-- 6. 错误 / 回退 -->
 			<div v-if="selectedDetail.turns?.length" class="detail-card">
 				<div class="detail-card-title">多轮决策（{{ selectedDetail.turns.length }}）</div>
 				<div class="detail-card-body">
@@ -137,7 +148,7 @@
 					<pre class="stream-text">{{ streamText || "等待 LLM 响应..." }}</pre>
 				</div>
 				<div class="active-meta">
-					已生成 {{ streamText.length }} 字 / 用时 {{ elapsedMs }}ms
+					已生成 {{ streamText.length }} 字 / 首 Token {{ formatActiveTTFT(currentCall) }} / 用时 {{ elapsedMs }}ms
 				</div>
 			</div>
 
@@ -267,6 +278,10 @@ const handlers = {
 		if (!currentCall.value || payload.logId !== currentCall.value.id) return;
 		streamText.value = payload.partialArgs;
 	},
+	timing(payload: { logId: string; entry: LogEntry }) {
+		if (!currentCall.value || payload.logId !== currentCall.value.id) return;
+		currentCall.value = payload.entry;
+	},
 	end(entry: LogEntry) {
 		if (!matchesPlayer(entry)) return;
 		mergeHistory([entry]);
@@ -282,6 +297,7 @@ onMounted(async () => {
 	// 取消订阅需要用 lib.announce.unsubscribe(name, method)
 	lib.announce.subscribe("llm_log_start", handlers.start);
 	lib.announce.subscribe("llm_log_chunk", handlers.chunk);
+	lib.announce.subscribe("llm_log_timing", handlers.timing);
 	lib.announce.subscribe("llm_log_end", handlers.end);
 	restoreLatestActive();
 	await refresh();
@@ -290,6 +306,7 @@ onMounted(async () => {
 onUnmounted(() => {
 	lib.announce.unsubscribe("llm_log_start", handlers.start);
 	lib.announce.unsubscribe("llm_log_chunk", handlers.chunk);
+	lib.announce.unsubscribe("llm_log_timing", handlers.timing);
 	lib.announce.unsubscribe("llm_log_end", handlers.end);
 	stopElapsedTimer();
 });
@@ -359,6 +376,16 @@ function formatJson(obj: any): string {
 	}
 }
 
+function formatMs(value: number | undefined): string {
+	return value === undefined ? "--" : `${Math.round(value)}ms`;
+}
+
+function formatActiveTTFT(entry: LogEntry | null): string {
+	if (!entry) return "--";
+	const timings = entry.requestTimings || [];
+	return formatMs(timings.find(timing => timing.ttftMs !== undefined)?.ttftMs);
+}
+
 function isPromptMessage(message: any): message is { role: "system" | "user"; content: unknown } {
 	return message?.role === "system" || message?.role === "user";
 }
@@ -408,6 +435,9 @@ const statusDetail = getLLMLogStatusDetail;
 .label { color: #999; margin-right: 4px; }
 .code-block { background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 3px; padding: 6px 8px; margin: 4px 0; font-size: 11px; font-family: monospace; white-space: pre-wrap; word-break: break-all; overflow-x: auto; color: #ccc; }
 .content-group-label { margin-top: 8px; color: #aaa; font-size: 12px; }
+.timing-table-wrap { overflow-x: auto; }
+.timing-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+.timing-table th, .timing-table td { padding: 3px 5px; border-bottom: 1px solid #444; text-align: left; }
 details { margin: 4px 0; }
 details summary { cursor: pointer; color: #aaa; font-size: 12px; padding: 2px 0; }
 details summary:hover { color: #ddd; }

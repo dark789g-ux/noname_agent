@@ -54,6 +54,7 @@
 							<th>决策点</th>
 							<th>玩家</th>
 							<th>耗时</th>
+							<th>首 Token</th>
 							<th>状态</th>
 						</tr>
 					</thead>
@@ -68,6 +69,7 @@
 							<td>{{ entry.decisionPoint }}</td>
 							<td>{{ entry.playerName }}</td>
 							<td>{{ entry.durationMs }}ms</td>
+							<td>{{ formatFinalTTFT(entry) }}</td>
 							<td>
 								<span :class="['llm-log-status', statusPresentation(entry.status).className]">
 									{{ statusPresentation(entry.status).icon }} {{ statusPresentation(entry.status).text }}
@@ -159,6 +161,17 @@
 				</div>
 
 				<!-- ⑤ 错误详情 -->
+				<div v-if="view.entry.requestTimings?.length" class="llm-log-section">
+					<div class="llm-log-section-title">请求尝试</div>
+					<div class="llm-log-section-body llm-log-table-wrap">
+						<table class="llm-log-table">
+							<thead><tr><th>轮</th><th>尝试</th><th>传输</th><th>首 Chunk</th><th>首 Token</th><th>完整响应</th><th>结果</th></tr></thead>
+							<tbody><tr v-for="timing in view.entry.requestTimings" :key="`${timing.turnIndex}-${timing.attemptIndex}`"><td>{{ timing.turnIndex + 1 }}</td><td>{{ timing.attemptIndex + 1 }}</td><td>{{ timing.transport }}</td><td>{{ formatMs(timing.firstChunkMs) }}</td><td>{{ formatMs(timing.ttftMs) }}</td><td>{{ formatMs(timing.responseMs) }}</td><td>{{ timing.outcome }}{{ timing.errorStage ? ` (${timing.errorStage})` : "" }}</td></tr></tbody>
+						</table>
+					</div>
+				</div>
+
+				<!-- ⑥ 错误详情 -->
 				<div v-if="view.entry.turns?.length" class="llm-log-section">
 					<div class="llm-log-section-title">多轮决策（{{ view.entry.turns.length }}）</div>
 					<div class="llm-log-section-body">
@@ -272,6 +285,14 @@ function formatJson(data: any): string {
 	} catch {
 		return String(data);
 	}
+}
+
+function formatMs(value: number | undefined): string {
+	return value === undefined ? "--" : `${Math.round(value)}ms`;
+}
+
+function formatFinalTTFT(entry: LogEntry): string {
+	return formatMs(entry.requestTimings?.find(timing => timing.outcome === "success" && timing.ttftMs !== undefined)?.ttftMs);
 }
 
 function isPromptMessage(message: any): message is { role: "system" | "user"; content: unknown } {

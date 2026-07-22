@@ -51,7 +51,7 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 			llmLogger.logRequest(logId, history, tools);
 			let toolCall: ToolCallResult;
 			try {
-				toolCall = await requestToolCall(history, tools, config, deadline, logId, index === 0);
+				toolCall = await requestToolCall(history, tools, config, deadline, logId, index, index === 0);
 			} catch (error: any) {
 				if (index > 0 && isExplicitMultiTurnRejection(error)) (_status as { llmMultiTurnUnsupported?: boolean }).llmMultiTurnUnsupported = true;
 				throw error;
@@ -107,14 +107,45 @@ async function requestToolCall(
 	config: any,
 	deadline: number,
 	logId: string,
+	turnIndex: number,
 	allowStream: boolean,
 ): Promise<ToolCallResult> {
+	let attemptIndex = 0;
 	try {
-		if (!allowStream) return await callLLMWithTimeout(messages, tools, withRemainingTimeout(config, deadline));
-		return await callLLMStream(messages, tools, withRemainingTimeout(config, deadline), { onChunk: partialArgs => llmLogger.logStreamChunk(logId, partialArgs) });
+		if (!allowStream) return await requestNonstream(messages, tools, config, deadline, logId, turnIndex, attemptIndex);
+		return await requestStream(messages, tools, config, deadline, logId, turnIndex, attemptIndex);
 	} catch (streamError: any) {
 		if (!allowStream || streamError?.stage === "parse") throw streamError;
-		return callLLMWithTimeout(messages, tools, withRemainingTimeout(config, deadline));
+		attemptIndex++;
+		return requestNonstream(messages, tools, config, deadline, logId, turnIndex, attemptIndex);
+	}
+}
+
+async function requestStream(messages: ChatCompletionMessageParam[], tools: any[], config: any, deadline: number, logId: string, turnIndex: number, attemptIndex: number): Promise<ToolCallResult> {
+	llmLogger.startRequestAttempt(logId, turnIndex, attemptIndex, "stream");
+	try {
+		const result = await callLLMStream(messages, tools, withRemainingTimeout(config, deadline), {
+			onChunk: partialArgs => llmLogger.logStreamChunk(logId, partialArgs),
+			onFirstChunk: () => llmLogger.markRequestFirstChunk(logId, turnIndex, attemptIndex),
+			onFirstToken: () => llmLogger.markRequestTTFT(logId, turnIndex, attemptIndex),
+		});
+		llmLogger.finishRequestAttempt(logId, turnIndex, attemptIndex, "success");
+		return result;
+	} catch (error: any) {
+		llmLogger.finishRequestAttempt(logId, turnIndex, attemptIndex, "error", error?.stage);
+		throw error;
+	}
+}
+
+async function requestNonstream(messages: ChatCompletionMessageParam[], tools: any[], config: any, deadline: number, logId: string, turnIndex: number, attemptIndex: number): Promise<ToolCallResult> {
+	llmLogger.startRequestAttempt(logId, turnIndex, attemptIndex, "nonstream");
+	try {
+		const result = await callLLMWithTimeout(messages, tools, withRemainingTimeout(config, deadline));
+		llmLogger.finishRequestAttempt(logId, turnIndex, attemptIndex, "success");
+		return result;
+	} catch (error: any) {
+		llmLogger.finishRequestAttempt(logId, turnIndex, attemptIndex, "error", error?.stage);
+		throw error;
 	}
 }
 

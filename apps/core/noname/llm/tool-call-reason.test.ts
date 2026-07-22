@@ -105,6 +105,57 @@ test("LLM client entry points reject invalid reasons as parse errors and stream 
 	});
 });
 
+test("stream telemetry distinguishes first chunk from first token across role, name and argument fragments", async () => {
+	const events: string[] = [];
+	await withMockServer(streamingChunks([
+		{ choices: [{ delta: { role: "assistant" } }] },
+		{ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "pass" } }] } }] },
+		{ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "" } }] } }] },
+		{ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"reason":"分' } }] } }] },
+		{ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '片"}' } }] } }] },
+	]), async url => {
+		const result = await callLLMStream([], [], config(url), {
+			onFirstChunk: () => events.push("chunk"),
+			onFirstToken: () => events.push("token"),
+			onChunk: partial => events.push(`args:${partial}`),
+		});
+		assert.equal(result.reason, "分片");
+	});
+	assert.deepEqual(events, ["chunk", "token", 'args:{"reason":"分', 'args:{"reason":"分片"}']);
+});
+
+test("stream telemetry treats text as a token and isolates telemetry callback failures", async () => {
+	await withMockServer(streamingChunks([
+		{ choices: [{ delta: { content: "先出现文本" } }] },
+		{ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "pass", arguments: '{"reason":"完成"}' } }] } }] },
+	]), async url => {
+		let firstChunk = 0;
+		let firstToken = 0;
+		assert.deepEqual(await callLLMStream([], [], config(url), {
+			onFirstChunk: () => { firstChunk++; throw new Error("telemetry"); },
+			onFirstToken: () => { firstToken++; throw new Error("telemetry"); },
+			onChunk: () => { throw new Error("telemetry"); },
+		}), { id: "call_1", name: "pass", reason: "完成", arguments: {} });
+		assert.equal(firstChunk, 1);
+		assert.equal(firstToken, 1);
+	});
+});
+
+test("stream telemetry marks empty and malformed chunks without hiding their token semantics", async () => {
+	for (const [chunks, expectedTokens] of [
+		[[{ choices: [] }], 0],
+		[[{ choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: "x" } }] } }] }], 1],
+	] as const) {
+		await withMockServer(streamingChunks(chunks), async url => {
+			let chunksSeen = 0;
+			let tokensSeen = 0;
+			await assert.rejects(() => callLLMStream([], [], config(url), { onFirstChunk: () => chunksSeen++, onFirstToken: () => tokensSeen++ }), (error: any) => error?.stage === "parse");
+			assert.equal(chunksSeen, 1);
+			assert.equal(tokensSeen, expectedTokens);
+		});
+	}
+});
+
 function assertParseError(operation: () => unknown): void {
 	assert.throws(operation, (error: any) => error?.stage === "parse");
 }
@@ -128,6 +179,14 @@ function streamingRawResponse(arguments_: string): (response: any) => void {
 	return response => {
 		response.writeHead(200, { "content-type": "text/event-stream" });
 		response.write(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "pass", arguments: arguments_ } }] } }] })}\n\n`);
+		response.end("data: [DONE]\n\n");
+	};
+}
+
+function streamingChunks(chunks: any[]): (response: any) => void {
+	return response => {
+		response.writeHead(200, { "content-type": "text/event-stream" });
+		for (const chunk of chunks) response.write(`data: ${JSON.stringify(chunk)}\n\n`);
 		response.end("data: [DONE]\n\n");
 	};
 }

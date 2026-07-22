@@ -101,7 +101,7 @@ tool_call(use_skill/use_card)
 日志不在 LLM 决策路径上等待 IndexedDB。`logger.ts` 在内存中立即更新日志与 UI 事件，再将检查点和完成记录依序交给串行异步队列，因此存储失败不会改变 `{ handled }` 的结果。
 
 ```text
-start() / 每轮完成
+start() / attempt 开始 / 首个 TTFT / 每轮完成
   -> 内存活动日志 + 异步写入 llm_log_active
 end()
   -> 立即发布 llm_log_end
@@ -112,6 +112,8 @@ end()
   -> 租约过期且 deadline + 60 秒已过
   -> 原子转存为 interrupted
 ```
+
+首轮优先 stream；若 stream 在非解析错误下失败，调度会在同一轮创建第二个 nonstream attempt。后续多轮使用各自的 nonstream attempt。每个 attempt 以单调时钟记录首 chunk、首有效 token 和完整响应耗时；只有首次 TTFT 会写额外活动检查点，其余 chunk 只发布实时 UI 事件。
 
 日志存储在独立的 `${mainDbName}_llm_logs` IndexedDB 中，以单条记录保存完成日志，并为时间、对局、玩家和状态建立索引；活动日志与页面实例租约分别存于 `llm_log_active`、`llm_log_instances`。日志初始化不升级主配置库，因此不会被其他标签页持有的旧版主库连接阻塞。
 

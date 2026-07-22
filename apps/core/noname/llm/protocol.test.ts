@@ -135,6 +135,15 @@ test("log cleaning omits throwing getters and proxies without throwing", () => {
 	assert.deepEqual(plain, { safe: true, array: [null] });
 });
 
+test("log cleaning preserves request timings including zero milliseconds", () => {
+	const plain = plainLogValue({
+		requestTimings: [{ turnIndex: 0, attemptIndex: 0, transport: "stream", startedAtOffsetMs: 0, firstChunkMs: 0, ttftMs: 0, responseMs: 0, outcome: "success" }],
+	});
+	assert.deepEqual(plain, {
+		requestTimings: [{ turnIndex: 0, attemptIndex: 0, transport: "stream", startedAtOffsetMs: 0, firstChunkMs: 0, ttftMs: 0, responseMs: 0, outcome: "success" }],
+	});
+});
+
 test("reqice full backup chain automatically materializes all N cards", () => {
 	const cards = [{ id: "c0" }, { id: "c1" }, { id: "c2" }];
 	const replay = replayBackupChain({ sourceSkill: "reqice", kind: "chooseToUse", links: [["锦囊", "", "wuzhong"]], backup: { selectCard: -1, filterCard: true, viewAs: { name: "wuzhong" } }, candidates: cards });

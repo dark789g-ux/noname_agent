@@ -4,11 +4,12 @@ import { LLMLogPersistenceQueue, retryLLMLogPersistence, retryPendingActiveCheck
 import { LLMLogStore, type ActiveCheckpointSnapshot, type ActiveLogRecord } from "./logger-store.js";
 import { plainLogValue } from "./protocol.js";
 import { buildGameSessions } from "./logger-sessions.js";
-import type { ActiveLogSnapshot, ErrorStage, GameSession, LogEntry, LogStatus, LogTurn } from "./logger-types.js";
+import type { ActiveLogSnapshot, ErrorStage, GameSession, LogEntry, LogStatus, LogTurn, RequestOutcome, RequestTiming, RequestTransport } from "./logger-types.js";
+import { createRequestTiming, finishRequestTiming, markRequestTiming } from "./logger-timing.js";
 
-export type { ActiveLogSnapshot, ErrorStage, GameSession, LogEntry, LogStatus, LogTurn } from "./logger-types.js";
+export type { ActiveLogSnapshot, ErrorStage, GameSession, LogEntry, LogStatus, LogTurn, RequestOutcome, RequestTiming, RequestTransport } from "./logger-types.js";
 
-type InternalActiveLog = ActiveLogSnapshot & { deadlineAt: number; ownerId: string; revision: number };
+type InternalActiveLog = ActiveLogSnapshot & { deadlineAt: number; ownerId: string; revision: number; startedAtMonotonic: number; attemptStartedAt: Map<string, number> };
 type PersistedActive = ActiveLogRecord<LogEntry>;
 
 const RECOVERY_INTERVAL = 60_000;
@@ -17,6 +18,14 @@ const LEGACY_ACTIVE_TIMEOUT = 120_000;
 
 function cloneEntry(entry: LogEntry): LogEntry {
 	return plainLogValue(entry) as LogEntry;
+}
+
+function monotonicNow(): number {
+	return typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+}
+
+function attemptKey(turnIndex: number, attemptIndex: number): string {
+	return `${turnIndex}:${attemptIndex}`;
 }
 
 /**
@@ -78,7 +87,7 @@ export class LLMLogger {
 		const id = `log_${startedAt}_${Math.random().toString(36).slice(2, 8)}`;
 		const gameId = (_status as { llmGameId?: string }).llmGameId || "game_unknown";
 		const entry = cloneEntry({ id, gameId, timestamp: startedAt, decisionPoint, playerName, playerSeatNum: seatNum, durationMs: 0, status: "success", meta });
-		const active: InternalActiveLog = { entry, partialArgs: "", startedAt, deadlineAt, ownerId: this.lease?.instanceId || "llm_uninitialized", revision: 1 };
+		const active: InternalActiveLog = { entry, partialArgs: "", startedAt, deadlineAt, ownerId: this.lease?.instanceId || "llm_uninitialized", revision: 1, startedAtMonotonic: monotonicNow(), attemptStartedAt: new Map() };
 		this.activeLogs.set(id, active);
 		this.enqueueActive(this.snapshotActive(active));
 		this.publish("llm_log_start", entry);
@@ -176,6 +185,59 @@ export class LLMLogger {
 	logError(id: string, stage: ErrorStage, message: string, httpStatus?: number): void {
 		const entry = this.getActive(id);
 		if (entry) entry.error = { stage, message, httpStatus };
+	}
+
+	/** 开始一次独立的 provider 请求；SDK 内部重试仍归入同一个 attempt。 */
+	startRequestAttempt(id: string, turnIndex: number, attemptIndex: number, transport: RequestTransport): void {
+		const active = this.activeLogs.get(id);
+		if (!active) return;
+		const key = attemptKey(turnIndex, attemptIndex);
+		if (active.attemptStartedAt.has(key)) return;
+		const now = monotonicNow();
+		(active.entry.requestTimings ||= []).push(createRequestTiming(turnIndex, attemptIndex, transport, now - active.startedAtMonotonic));
+		active.attemptStartedAt.set(key, now);
+		this.checkpoint(id);
+		this.publishTiming(active);
+	}
+
+	markRequestFirstChunk(id: string, turnIndex: number, attemptIndex: number): void {
+		this.markRequestTiming(id, turnIndex, attemptIndex, "firstChunkMs");
+	}
+
+	/** 首个有效文本或工具参数到达时只增加一次检查点，供中断恢复与实时 UI 使用。 */
+	markRequestTTFT(id: string, turnIndex: number, attemptIndex: number): void {
+		const marked = this.markRequestTiming(id, turnIndex, attemptIndex, "ttftMs");
+		if (marked) this.checkpoint(id);
+	}
+
+	finishRequestAttempt(id: string, turnIndex: number, attemptIndex: number, outcome: Exclude<RequestOutcome, "pending">, errorStage?: ErrorStage): void {
+		const active = this.activeLogs.get(id);
+		if (!active) return;
+		const timing = this.findRequestTiming(active.entry, turnIndex, attemptIndex);
+		const startedAt = active.attemptStartedAt.get(attemptKey(turnIndex, attemptIndex));
+		if (!timing || startedAt === undefined) return;
+		finishRequestTiming(timing, outcome, monotonicNow() - startedAt, errorStage);
+		this.publishTiming(active);
+	}
+
+	private markRequestTiming(id: string, turnIndex: number, attemptIndex: number, field: "firstChunkMs" | "ttftMs"): boolean {
+		const active = this.activeLogs.get(id);
+		if (!active) return false;
+		const timing = this.findRequestTiming(active.entry, turnIndex, attemptIndex);
+		const startedAt = active.attemptStartedAt.get(attemptKey(turnIndex, attemptIndex));
+		if (!timing || startedAt === undefined) return false;
+		const marked = markRequestTiming(timing, field, monotonicNow() - startedAt);
+		if (!marked) return false;
+		this.publishTiming(active);
+		return true;
+	}
+
+	private findRequestTiming(entry: LogEntry, turnIndex: number, attemptIndex: number): RequestTiming | undefined {
+		return entry.requestTimings?.find(timing => timing.turnIndex === turnIndex && timing.attemptIndex === attemptIndex);
+	}
+
+	private publishTiming(active: InternalActiveLog): void {
+		this.publish("llm_log_timing", { logId: active.entry.id, entry: cloneEntry(active.entry) });
 	}
 
 	end(id: string, status: LogStatus): void {

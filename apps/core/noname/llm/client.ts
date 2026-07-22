@@ -47,6 +47,8 @@ export function parseToolCallResult(id: string, name: string, rawArgs: unknown):
 
 export interface StreamCallbacks {
 	onChunk?: (partialArgs: string) => void;
+	onFirstChunk?: () => void;
+	onFirstToken?: () => void;
 	onError?: (stage: string, message: string, httpStatus?: number) => void;
 }
 
@@ -185,9 +187,20 @@ export async function callLLMStream(
 		let functionName = "";
 		let toolCallId = "";
 		let argumentsBuffer = "";
+		let firstChunkReported = false;
+		let firstTokenReported = false;
 
 		for await (const chunk of stream) {
+			if (!firstChunkReported) {
+				firstChunkReported = true;
+				notify("onFirstChunk");
+			}
 			const calls = chunk.choices?.[0]?.delta?.tool_calls;
+			const deltaMessage = chunk.choices?.[0]?.delta;
+			if (!firstTokenReported && hasTokenDelta(deltaMessage)) {
+				firstTokenReported = true;
+				notify("onFirstToken");
+			}
 			if (calls?.length > 1 || calls?.some((call: any) => (call.index ?? 0) !== 0)) {
 				throwErr("parse", "LLM stream returned multiple tool_calls");
 			}
@@ -200,7 +213,7 @@ export async function callLLMStream(
 			}
 			if (delta?.function?.arguments) {
 				argumentsBuffer += delta.function.arguments;
-				callbacks.onChunk?.(argumentsBuffer);
+				notify("onChunk", argumentsBuffer);
 			}
 		}
 
@@ -256,8 +269,30 @@ export async function callLLMStream(
 	function notifyError(stage: string, message: string, status?: number): void {
 		if (errorReported) return;
 		errorReported = true;
-		callbacks.onError?.(stage, message, status);
+		try {
+			callbacks.onError?.(stage, message, status);
+		} catch {
+			// 遥测回调不能影响 provider 请求或错误分类。
+		}
 	}
+
+	function notify(name: "onFirstChunk" | "onFirstToken"): void;
+	function notify(name: "onChunk", partialArgs: string): void;
+	function notify(name: keyof StreamCallbacks, partialArgs?: string): void {
+		try {
+			if (name === "onChunk") callbacks.onChunk?.(partialArgs || "");
+			else if (name === "onFirstChunk") callbacks.onFirstChunk?.();
+			else if (name === "onFirstToken") callbacks.onFirstToken?.();
+		} catch {
+			// 遥测回调不能影响 provider 请求。
+		}
+	}
+}
+
+function hasTokenDelta(delta: any): boolean {
+	if (typeof delta?.content === "string" && delta.content.length > 0) return true;
+	if (typeof delta?.function_call?.arguments === "string" && delta.function_call.arguments.length > 0) return true;
+	return delta?.tool_calls?.some((call: any) => typeof call?.function?.arguments === "string" && call.function.arguments.length > 0) || false;
 }
 
 function throwParseError(message: string): never {
