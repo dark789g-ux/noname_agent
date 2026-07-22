@@ -1,24 +1,24 @@
 # 日志系统：决策记录与 UI 查看
 
-日志系统记录每次 LLM 决策的完整请求/响应/错误，用于调试与监控。`LLMLogger` 采用缓冲写入策略（缓冲区满 50 条自动 flush），数据存储在 IndexedDB 中，最大保留 500 条。可从菜单「其它」→「LLM 日志」查看全局日志，也可点击 AI 武将牌旁的「AI」按钮查看该玩家在本局的日志。
+日志系统记录每次 LLM 决策的完整请求/响应/错误，用于调试与监控。完成日志会立即加入串行异步持久化队列，游戏决策不会等待 IndexedDB 事务；数据仅保存在当前浏览器，最大保留 500 条。可从菜单「其它」→「LLM 日志」查看全局日志，也可点击 AI 武将牌旁的「AI」按钮查看该玩家在本局的日志。
 
 ## LogEntry 接口
 
 | 字段 | 类型 | 说明 | file:line |
 |------|------|------|-----------|
-| `id` | `string` | 格式 `log_{timestamp}_{random6}` | `logger.ts:7` |
-| `gameId` | `string` | 本局唯一标识；缺失时按 `game_unknown` 兼容 | `logger.ts:8` |
-| `timestamp` | `number` | 创建时间戳 | `logger.ts:9` |
-| `decisionPoint` | `string` | 决策类型（chooseToUse 等） | `logger.ts:10` |
-| `playerName` | `string` | 玩家显示名 | `logger.ts:11` |
-| `playerSeatNum` | `number?` | 玩家座位号；用于区分同名武将 | `logger.ts:12` |
-| `durationMs` | `number` | 决策耗时（毫秒） | `logger.ts:13` |
-| `status` | `LogStatus` | `"success"` / `"fallback"` / `"error"` / `"timeout"` | `logger.ts:14` |
-| `fallbackReason` | `string?` | 降级原因（disabled / no_config / timeout / 错误信息） | `logger.ts:15` |
-| `meta` | `{enabled, configured, model?}` | 配置快照 | `logger.ts:16-20` |
-| `request` | `{messages, tools}?` | 请求数据 | `logger.ts:21-24` |
-| `response` | `{toolCall?, translatedResult?}?` | 响应数据 | `logger.ts:25-28` |
-| `error` | `{stage, message, httpStatus?}?` | 错误详情 | `logger.ts:29-33` |
+| `id` | `string` | 格式 `log_{timestamp}_{random6}` | `logger-types.ts` |
+| `gameId` | `string` | 本局唯一标识；缺失时按 `game_unknown` 兼容 | `logger-types.ts` |
+| `timestamp` | `number` | 创建时间戳 | `logger-types.ts` |
+| `decisionPoint` | `string` | 决策类型（chooseToUse 等） | `logger-types.ts` |
+| `playerName` | `string` | 玩家显示名 | `logger-types.ts` |
+| `playerSeatNum` | `number?` | 玩家座位号；用于区分同名武将 | `logger-types.ts` |
+| `durationMs` | `number` | 决策耗时（毫秒） | `logger-types.ts` |
+| `status` | `LogStatus` | `"success"` / `"fallback"` / `"error"` / `"timeout"` / `"interrupted"` | `logger-types.ts` |
+| `fallbackReason` | `string?` | 降级原因（disabled / no_config / timeout / 错误信息） | `logger-types.ts` |
+| `meta` | `{enabled, configured, model?}` | 配置快照 | `logger-types.ts` |
+| `request` | `{messages, tools}?` | 请求数据 | `logger-types.ts` |
+| `response` | `{toolCall?, translatedResult?}?` | 响应数据；新日志的 `toolCall.reason` 为模型选择原因 | `logger-types.ts` |
+| `error` | `{stage, message, httpStatus?}?` | 错误详情 | `logger-types.ts` |
 
 `ActiveLogSnapshot` 表示尚未结束的调用，包含 `entry`、当前累计的 `partialArgs` 和精确的 `startedAt`。玩家面板中途打开时通过快照恢复最新一条活动调用及已流式生成的内容。
 
@@ -31,40 +31,61 @@
 | `logRequest(id, messages, tools)` | 记录请求数据 | `logger.ts:104-107` |
 | `logResponse(id, toolCall, translatedResult)` | 记录响应与翻译结果 | `logger.ts:109-112` |
 | `logError(id, stage, message, httpStatus)` | 记录错误详情 | `logger.ts:114-117` |
-| `end(id, status)` | 结束日志，计算耗时并加入写入缓冲区 | `logger.ts:119-142` |
+| `end(id, status)` | 结束日志，计算耗时并立即排入异步持久化队列 | `logger.ts` |
 | `endFallback(id, reason)` | 记录降级原因，调用 `end(id, "fallback")` | `logger.ts:144-148` |
 | `logStreamChunk(logId, partialArgs)` | 更新活动快照并发布流式事件 | `logger.ts:156-166` |
-| `flush()` | 将缓冲区写入 IndexedDB | `logger.ts:168-184` |
-| `getLogs()` | flush 后合并 IndexedDB 与剩余 buffer，按 ID 去重 | `logger.ts:186-200` |
+| `flush()` | 等待当前持久化队列排空 | `logger.ts` |
+| `getLogs()` | 等待队列屏障后查询 IndexedDB，并合并暂存的失败记录 | `logger.ts` |
 | `getLogsByGameAndPlayer(gameId, playerName, seatNum?)` | 按对局和玩家筛选完成日志 | `logger.ts:244-247` |
 | `clearLogs()` | 清空已完成日志；不影响活动调用 | `logger.ts:203-206` |
 
 ## IndexedDB 存储细节
 
 ```text
-STORAGE_KEY = "llm_logs"                  logger.ts:50
-BUFFER_LIMIT = 50                          logger.ts:51
-最大保留 = 500 条（merged.slice(-500)）    logger.ts:175
-接口: game.getDB("data", key) / game.putDB("data", key, val) / game.deleteDB("data", key)
-flush 失败回滚: buffer.unshift(...toFlush)  logger.ts:178
+主配置库: mainDbName（不为日志升级版本）
+独立日志库: `${mainDbName}_llm_logs`
+  llm_logs            一条已完成决策一条记录，按时间、对局、玩家与状态建立索引
+  llm_log_active      尚未完成的决策检查点
+  llm_log_instances   页面实例租约
+最大保留 = 最近 500 条已完成记录
 ```
 
-缓冲区满 50 条时自动触发 flush。`getLogs()` 调用时也会先 flush；若写库或读库失败，则合并仍留在内存中的 buffer，避免已完成响应在 UI 中消失。
+日志使用独立数据库，打开或创建日志 Store 不会升级主配置库，也不会因其他标签页持有主库旧连接而阻塞游戏启动。独立库打开失败不会缓存失败结果，后续初始化或写入可以重试。
+
+旧版主库 `data/llm_logs` 数组以及短暂存在过的主库 v5 日志 Store 采用跨库两阶段迁移：先只读快照，将完成日志按 ID、活动检查点按版本、租约按更新时间幂等复制到独立库并提交；随后在主库清理事务中重新读取源数据并与快照比较。只有快照 CAS 一致时，才删除旧数组键、清空主库 `llm_logs`、`llm_log_active`、`llm_log_instances` 中的源记录并写入迁移标记；源 Store 结构保留，避免触发主库 `versionchange`。快照变化或任一阶段失败都会回滚清理并保留源数据，稍后重新迁移。
+
+迁移标记只表示某次快照已完成，不会让后续扫描盲目跳过源数据。若仍运行的旧页面在标记写入后又向主库 v5 Store 写入记录，新页面会检测到非空源 Store，执行增量幂等迁移并再次 CAS 清理。
+
+新写入由串行 Promise 队列处理，普通失败按退避重试，配额不足时先清理最旧完成日志后重试。最终仍未写入的记录保留在内存 pending 集合，并在后续写入、查询或页面隐藏时再次尝试；持久化失败不会影响游戏决策。
+
+`start()` 会异步写入活动检查点；每轮完整决策完成后更新检查点；`end()` 在同一个事务内写入完成记录并删除检查点。流式 token 和不完整 arguments 仅保存在内存，不持久化。
+
+每个标签页维护 30 秒心跳、90 秒有效期的实例租约，并用带配置前缀的 `BroadcastChannel` 确认 owner 是否存活。启动时及每分钟扫描活动检查点；只有 owner 在 300ms 内不响应、租约已过期且决策 deadline 额外过期 60 秒后，才把记录原子地转为 `interrupted`。`BroadcastChannel` 不可用时退化为租约和 deadline 判定。中断日志保留已完成轮次，并显示“页面关闭、崩溃或页面实例失活”的说明；它不表示已回退本地 AI。
+
+日志只保存在本机 IndexedDB，不上传服务器、不跨设备同步。进入持久化队列前会清洗非 JSON 对象和鉴权信息；流式内容不会写入数据库。
+
+## 日志内容展示
+
+“玩家 LLM 思考”弹窗和菜单「其它」→「LLM 日志」共用同一内容组件。请求中的 `system`、`user`，以及响应的 `translatedResult` 在值为字符串时按安全 Markdown 展示；对象、数组和 `tool_call` 始终以格式化 JSON 展示。请求 `assistant`、`tool` 消息维持 JSON 展示，`tools` 按工具拆分为独立 JSON 块。
+
+字符串可切换“渲染 / 原文”。原文直接显示保存的字符：真实换行仍是换行，字面量 `\\n` 不会被转换。超过 200px 的内容可展开或收起；`system` 与每个 `tool` 默认收起，其余目标字段默认展开。
+
+Markdown 禁用原始 HTML 与自动链接，只允许绝对 `http` / `https` 链接，并统一使用新窗口的 `noopener noreferrer nofollow` 属性。图片不会创建 `img` 或保留 URL，而会显示“图片已禁用：alt”占位。Markdown 输出在插入页面前还会经过 DOMPurify allowlist；不允许脚本、SVG、表单、样式和事件属性。
 
 玩家匹配先要求 `gameId` 一致；日志带有 `playerSeatNum` 时严格按座位匹配，只有旧日志缺少座位号时才按 `playerName` 回退，以兼容遗留数据且避免同名武将串日志。
 
 ## UI 入口链路
 
 ```text
-otherMenuData.ts:95-99   注册左栏项 { name: "LLM 日志", key: "llm_log" }
+ui/create/menu/vue/data/otherMenuData.ts  注册左栏项 { name: "LLM 日志", key: "llm_log" }
   │
   ▼
-OtherPane.vue:25         <LLMLogViewer v-else-if="ctx.item.key === 'llm_log'" />
+ui/create/menu/vue/components/OtherPane.vue  <LLMLogViewer v-else-if="ctx.item.key === 'llm_log'" />
   │
   ▼
-LLMLogViewer.vue:147      import { llmLogger, type LogEntry } from "@/llm/logger.js"
-                         └─ loadLogs() → llmLogger.getLogs()    :154
-                         └─ clearLogs() → llmLogger.clearLogs() :166
+ui/create/menu/vue/components/editors/LLMLogViewer.vue
+                         └─ loadSessions/openSession() → llmLogger.getGameSessions()/getLogsByGame()
+                         └─ clearAll() → llmLogger.clearLogs()
 
 AI 武将牌旁「AI」按钮
   │
@@ -96,4 +117,4 @@ LLMPlayerLogPanel.vue     先订阅 start/chunk/end
 
 ## 多轮日志
 
-多轮决策可在 `LogEntry.turns`（可选字段）中记录每轮的阶段、候选短引用、tool call、校验结论和降级原因；旧日志没有该字段时按单轮记录展示。敏感牌面和完整内部对象不写入轮次日志，仅保留面向模型的短引用和标签。
+多轮决策可在 `LogEntry.turns`（可选字段）中记录每轮的阶段、候选短引用、tool call、校验结论和降级原因；新日志会在每轮及最终响应的 `toolCall` 顶层保存 `reason`。旧日志的 `reason` 缺失时按兼容数据处理。敏感牌面和完整内部对象不写入轮次日志，仅保留面向模型的短引用和标签。

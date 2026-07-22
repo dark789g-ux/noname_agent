@@ -69,11 +69,14 @@
 							<td>{{ entry.playerName }}</td>
 							<td>{{ entry.durationMs }}ms</td>
 							<td>
-								<span :class="statusClass(entry.status)">
-									{{ statusIcon(entry.status) }} {{ statusText(entry.status) }}
+								<span :class="['llm-log-status', statusPresentation(entry.status).className]">
+									{{ statusPresentation(entry.status).icon }} {{ statusPresentation(entry.status).text }}
 								</span>
 								<div v-if="entry.status === 'fallback' && entry.fallbackReason" class="llm-log-sub">
 									↳ {{ entry.fallbackReason }}
+								</div>
+								<div v-if="entry.status === 'interrupted'" class="llm-log-sub">
+									↳ {{ statusDetail(entry.status, entry.fallbackReason) }}
 								</div>
 								<div v-if="(entry.status === 'timeout' || entry.status === 'error')" class="llm-log-sub">
 									↳ 回退本地 AI
@@ -105,8 +108,8 @@
 						<div class="llm-log-field"><span class="llm-log-label">耗时:</span> {{ view.entry.durationMs }}ms</div>
 						<div class="llm-log-field">
 							<span class="llm-log-label">状态:</span>
-							<span :class="statusClass(view.entry.status)">
-								{{ statusIcon(view.entry.status) }} {{ statusText(view.entry.status) }}
+							<span :class="['llm-log-status', statusPresentation(view.entry.status).className]">
+								{{ statusPresentation(view.entry.status).icon }} {{ statusPresentation(view.entry.status).text }}
 							</span>
 						</div>
 					</div>
@@ -126,14 +129,23 @@
 				<div v-if="view.entry.request" class="llm-log-section">
 					<div class="llm-log-section-title">请求 Prompt</div>
 					<div class="llm-log-section-body">
-						<details open>
-							<summary>messages</summary>
-							<pre class="llm-log-json">{{ formatJson(view.entry.request.messages) }}</pre>
-						</details>
-						<details v-if="view.entry.request.tools?.length">
-							<summary>tools</summary>
-							<pre class="llm-log-json">{{ formatJson(view.entry.request.tools) }}</pre>
-						</details>
+						<LLMLogContent
+							v-for="(msg, i) in view.entry.request.messages"
+							:key="`${view.entry.id}-message-${i}`"
+							:value="isPromptMessage(msg) ? msg.content : msg"
+							:mode="isPromptMessage(msg) ? 'auto' : 'json'"
+							:default-expanded="msg.role !== 'system'"
+							:label="msg.role"
+						/>
+						<div v-if="view.entry.request.tools?.length" class="llm-log-content-group-label">tools ({{ view.entry.request.tools.length }})</div>
+						<LLMLogContent
+							v-for="(tool, i) in view.entry.request.tools"
+							:key="`${view.entry.id}-tool-${i}`"
+							:value="tool"
+							mode="json"
+							:default-expanded="false"
+							:label="`tool: ${tool.function?.name || i + 1}`"
+						/>
 					</div>
 				</div>
 
@@ -141,16 +153,8 @@
 				<div v-if="view.entry.status === 'success' && view.entry.response" class="llm-log-section">
 					<div class="llm-log-section-title">响应结果</div>
 					<div class="llm-log-section-body">
-						<div v-if="view.entry.response.toolCall" class="llm-log-field">
-							<span class="llm-log-label">tool_call:</span> {{ view.entry.response.toolCall.name }}
-						</div>
-						<pre v-if="view.entry.response.toolCall" class="llm-log-json">
-{{ formatJson(view.entry.response.toolCall.arguments) }}</pre>
-						<div v-if="view.entry.response.translatedResult != null" class="llm-log-field" style="margin-top: 8px">
-							<span class="llm-log-label">translatedResult:</span>
-						</div>
-						<pre v-if="view.entry.response.translatedResult != null" class="llm-log-json">
-{{ formatJson(view.entry.response.translatedResult) }}</pre>
+						<LLMLogContent v-if="view.entry.response.toolCall" :key="`${view.entry.id}-tool-call`" :value="view.entry.response.toolCall" mode="json" :default-expanded="true" label="tool_call" />
+						<LLMLogContent v-if="view.entry.response.translatedResult != null" :key="`${view.entry.id}-translated-result`" :value="view.entry.response.translatedResult" mode="auto" :default-expanded="true" label="translatedResult" />
 					</div>
 				</div>
 
@@ -177,11 +181,11 @@
 					</div>
 				</div>
 
-				<!-- ⑥ 回退说明 -->
-				<div v-if="view.entry.fallbackReason" class="llm-log-section">
-					<div class="llm-log-section-title">回退说明</div>
+				<!-- ⑥ 回退或中断说明 -->
+				<div v-if="statusDetail(view.entry.status, view.entry.fallbackReason)" class="llm-log-section">
+					<div class="llm-log-section-title">{{ view.entry.status === "interrupted" ? "中断说明" : "回退说明" }}</div>
 					<div class="llm-log-section-body">
-						{{ view.entry.fallbackReason }}
+						{{ statusDetail(view.entry.status, view.entry.fallbackReason) }}
 					</div>
 				</div>
 			</div>
@@ -192,6 +196,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { llmLogger, type LogEntry, type GameSession } from "@/llm/logger.js";
+import { getLLMLogStatusDetail, getLLMLogStatusPresentation } from "./llmLogStatus.js";
+import LLMLogContent from "./LLMLogContent.vue";
 
 type View =
 	| { kind: "sessionList" }
@@ -236,7 +242,7 @@ async function refresh() {
 }
 
 async function clearAll() {
-	if (!confirm("确定清空所有 LLM 日志？")) return;
+	if (!confirm("确定清空所有已完成 LLM 日志？\n进行中的调用不会中断，结束后会重新出现在历史中。")) return;
 	await llmLogger.clearLogs();
 	sessions.value = [];
 	currentLogs.value = [];
@@ -268,30 +274,12 @@ function formatJson(data: any): string {
 	}
 }
 
-function statusClass(status: LogEntry["status"]): string {
-	switch (status) {
-		case "success": return "llm-log-status llm-log-status-success";
-		case "timeout": return "llm-log-status llm-log-status-error";
-		case "error": return "llm-log-status llm-log-status-error";
-		case "fallback": return "llm-log-status llm-log-status-skip";
-		default: return "llm-log-status";
-	}
+function isPromptMessage(message: any): message is { role: "system" | "user"; content: unknown } {
+	return message?.role === "system" || message?.role === "user";
 }
 
-function statusIcon(status: LogEntry["status"]): string {
-	if (status === "success") return "\u2713";
-	return "\u2717";
-}
-
-function statusText(status: LogEntry["status"]): string {
-	switch (status) {
-		case "success": return "LLM";
-		case "timeout": return "超时";
-		case "error": return "错误";
-		case "fallback": return "跳过";
-		default: return status;
-	}
-}
+const statusPresentation = getLLMLogStatusPresentation;
+const statusDetail = getLLMLogStatusDetail;
 
 onMounted(() => {
 	loadSessions();
@@ -377,8 +365,13 @@ onMounted(() => {
 .llm-log-status-error {
 	color: #f44336;
 }
+.llm-log-status-fallback,
 .llm-log-status-skip {
 	color: #888;
+}
+.llm-log-status-timeout,
+.llm-log-status-interrupted {
+	color: #ff9800;
 }
 .llm-log-sub {
 	position: relative;
@@ -441,10 +434,10 @@ onMounted(() => {
 	font-family: monospace;
 	white-space: pre-wrap;
 	word-break: break-all;
-	overflow: auto;
-	max-height: 200px;
+	overflow-x: auto;
 	color: #ccc;
 }
+.llm-log-content-group-label { margin-top: 8px; color: #aaa; font-size: 12px; }
 
 /* details/summary 样式 */
 details {

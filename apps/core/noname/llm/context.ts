@@ -1,10 +1,10 @@
-import { game, get, _status } from "noname";
+import { game, get, lib } from "noname";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
+import type { DecisionCandidateSnapshot } from "./action-candidates.js";
+import { buildDecisionSnapshot, cleanPromptText, collectPromptPlayers, formatPlayerProfiles, promptTranslation, selectPromptDescription, translatePromptValue, type PromptRuntime } from "./prompt-format.js";
 
-/**
- * 决策点的人类可读描述映射
- */
+/** 决策点的人类可读描述映射。 */
 const DECISION_DESCRIPTIONS: Record<string, string> = {
 	chooseToUse: "出牌阶段/需要出牌",
 	chooseToRespond: "需要响应别人的牌",
@@ -18,166 +18,114 @@ const DECISION_DESCRIPTIONS: Record<string, string> = {
  */
 export function buildContext(
 	event: any,
-	candidates: { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] },
+	candidates: DecisionCandidateSnapshot | { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] },
 ): { messages: ChatCompletionMessageParam[] } {
 	const decisionPoint = event.name || "unknown";
-	const player = event.player;
-	const messages: ChatCompletionMessageParam[] = [];
-
-	// System message
-	messages.push({
-		role: "system",
-		content: "你是三国杀的 AI 玩家。根据当前场面从可用 tools 中选择最优动作。只返回一个 tool_call。",
-	});
-
-	// User message: 场面快照
-	const snapshot = buildSnapshot(decisionPoint, event, player, candidates);
-	messages.push({
-		role: "user",
-		content: snapshot,
-	});
-
-	return { messages };
+	const runtime = createPromptRuntime();
+	const referencedPlayers = "targetPool" in candidates ? candidates.targetPool.map(target => target.player) : undefined;
+	const snapshot = collectPromptPlayers(runtime, event.player, referencedPlayers);
+	const states = "targetPool" in candidates ? snapshot.states.map((state, index) => ({ ...state, ref: candidates.targetPool[index]?.ref })) : snapshot.states;
+	return {
+		messages: [
+			{
+				role: "system",
+				content: `你是三国杀的 AI 玩家。根据当前场面从可用 tools 中选择最优动作。只返回一个 tool_call。\n\n${formatPlayerProfiles(snapshot.profiles)}`,
+			},
+			{
+				role: "user",
+				content: buildDecisionSnapshot(decisionPoint, event, {
+					...candidates,
+					targets: "targetPool" in candidates && candidates.actions.length ? candidates.targetPool : (candidates as any).targets,
+				}, states, {
+					decisionDescriptions: DECISION_DESCRIPTIONS,
+					getSkillName: skillName,
+					getSkillDescription: skill => engineSkillDescription(skill, undefined),
+				}),
+			},
+		],
+	};
 }
 
-function buildSnapshot(
-	decisionPoint: string,
-	event: any,
-	player: any,
-	candidates: { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] },
-): string {
-	const lines: string[] = [];
+function createPromptRuntime(): PromptRuntime {
+	return {
+		players: Array.from(game.players || []),
+		globalSkills: lib.skill.global || [],
+		translate: translateId,
+		getPlayerName: player => displayText(get.translation(player) || player.name),
+		getSkillName: skillName,
+		getSkillDescription: engineSkillDescription,
+		getSkillMeta: skill => lib.skill[skill],
+		getEquipmentSkills: card => Array.from(get.skillsFromEquips?.([card]) || []),
+		isEquipmentCard: card => get.info(card, false)?.type === "equip",
+		getCardName: card => displayText(get.translation(card) || translateId(viewAsName(card) || card.name)),
+		getCardProperties: (card, owner) => ({
+			suit: translateId(get.suit(card, owner)),
+			number: get.number(card, owner) ?? "未知",
+			color: translateId(get.color(card, owner)),
+		}),
+		getCardDescription: engineCardDescription,
+		getViewedAsDescription: engineViewedAsDescription,
+	};
+}
 
-	// 决策点
-	lines.push(`## 决策类型：${DECISION_DESCRIPTIONS[decisionPoint] || decisionPoint}`);
-
-	// 事件提示
-	if (event.prompt) {
-		lines.push(`## 提示：${event.prompt}`);
-	}
-	if (event.dialog && typeof event.dialog === "string") {
-		lines.push(`## 对话：${event.dialog}`);
-	}
-
-	// 当前玩家信息
-	if (player) {
-		const name = get.translation(player) || player.name || "未知";
-		const hp = player.getHp ? player.getHp() : (player.hp ?? "?");
-		const maxHp = player.maxHp ?? "?";
-		const handCount = player.getCards ? player.getCards("h").length : "?";
-
-		lines.push(`\n## 当前玩家：${name}`);
-		lines.push(`- 体力：${hp}/${maxHp}`);
-		lines.push(`- 手牌数：${handCount}`);
-
-		// 装备
-		try {
-			const equips = player.getCards("e");
-			if (equips.length > 0) {
-				const equipNames = equips.map((e: any) => get.translation(e)).join(", ");
-				lines.push(`- 装备：${equipNames}`);
-			}
-		} catch {
-			// 忽略
-		}
-
-		// 技能
-		try {
-			const skills = player.getSkills ? player.getSkills(true) : [];
-			if (skills.length > 0) {
-				lines.push(`- 技能：${skills.join(", ")}`);
-			}
-		} catch {
-			// 忽略
-		}
-	}
-
-	// 其它玩家信息
+function engineSkillDescription(skill: string, player: any): string {
+	let dynamicDescription = "";
 	try {
-		const allPlayers = Array.from(game.players);
-		if (allPlayers.length > 1) {
-			lines.push("\n## 其它玩家：");
-			allPlayers.forEach((p: any, idx: number) => {
-				if (p === player) return;
-				const pName = get.translation(p) || p.name || "未知";
-				const pHp = p.getHp ? p.getHp() : (p.hp ?? "?");
-				const pMaxHp = p.maxHp ?? "?";
-				const pHand = p.getCards ? p.getCards("h").length : "?";
-				let line = `- [${idx}] ${pName}：体力 ${pHp}/${pMaxHp}，手牌 ${pHand}`;
-
-				// 装备
-				try {
-					const pEquips = p.getCards("e");
-					if (pEquips.length > 0) {
-						line += `，装备：${pEquips.map((e: any) => get.translation(e)).join(", ")}`;
-					}
-				} catch {
-					// 忽略
-				}
-
-				// 已知手牌
-				try {
-					if (player && p.getKnownCards) {
-						const known = p.getKnownCards(player);
-						if (known.length > 0) {
-							line += `，已知手牌：${known.map((c: any) => get.translation(c)).join(", ")}`;
-						}
-					}
-				} catch {
-					// 忽略
-				}
-
-				lines.push(line);
-			});
-		}
+		dynamicDescription = cleanPromptText(get.skillInfoTranslation?.(skill, player));
 	} catch {
-		// 忽略
+		// 动态翻译异常时回退到翻译表或装备说明。
 	}
-
-	// 候选卡牌
-	if (candidates.cards.length > 0) {
-		lines.push("\n## 可用卡牌：");
-		candidates.cards.forEach((c, idx) => {
-		const scopes = [c.cardAction ? "直接使用" : "", ...(c.skills || []).map(skill => `技能:${skill}`)].filter(Boolean).join("，");
-		lines.push(`- ${c.ref}: ${c.name}（旧 ID: ${c.id}${scopes ? `；${scopes}` : ""}）`);
-		});
-	} else {
-		lines.push("\n## 可用卡牌：无");
-	}
-
-	// 候选技能
-	if (candidates.skills.length > 0) {
-		lines.push("\n## 可用技能：");
-		candidates.skills.forEach(s => {
-			const translated = get.skillTranslation ? get.skillTranslation(s) : get.translation(s) || s;
-			const info = cleanSkillDescription(get.skillInfoTranslation ? get.skillInfoTranslation(s) : get.translation(`${s}_info`));
-			lines.push(`- ${s}（${translated}）：${info || "无可用规则描述"}`);
-		});
-	}
-
-	if (candidates.targets?.length) {
-		lines.push("\n## 当前可选目标：");
-		for (const target of candidates.targets) lines.push(`- ${target.ref}: ${target.name}`);
-	}
-
-	// 弃牌数量提示
-	if (decisionPoint === "chooseToDiscard" && event.selectCard) {
-		const sel = event.selectCard;
-		if (Array.isArray(sel)) {
-			lines.push(`\n## 弃牌要求：最少 ${sel[0]} 张，最多 ${sel[1]} 张`);
-		} else if (typeof sel === "number") {
-			lines.push(`\n## 弃牌要求：${sel} 张`);
-		}
-	}
-
-	return lines.join("\n");
+	return selectPromptDescription(dynamicDescription, promptTranslation(lib.translate, `${skill}_info`));
 }
 
-/** 技能 info 常含 HTML、换行和动态标记；prompt 只发送有限的纯文本。 */
+function engineCardDescription(card: any, owner: any): string {
+	let description = "";
+	try {
+		description = get.cardDescription(card, owner);
+	} catch {
+		// 继续使用动态 cardPrompt 或翻译表。
+	}
+	let prompt = "";
+	try {
+		prompt = get.info(card, false)?.cardPrompt?.(card, owner);
+	} catch {
+		// 动态 cardPrompt 异常时回退官方静态说明。
+	}
+	return selectPromptDescription(description, prompt, promptTranslation(lib.translate, `${card.name}_info`));
+}
+
+function engineViewedAsDescription(card: any, effectiveId: string, owner: any): string {
+	let prompt = "";
+	try {
+		prompt = lib.card[effectiveId]?.cardPrompt?.(card, owner);
+	} catch {
+		// 动态 cardPrompt 异常时回退官方静态说明。
+	}
+	return selectPromptDescription(prompt, promptTranslation(lib.translate, `${effectiveId}_info`));
+}
+
+function translateId(value: unknown): string {
+	return translatePromptValue(value, get.translation);
+}
+
+function displayText(value: unknown): string {
+	return cleanPromptText(value) || "未知";
+}
+
+function skillName(skill: string): string {
+	const translated = displayText(get.skillTranslation?.(skill));
+	if (translated !== "未知" && translated !== skill) return translated;
+	const fallback = translateId(skill);
+	return fallback === skill ? "" : fallback;
+}
+
+function viewAsName(card: any): string | undefined {
+	if (typeof card?.viewAs === "string") return card.viewAs;
+	if (card?.viewAs && typeof card.viewAs.name === "string") return card.viewAs.name;
+	return undefined;
+}
+
+/** 保留原导出，供候选技能描述及外部调用使用。 */
 export function cleanSkillDescription(value: unknown): string {
-	return String(value || "")
-		.replace(/<[^>]*>/g, " ")
-		.replace(/\s+/g, " ")
-		.trim()
-		.slice(0, 600);
+	return cleanPromptText(value);
 }

@@ -8,6 +8,8 @@ import { CacheContext } from "@/library/cache/cacheContext.js";
 import { importCardPack, importCharacterPack, importExtension, importMode } from "./import.js";
 import { loadCard, loadCardPile, loadCharacter, loadExtension, loadMode, loadPlay } from "./loading.js";
 import * as loadErrors from "./loadErrors.js";
+import { createRetryingDatabaseResolver, llmLogDatabaseName, openLLMLogDatabase, openMainDatabase } from "./database-schema.js";
+import { registerLLMLogDatabase } from "@/llm/logger-store.js";
 
 // 无名杀，启动！
 async function bootImpl() {
@@ -857,31 +859,16 @@ async function loadConfig() {
 		throw new Error("您的环境不支持indexedDB，无法保存配置");
 	}
 
-	const event = await new Promise<Event>((resolve, reject) => {
-		const idbOpenDBRequest = window.indexedDB.open(`${lib.configprefix}data`, 4);
-		idbOpenDBRequest.onerror = reject;
-		idbOpenDBRequest.onsuccess = resolve;
-		idbOpenDBRequest.onupgradeneeded = idbVersionChangeEvent => {
-			// @ts-expect-error MaybeHave
-			const idbDatabase = idbVersionChangeEvent.target.result;
-			if (!idbDatabase.objectStoreNames.contains("video")) {
-				idbDatabase.createObjectStore("video", { keyPath: "time" });
-			}
-			if (!idbDatabase.objectStoreNames.contains("image")) {
-				idbDatabase.createObjectStore("image");
-			}
-			if (!idbDatabase.objectStoreNames.contains("audio")) {
-				idbDatabase.createObjectStore("audio");
-			}
-			if (!idbDatabase.objectStoreNames.contains("config")) {
-				idbDatabase.createObjectStore("config");
-			}
-			if (!idbDatabase.objectStoreNames.contains("data")) {
-				idbDatabase.createObjectStore("data");
-			}
-		};
-	});
-	lib.db = event.target.result;
+	// LLM schema upgrades live in a separate database and therefore cannot block configuration loading.
+	lib.db = await openMainDatabase(window.indexedDB, `${lib.configprefix}data`);
+	lib.db.onversionchange = () => {
+		lib.db.close();
+		console.warn("IndexedDB was upgraded in another window; reload to continue using persisted data");
+	};
+	registerLLMLogDatabase(
+		lib.db,
+		createRetryingDatabaseResolver(() => openLLMLogDatabase(window.indexedDB, llmLogDatabaseName(lib.db.name)))
+	);
 
 	let result;
 	// 懒人包配置

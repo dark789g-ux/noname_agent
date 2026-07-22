@@ -1,13 +1,15 @@
-import { _status } from "noname";
+import { _status, game, get, lib } from "noname";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import { llmLogger } from "./logger.js";
 import { llmEnabled, llmConfigured, getLLMConfig } from "./index.js";
 import { buildContext } from "./context.js";
 import { buildTools } from "./tools.js";
-import { getCandidateCards, getCandidateSkills, getCandidateTargetRefs } from "./candidates.js";
+import { assertExecutableSnapshot, buildCandidateSnapshot } from "./action-candidates.js";
+import { getCandidateCards, getCandidateSkills, isSkillEligible } from "./candidates.js";
 import { callLLMWithTimeout, callLLMStream, type ToolCallResult } from "./client.js";
 import { DecisionSession } from "./apply.js";
 import { assistantToolMessage, isExplicitMultiTurnRejection, remainingTimeoutSec } from "./protocol.js";
+import { appendPendingHistory, describeDecisionStage } from "./backup-protocol.js";
 
 /**
  * LLM 决策核心调度。任何 provider、协议或规则校验失败都会返回
@@ -19,33 +21,32 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 	const decisionPoint = event.name;
 	const player = event.player;
 	const config = getLLMConfig();
+	const deadline = Date.now() + config.decisionTimeoutSec * 1000;
 	const logId = llmLogger.start(decisionPoint, player ? player.getName() : "unknown", {
 		enabled: config.enabled,
 		configured: !!(config.url && config.apikey && config.model),
 		model: config.model,
-	}, player?.getSeatNum());
+	}, player?.getSeatNum(), deadline);
 
 	try {
 		if (!llmEnabled()) return fallback(logId, "disabled");
 		if (!llmConfigured()) return fallback(logId, "no_config");
 		if (!event || !player) throw staged("translate", "LLM decision requires an event player");
 
-		const skills = getCandidateSkills(event, player);
-		const cards = getCandidateCards(event, player, skills);
-		const targets = getCandidateTargetRefs(event, player);
-		const decision = new DecisionSession(event, { cards, skills }, targets);
-		const { messages } = buildContext(event, { cards, skills, targets });
+		const runtime = createDecisionRuntime();
+		const snapshot = buildCandidateSnapshot(event, player, runtime);
+		assertExecutableSnapshot(event, snapshot);
+		const decision = new DecisionSession(event, snapshot, runtime);
+		const { messages } = buildContext(event, snapshot);
 		const history = messages.slice() as ChatCompletionMessageParam[];
-		if (decision.stage) history.push({ role: "user", content: describeStage(decision.stage) });
+		if (decision.stage) history.push({ role: "user", content: describeDecisionStage(decision.stage) });
 		const providerMultiTurnUnsupported = (_status as { llmMultiTurnUnsupported?: boolean }).llmMultiTurnUnsupported;
 		const maxTurns = config.multiTurn && !providerMultiTurnUnsupported ? config.maxTurns : 1;
-		const deadline = Date.now() + config.decisionTimeoutSec * 1000;
-
 		for (let index = 0; index < maxTurns; index++) {
 			if (Date.now() >= deadline) throw staged("fetch", "LLM decision timed out");
 			decision.revalidate();
 			const stage = decision.stage;
-			const tools = buildTools(decisionPoint, { cards, skills }, stage, !!event.forced);
+			const tools = buildTools(decisionPoint, snapshot, stage, !!event.forced);
 			if (!tools.length) throw staged("translate", `unsupported decision point: ${decisionPoint}`);
 			llmLogger.logRequest(logId, history, tools);
 			let toolCall: ToolCallResult;
@@ -69,11 +70,7 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 				return { handled: true, result: accepted.result };
 			}
 			if (!config.multiTurn || !accepted.pending) throw staged("translate", "Action requires unsupported additional selection turn");
-			history.push(asAssistantToolMessage(toolCall), {
-				role: "tool",
-				tool_call_id: toolCall.id,
-				content: JSON.stringify({ accepted: true, next_step: accepted.pending }),
-			} as any);
+			appendPendingHistory(history, toolCall, accepted.pending);
 		}
 		throw staged("fetch", `LLM decision exceeded ${maxTurns} turns`);
 	} catch (error: any) {
@@ -83,6 +80,25 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 		llmLogger.endFallback(logId, stage === "fetch" && message.includes("timed out") ? "timeout" : message);
 		return { handled: false };
 	}
+}
+
+function createDecisionRuntime(): any {
+	return {
+		getCandidateCards,
+		getCandidateSkills,
+		getPlayers: (event: any) => [...Array.from(game.players || []), ...(event.deadTarget ? Array.from(game.dead || []) : [])],
+		getTargetId: (target: any, index: number) => target.playerid || String(index),
+		getTargetName: (target: any) => get.translation(target) || target.name || "未知",
+		getSkillInfo: (skill: string) => lib.skill[skill],
+		getCardInfo: (card: any) => get.info(card),
+		autoViewAs: (definition: any, cards: any[]) => get.autoViewAs(definition, cards),
+		checkSelectTarget: (card: any, player: any, range: [number, number]) => game.checkMod(card, player, range, "selectTarget", player),
+		getOwner: (card: any) => get.owner(card),
+		alivePlayers: () => Array.from(game.players || []),
+		deadPlayers: () => Array.from(game.dead || []),
+		translate: (value: any) => get.translation(value) || value?.name || String(value),
+		isSkillEligible,
+	};
 }
 
 async function requestToolCall(
@@ -108,10 +124,6 @@ function withRemainingTimeout(config: any, deadline: number): any {
 
 function asAssistantToolMessage(call: ToolCallResult): ChatCompletionMessageParam {
 	return assistantToolMessage(call) as ChatCompletionMessageParam;
-}
-
-function describeStage(stage: { id: string; type: string; range: [number, number]; items: { ref: string; label: string }[] }): string {
-	return `## 当前选择步骤\n- step_id: ${stage.id}\n- 类型: ${stage.type}\n- 数量: ${stage.range[0]}..${stage.range[1]}\n- 候选:\n${stage.items.map(item => `  - ${item.ref}: ${item.label}`).join("\n")}`;
 }
 
 function fallback(logId: string, reason: string): { handled: false } {

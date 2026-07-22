@@ -107,7 +107,15 @@ function boolTool(name: string, description: string): ChatCompletionTool {
 }
 
 function object(properties: Record<string, any>, required: string[] = []): any {
-	return { type: "object", properties, required, additionalProperties: false };
+	return {
+		type: "object",
+		properties: {
+			reason: { type: "string", description: "简要说明选择原因。", minLength: 1, maxLength: 200 },
+			...properties,
+		},
+		required: ["reason", ...required],
+		additionalProperties: false,
+	};
 }
 
 function string(description: string): any {

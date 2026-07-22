@@ -107,7 +107,7 @@ function onLLMLogEnd(entry: PlayerButtonLogEntry): void {
 // migrateIfNeeded 需要 game.getDB，可能在引擎完全初始化后才可用。
 // 导出供主入口在合适时机调用，同时尝试延迟执行。
 export async function ensureLLMMigrated(): Promise<void> {
-	await llmLogger.migrateIfNeeded();
+	await llmLogger.init();
 }
 
 // ---------------------------------------------------------------------------

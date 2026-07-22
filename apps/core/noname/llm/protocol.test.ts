@@ -44,10 +44,10 @@ test("deadline is recomputed for retry", () => {
 	assert.throws(() => remainingTimeoutSec(30, 5_000, 5_001), /timed out/);
 });
 
-test("assistant history retains tool_call id", () => {
-	const message = assistantToolMessage({ id: "call_1", name: "select_cards", arguments: { card_refs: ["c0"] } });
+test("assistant history retains tool_call id and reason", () => {
+	const message = assistantToolMessage({ id: "call_1", name: "select_cards", reason: "选择候选牌", arguments: { card_refs: ["c0"] } });
 	assert.equal(message.tool_calls[0].id, "call_1");
-	assert.equal(message.tool_calls[0].function.arguments, '{"card_refs":["c0"]}');
+	assert.equal(message.tool_calls[0].function.arguments, '{"card_refs":["c0"],"reason":"选择候选牌"}');
 });
 
 test("direct result shapes match content consumers", () => {
@@ -66,6 +66,73 @@ test("log values remain structured-cloneable and omit engine objects", () => {
 	circular.self = circular;
 	const plain = plainLogValue(circular);
 	assert.deepEqual(structuredClone(plain), { refs: ["c0"], self: "[circular]" });
+});
+
+test("log values use JSON-safe placeholders for unsupported values", () => {
+	const value = {
+		missing: undefined,
+		callable: () => true,
+		symbol: Symbol("unsafe"),
+		bigint: 1n,
+		numbers: [NaN, Infinity, -Infinity],
+		values: [undefined, () => true, Symbol("unsafe"), 1n],
+	};
+	const plain = plainLogValue(value);
+	assert.deepEqual(plain, { numbers: [null, null, null], values: [null, null, null, null] });
+	assert.doesNotThrow(() => structuredClone(plain));
+	assert.equal(plainLogValue(undefined), null);
+});
+
+test("log values recursively redact exact sensitive keys without hiding game fields", () => {
+	const plain = plainLogValue({
+		Authorization: "Bearer secret",
+		"PROXY-AUTHORIZATION": "proxy secret",
+		"Api-Key": "key",
+		apikey: "key",
+		api_key: "key",
+		"X-API-KEY": "key",
+		nested: [{ access_token: "access", refresh_token: "refresh", TOKEN: "token", secret: "secret", password: "password" }],
+		tokenCount: 2,
+		secretSkill: "wusheng",
+		passwordHint: "normal game text",
+	});
+	assert.deepEqual(plain, {
+		Authorization: "[REDACTED]",
+		"PROXY-AUTHORIZATION": "[REDACTED]",
+		"Api-Key": "[REDACTED]",
+		apikey: "[REDACTED]",
+		api_key: "[REDACTED]",
+		"X-API-KEY": "[REDACTED]",
+		nested: [{ access_token: "[REDACTED]", refresh_token: "[REDACTED]", TOKEN: "[REDACTED]", secret: "[REDACTED]", password: "[REDACTED]" }],
+		tokenCount: 2,
+		secretSkill: "wusheng",
+		passwordHint: "normal game text",
+	});
+});
+
+test("log values preserve prototype-named data keys without prototype pollution", () => {
+	const source = JSON.parse('{"__proto__":{"polluted":true},"constructor":"ctor","prototype":"proto"}');
+	const plain = plainLogValue(source);
+	const cloned = structuredClone(plain);
+	assert.equal(Object.prototype.hasOwnProperty.call(plain, "__proto__"), true);
+	assert.deepEqual(plain.__proto__, { polluted: true });
+	assert.equal(plain.constructor, "ctor");
+	assert.equal(plain.prototype, "proto");
+	assert.deepEqual(cloned, source);
+	assert.equal(({} as any).polluted, undefined);
+});
+
+test("log cleaning omits throwing getters and proxies without throwing", () => {
+	const brokenProxy = new Proxy({}, { ownKeys() { throw new Error("blocked"); } });
+	const source = {
+		safe: true,
+		get broken() { throw new Error("getter failed"); },
+		proxy: brokenProxy,
+		array: [brokenProxy],
+	};
+	let plain: any;
+	assert.doesNotThrow(() => { plain = plainLogValue(source); });
+	assert.deepEqual(plain, { safe: true, array: [null] });
 });
 
 test("reqice full backup chain automatically materializes all N cards", () => {

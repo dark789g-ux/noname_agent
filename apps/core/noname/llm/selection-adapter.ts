@@ -1,9 +1,17 @@
-import { get } from "noname";
-
 export type HeadlessSelectionType = "button" | "card" | "target" | "control" | "number";
 
+export interface HeadlessSelectionStep {
+	id?: string;
+	type: HeadlessSelectionType;
+	select?: any;
+	items?: any[];
+	filter?: Function;
+	required?: boolean;
+	selectionMode?: "set" | "sequential";
+}
+
 export interface HeadlessSelectionSpec {
-	steps?: Array<{ id?: string; type: HeadlessSelectionType; select?: any; items?: any[]; filter?: Function; required?: boolean }>;
+	steps?: HeadlessSelectionStep[];
 	viewAs?: any;
 	finalPredicate?: (context: any, event: any, player: any) => boolean;
 }
@@ -67,8 +75,8 @@ export function directSelectionDefinition(event: any, eventSpec: HeadlessSelecti
 	selectedNumbers: () => number[];
 }): { kind: string; steps: any[]; filterOk?: () => boolean } | undefined {
 	const player = event.player;
-	const card = { type: "card", select: event.selectCard, required: event.cardRequired ? true : undefined, filter: (value: any) => callbacks.isCardOwned(value) && event.filterCard?.(value, player) !== false };
-	const target = { type: "target", select: event.selectTarget, required: event.targetRequired ? true : undefined, filter: (value: any) => callbacks.isTargetCurrent(value) && event.filterTarget?.(callbacks.selectedCard(), player, value) !== false };
+	const card: any = { type: "card", select: event.selectCard, required: event.cardRequired ? true : undefined, filter: (value: any) => callbacks.isCardOwned(value) && event.filterCard?.(value, player) !== false };
+	const target: any = { type: "target", select: event.selectTarget, required: event.targetRequired ? true : undefined, filter: (value: any) => callbacks.isTargetCurrent(value) && event.filterTarget?.(callbacks.selectedCard(), player, value) !== false };
 	let steps = eventSpec?.steps?.slice();
 	if (!steps?.length) switch (event.name) {
 		case "chooseCard": steps = [card]; break;
@@ -81,11 +89,11 @@ export function directSelectionDefinition(event: any, eventSpec: HeadlessSelecti
 		case "chooseNumbers": return { kind: event.name, steps: numberStepDefinitions(event, callbacks.selectedNumbers), filterOk: () => event.filterOk?.({ ...event, numbers: callbacks.selectedNumbers() }) !== false };
 		default: return undefined;
 	}
-	return { kind: event.name, steps };
+	return { kind: event.name, steps: steps || [] };
 }
 
-export function labelFor(value: any): string {
-	try { return get.translation(value) || value?.name || String(value); } catch { return String(value); }
+export function labelFor(value: any, translate?: (value: any) => string): string {
+	try { return translate?.(value) || value?.name || String(value); } catch { return String(value); }
 }
 
 export function shortRefPrefix(type: HeadlessSelectionType): string {
@@ -95,5 +103,11 @@ export function shortRefPrefix(type: HeadlessSelectionType): string {
 export function fail(message: string): never {
 	const error: any = new Error(message);
 	error.stage = "translate";
+	throw error;
+}
+
+export function actionResolution(message: string): never {
+	const error: any = new Error(message);
+	error.stage = "translate/action-resolution";
 	throw error;
 }

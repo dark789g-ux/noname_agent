@@ -12,7 +12,37 @@ import type { LLMConfig } from "./index.js";
 export interface ToolCallResult {
 	id: string;
 	name: string;
+	reason: string;
 	arguments: Record<string, any>;
+}
+
+/** 解析并校验 function arguments，供流式与非流式响应共用。 */
+export function parseToolCallResult(id: string, name: string, rawArgs: unknown): ToolCallResult {
+	let parsed: unknown;
+	try {
+		parsed = typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
+	} catch {
+		throwParseError(`Bad tool_call arguments JSON: ${rawArgs}`);
+	}
+	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throwParseError("tool_call arguments must be a non-null object");
+	}
+	try {
+		const values = parsed as Record<string, any>;
+		if (!Object.hasOwn(values, "reason") || typeof values.reason !== "string") {
+			throwParseError("tool_call arguments.reason must be a string");
+		}
+		const reason = values.reason.trim();
+		const reasonLength = [...reason].length;
+		if (reasonLength < 1 || reasonLength > 200) {
+			throwParseError("tool_call arguments.reason must contain 1 to 200 characters");
+		}
+		const argumentsWithoutReason = Object.fromEntries(Object.entries(values).filter(([key]) => key !== "reason"));
+		return { id, name, reason, arguments: argumentsWithoutReason };
+	} catch (error: any) {
+		if (error?.stage === "parse") throw error;
+		throwParseError("Unable to read tool_call arguments");
+	}
 }
 
 export interface StreamCallbacks {
@@ -65,16 +95,8 @@ export async function callLLMWithTimeout(
 			throwErr("parse", "Malformed tool_call without id or function name");
 		}
 
-		const name = tc.function?.name || "";
 		const rawArgs = tc.function?.arguments ?? "";
-		let args: Record<string, any>;
-		try {
-			args = typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
-		} catch {
-			throwErr("parse", `Bad tool_call arguments JSON: ${rawArgs}`);
-		}
-
-		return { id: tc.id, name, arguments: args };
+		return parseToolCallResult(tc.id, tc.function.name, rawArgs);
 	} catch (e: any) {
 		// 内部已带 stage 的错误透传（parse 错误）
 		if (e?.stage) throw e;
@@ -113,7 +135,7 @@ export async function callLLMWithTimeout(
 
 /**
  * callLLMStream —— 流式调用 LLM（SSE）。
- * - 成功：返回 ToolCallResult（{ name, arguments }），arguments 为已解析的对象，与 callLLMWithTimeout 一致
+ * - 成功：返回完整 ToolCallResult（{ id, name, reason, arguments }）；arguments 为已解析且不含 reason 的对象，与 callLLMWithTimeout 一致
  * - 失败：抛出与 callLLMWithTimeout 相同结构的异常（stage/httpStatus）
  * - 流式期间：每个 chunk 通过 callbacks.onChunk 回调通知调用方
  *
@@ -135,6 +157,7 @@ export async function callLLMStream(
 	});
 
 	let httpStatus: number | undefined;
+	let errorReported = false;
 
 	try {
 		const body: Record<string, any> = {
@@ -185,18 +208,13 @@ export async function callLLMStream(
 				throwErr("parse", "LLM stream ended without a complete tool_call");
 			}
 
-			// 把累积的 arguments 字符串 parse 为对象，与 callLLMWithTimeout 保持一致
-			let args: Record<string, any>;
-			try {
-				args = JSON.parse(argumentsBuffer);
-			} catch {
-				throwErr("parse", `Bad tool_call arguments JSON: ${argumentsBuffer}`);
-			}
-
-			return { id: toolCallId, name: functionName, arguments: args };
+			return parseToolCallResult(toolCallId, functionName, argumentsBuffer);
 	} catch (e: any) {
 		// 内部已带 stage 的错误透传（parse 错误）
-		if (e?.stage) throw e;
+		if (e?.stage) {
+			notifyError(e.stage, e.message, e.httpStatus);
+			throw e;
+		}
 
 		// AbortError（来自 AbortSignal）
 		if (e instanceof DOMException && e.name === "AbortError") {
@@ -231,8 +249,19 @@ export async function callLLMStream(
 		const err: any = new Error(message);
 		err.stage = stage;
 		err.httpStatus = httpStatus;
-		// 流式调用额外通知 callbacks.onError
-		callbacks.onError?.(stage, err.message, httpStatus);
+		notifyError(stage, err.message, httpStatus);
 		throw err;
 	}
+
+	function notifyError(stage: string, message: string, status?: number): void {
+		if (errorReported) return;
+		errorReported = true;
+		callbacks.onError?.(stage, message, status);
+	}
+}
+
+function throwParseError(message: string): never {
+	const error: any = new Error(message);
+	error.stage = "parse";
+	throw error;
 }

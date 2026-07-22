@@ -15,7 +15,7 @@ ZCode agent 在本仓库工作时的指南。编辑代码前请先阅读本文�
 ## Agent 工作模式
 
 ### 探索阶段
-* **派发 explore**：代码库探索、定位文件、梳理调用关系等调研工作，一律派发 **explore 子 Agent** 执行。
+* **派发 explorer**：代码库探索、定位文件、梳理调用关系等调研工作，一律派发 **explorer 子 Agent** 执行。
 * **主 Agent 只复核**：主 Agent 只对 explore 返回的结论进行复核与追问，**不要亲自大规模阅读代码**，避免上下文被原始代码淹没。
 * 仅当需要确认某个具体片段（如精确的行号、函数签名）时，主 Agent 才可直接读取该文件。
 
@@ -33,9 +33,10 @@ Plan 必须清晰界定分工，包含：
 * **执行拓扑**：各项任务的串行/并行关系与依赖顺序。
 
 ### 3. 执行红线与评审闭环
-* **主 Agent 禁令**：主 Agent 仅做编排与审查。**全程绝对禁止直接编写/修改代码或编辑文件**，全部派发给子 Agent。
-* **只读评审**：编码完成后，主 Agent 必须指派独立的**代码评审子 Agent（只读）**进行审查。
-* **修复闭环**：主 Agent 汇总评审结论，**派发子 Agent 进行修复/更新**，主 Agent 不得亲自修改缺陷。
+* **代码开发**：所有新增功能、缺陷修复、重构、测试及其他代码修改，必须派发给 **coder 子 Agent** 执行，并明确其允许操作的文件边界。
+* **主 Agent 禁令**：主 Agent 仅做编排与审查。**全程绝对禁止直接编写/修改代码或编辑文件**，全部代码开发工作必须派发给 coder 子 Agent。
+* **只读评审**：编码完成后，主 Agent 必须指派独立的**reviewer 子 Agent（只读）**进行审查。
+* **修复闭环**：主 Agent 汇总评审结论，**派发 coder 子 Agent 进行修复/更新**，主 Agent 不得亲自修改缺陷。
 * **派发 Agent 工具时不使用 `isolation: "worktree"`**，agent 直接在当前会话工作目录（主仓库）中运行。
 
 ## 🔍 全局代码搜索规范
@@ -134,4 +135,3 @@ Vite 别名（见 `apps/core/vite.config.ts`）：`noname` → `/noname.js`，`@
   - `@typescript-eslint/ban-ts-comment` → **error**：用 `@ts-expect-error`，**禁止** `@ts-ignore` / `@ts-nocheck`。
   - `no-fallthrough` → error，但如果注释匹配 `[falls...through]` 则允许穿透。
 - 新增武将/技能时，如适用请同步更新对应的翻译条目以及 `perfectPairs`/`rank` 等元数据。
-

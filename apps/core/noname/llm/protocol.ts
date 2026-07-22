@@ -1,6 +1,7 @@
 export interface ToolCallLike {
 	id: string;
 	name: string;
+	reason?: string;
 	arguments: Record<string, any>;
 }
 
@@ -59,7 +60,8 @@ export function remainingTimeoutSec(timeoutSec: number, deadline: number, now = 
 }
 
 export function assistantToolMessage(call: ToolCallLike): Record<string, any> {
-	return { role: "assistant", content: null, tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(call.arguments) } }] };
+	const argumentsWithReason = call.reason === undefined ? call.arguments : { ...call.arguments, reason: call.reason };
+	return { role: "assistant", content: null, tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(argumentsWithReason) } }] };
 }
 
 export function materializeDirectShape(kind: string, values: { cards?: any[]; targets?: any[]; buttons?: any[]; control?: any; controls?: any[]; numbers?: number[] }): any {
@@ -79,19 +81,48 @@ export function materializeDirectShape(kind: string, values: { cards?: any[]; ta
 	}
 }
 
-/** 日志边界只保留普通 JSON，阻止 Card/Player/DOM/circular 对象进入 IndexedDB。 */
+const SENSITIVE_LOG_KEYS = new Set(["authorization", "proxy-authorization", "api-key", "apikey", "api_key", "x-api-key", "access_token", "refresh_token", "token", "secret", "password"]);
+
+/** 日志边界只保留普通 JSON，阻止敏感信息及 Card/Player/DOM/circular 对象进入 IndexedDB。 */
 export function plainLogValue<T>(value: T): T {
 	const seen = new WeakSet<object>();
-	const visit = (current: any): any => {
-		if (current === null || typeof current !== "object") return current;
+	const visit = (current: any, inArray = false): any => {
+		if (current === null || typeof current === "string" || typeof current === "boolean") return current;
+		if (typeof current === "number") return Number.isFinite(current) ? current : null;
+		if (["undefined", "function", "symbol", "bigint"].includes(typeof current)) return inArray ? null : undefined;
+		if (typeof current !== "object") return inArray ? null : undefined;
 		if (seen.has(current)) return "[circular]";
 		seen.add(current);
-		if (Array.isArray(current)) return current.map(visit);
-		const prototype = Object.getPrototypeOf(current);
-		if (prototype !== Object.prototype && prototype !== null) return undefined;
-		return Object.fromEntries(Object.entries(current).map(([key, item]) => [key, visit(item)]).filter(([, item]) => item !== undefined));
+		try {
+			if (Array.isArray(current)) return current.map(item => visit(item, true));
+			const prototype = Object.getPrototypeOf(current);
+			if (prototype !== Object.prototype && prototype !== null) return inArray ? null : undefined;
+			const result: Record<string, any> = {};
+			for (const key of Object.keys(current)) {
+				let plain: any;
+				if (SENSITIVE_LOG_KEYS.has(key.toLowerCase())) plain = "[REDACTED]";
+				else {
+					let item: any;
+					try {
+						item = current[key];
+					} catch (_error) {
+						continue;
+					}
+					plain = visit(item);
+				}
+				if (plain === undefined) continue;
+				// Defining a data property avoids the legacy __proto__ setter while
+				// preserving constructor/prototype as ordinary JSON keys.
+				Object.defineProperty(result, key, { value: plain, enumerable: true, configurable: true, writable: true });
+			}
+			return result;
+		} catch (_error) {
+			return inArray ? null : undefined;
+		} finally {
+			seen.delete(current);
+		}
 	};
-	return visit(value);
+	return (visit(value) ?? null) as T;
 }
 
 function protocolError(message: string, stage = "translate"): Error {

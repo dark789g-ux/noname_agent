@@ -95,3 +95,28 @@ tool_call(use_skill/use_card)
 ```
 
 `content.ts` 通过同一个 `tryLLMDecide(event)` 接入 `chooseToUse`、`chooseToRespond`、`chooseToDiscard`、`chooseBool`、`chooseCard`、`chooseTarget`、`chooseButton`、`chooseToGive`、`chooseCardTarget`、`chooseButtonTarget`、`chooseControl` 与 `chooseNumbers` 的非本地、非联机 AI 分支。`choose*OL` 及涉及私有信息的流程不接入。
+
+## 日志持久化与异常恢复
+
+日志不在 LLM 决策路径上等待 IndexedDB。`logger.ts` 在内存中立即更新日志与 UI 事件，再将检查点和完成记录依序交给串行异步队列，因此存储失败不会改变 `{ handled }` 的结果。
+
+```text
+start() / 每轮完成
+  -> 内存活动日志 + 异步写入 llm_log_active
+end()
+  -> 立即发布 llm_log_end
+  -> 同一 IndexedDB 事务写 llm_logs 并删除 llm_log_active
+
+下次启动 / 定时扫描
+  -> owner 无 BroadcastChannel 响应
+  -> 租约过期且 deadline + 60 秒已过
+  -> 原子转存为 interrupted
+```
+
+日志存储在独立的 `${mainDbName}_llm_logs` IndexedDB 中，以单条记录保存完成日志，并为时间、对局、玩家和状态建立索引；活动日志与页面实例租约分别存于 `llm_log_active`、`llm_log_instances`。日志初始化不升级主配置库，因此不会被其他标签页持有的旧版主库连接阻塞。
+
+旧版主库 `data/llm_logs` 数组和短暂主库 v5 日志 Store 通过跨库两阶段流程迁移：先读取源快照，将完成日志、活动检查点和实例租约幂等复制到独立库；目标提交后，在主库清理事务中重新读取源数据并做快照 CAS。只有源未变化时才删除旧数组键、清空主库 v5 日志 Store 的源记录并写迁移标记；Store 结构保留，以免触发主库 `versionchange`。CAS 失败会回滚清理并在稍后重试。
+
+迁移标记不会屏蔽标记之后的新源记录：仍运行的旧页面若重新向主库 Store 写入，下一次扫描会执行增量迁移和 CAS 清理。独立库最多保留最近 500 条完成记录，持久化初始化、迁移或写入失败都不会阻塞游戏决策。
+
+标签页每 30 秒更新一次、有效期 90 秒的租约，同时通过带配置前缀的 `BroadcastChannel` 响应存活探测，防止仍运行的其他标签页被误判为中断。无法确认 owner 存活的过期检查点会显示为“中断”，表示页面关闭、崩溃或 owner 失活，并不等同于回退本地 AI。日志仅保存在当前浏览器，不会自动上传或跨设备同步；流式 token 和不完整参数只保存在内存。

@@ -1,12 +1,12 @@
-import { game, get, lib } from "noname";
 import { SelectionContext, SelectionSession, SelectionStep } from "@/library/selection/index.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
-import { isSkillEligible } from "./candidates.js";
+import { assertSupportedTargetRules, resolveAuthoritativeTargetRange, resolveSkillActionPlan, type ActionCandidateRuntime, type CandidateAction, type DecisionCandidateSnapshot } from "./action-candidates.js";
+import { assertActionTargets, assertCardLegal, assertTargetLegal, buildDecisionLogResult, isCardOwned, isTargetCurrent, materializeResponseResult, requireAction, resolveActionCardRefs, resolveCandidateCards, resolveCandidateTargets, resolveCurrentAction, type ValidationRuntime } from "./decision-validation.js";
 import type { ToolCallResult } from "./client.js";
-import { buildBackupStepDefinitions, getViewAsSource, materializeViewAsResult, mergeBackupSelectionSpecs, resolveCardTargetSelect, resolveViewAs, type BackupDecisionKind } from "./backup-protocol.js";
+import { buildBackupStepDefinitions, getViewAsSource, materializeViewAsResult, mergeBackupSelectionSpecs, resolveViewAs, type BackupDecisionKind } from "./backup-protocol.js";
 import { materializeDirectResult } from "./direct-materializer.js";
-import { assertActionAllowed, parseActionProposal, selectionRequired, uniqueLegacyMatch, type ActionProposal } from "./protocol.js";
-import { deriveSimpleSteps, directSelectionDefinition, fail, labelFor, normalizeRange, resolveSelectionSpec, shortRefPrefix, type HeadlessSelectionSpec } from "./selection-adapter.js";
+import { assertActionAllowed, parseActionProposal, selectionRequired, type ActionProposal } from "./protocol.js";
+import { actionResolution, deriveSimpleSteps, directSelectionDefinition, fail, labelFor, normalizeRange, resolveSelectionSpec, shortRefPrefix, type HeadlessSelectionSpec } from "./selection-adapter.js";
 export { parseActionProposal, type ActionProposal } from "./protocol.js";
 export type { HeadlessSelectionSpec } from "./selection-adapter.js";
 
@@ -15,6 +15,11 @@ export interface DecisionStage {
 	type: "button" | "card" | "target" | "control" | "number";
 	items: { ref: string; label: string }[];
 	range: [number, number];
+}
+
+export interface DecisionRuntime extends ActionCandidateRuntime, ValidationRuntime {
+	translate(value: any): string;
+	isSkillEligible(event: any, player: any, skill: string): boolean;
 }
 
 export class DecisionSession {
@@ -31,32 +36,64 @@ export class DecisionSession {
 	private backupSpec?: HeadlessSelectionSpec;
 	private hasExplicitFinalPredicate = false;
 	private readonly eventSpec?: HeadlessSelectionSpec;
+	private readonly snapshot?: DecisionCandidateSnapshot;
+	private activeAction?: CandidateAction;
+	private responseCard?: any;
 
 	constructor(
 		private readonly event: any,
-		private readonly candidates: { cards: CandidateCard[]; skills: string[] },
-		targets: CandidateTarget[],
+		private readonly candidates: DecisionCandidateSnapshot | { cards: CandidateCard[]; skills: string[] },
+		private readonly runtime: DecisionRuntime,
+		targets: CandidateTarget[] = ("targetPool" in candidates ? candidates.targetPool : []),
 	) {
+		if ("targetPool" in candidates) this.snapshot = candidates;
 		for (const card of candidates.cards) this.cardMap.set(card.ref, card);
 		for (const target of targets) this.targetMap.set(target.ref, target);
 		this.eventSpec = resolveSelectionSpec(event.selectionSpec, event, event.player);
-		this.selection = new SelectionSession({ context: new SelectionContext({ event, player: event.player, source: "llm" }), filterOk: this.eventSpec?.finalPredicate ? context => this.eventSpec!.finalPredicate!(context, event, event.player) : undefined });
+		this.selection = new SelectionSession({ context: new SelectionContext({ event, player: event.player, source: "llm" } as any), filterOk: this.eventSpec?.finalPredicate ? context => this.eventSpec!.finalPredicate!(context, event, event.player) : undefined });
 		this.hasExplicitFinalPredicate = !!this.eventSpec?.finalPredicate;
 		if (!this.initializeBackupSelection()) this.initializeDirectSelection();
 	}
 
 	get stage(): DecisionStage | undefined {
-		return this.stages[this.currentStageIndex];
+		this.advanceAutomaticStages();
+		const stage = this.stages[this.currentStageIndex];
+		if (!stage) return undefined;
+		const inspection = this.selection.evaluate(stage.id).inspection;
+		if (!inspection) return stage;
+		const available = inspection.entries.filter((entry: any) => entry.available);
+		if (!inspection.automatic && inspection.range[0] > available.length) actionResolution(`selection ${stage.id} has no legal continuation`);
+		return { ...stage, range: inspection.automatic ? [inspection.automaticSelected.length, inspection.automaticSelected.length] : inspection.range, items: available.map((entry: any) => ({ ref: entry.item, label: this.stepItems.get(stage.id)?.has(entry.item) ? labelFor(this.stepItems.get(stage.id)?.get(entry.item), this.runtime.translate) : String(entry.item) })) };
 	}
 
 	get isPending(): boolean {
 		return !!this.stage;
 	}
 
+	private advanceAutomaticStages(): void {
+		while (this.currentStageIndex < this.stages.length) {
+			const stage = this.stages[this.currentStageIndex];
+			const outcome = this.selection.evaluate(stage.id);
+			if (!outcome.inspection?.automatic) break;
+			if (outcome.status === "invalid" || outcome.status === "unsupported") fail(`selection: automatic ${stage.id} is invalid`);
+			this.currentStageIndex++;
+		}
+	}
+
+	private currentActionTargetRefs(): string[] {
+		if (!this.snapshot) return Array.from(this.targetMap.keys());
+		const action = resolveCurrentAction(this.snapshot, this.skillName, this.activeAction);
+		return action?.target.mode === "select" || action?.target.mode === "automatic" ? action.target.targetRefs : Array.from(this.targetMap.keys());
+	}
+
+	private currentActionCardRefs(): string[] {
+		return resolveActionCardRefs(resolveCurrentAction(this.snapshot, this.skillName, this.activeAction), this.candidates.cards);
+	}
+
 	revalidate(): void {
-		if (this.candidates.cards.some(candidate => !this.isCardOwned(candidate.card))) fail("candidate card ownership changed during decision");
-		if (Array.from(this.targetMap.values()).some(candidate => !this.isTargetCurrent(candidate.player))) fail("candidate target state changed during decision");
-		if (this.candidates.skills.some(skill => !isSkillEligible(this.event, this.event.player, skill))) fail("candidate skill eligibility changed during decision");
+		if (this.candidates.cards.some(candidate => !isCardOwned(this.event, candidate.card, this.runtime))) fail("candidate card ownership changed during decision");
+		if (Array.from(this.targetMap.values()).some(candidate => !isTargetCurrent(this.event, candidate.player, this.runtime))) fail("candidate target state changed during decision");
+		if (this.candidates.skills.some(skill => !this.runtime.isSkillEligible(this.event, this.event.player, skill))) fail("candidate skill eligibility changed during decision");
 		if (this.stage) {
 			const outcome = this.selection.evaluate(this.stage.id);
 			if (outcome.status === "invalid" || outcome.status === "unsupported") fail(`selection: current stage is no longer valid (${outcome.reason || outcome.status})`);
@@ -64,16 +101,7 @@ export class DecisionSession {
 	}
 
 	toLogResult(result: any): Record<string, any> {
-		const plain: Record<string, any> = { bool: result?.bool };
-		if (typeof result?.skill === "string") plain.skill = result.skill;
-		for (const type of ["button", "card", "target", "control", "number"] as const) {
-			const refs = this.selectedValues(type);
-			if (refs.length) plain[`${type}_refs`] = refs;
-		}
-		if (Array.isArray(result?.numbers)) plain.numbers = result.numbers.slice();
-		if (typeof result?.control === "string") plain.control = result.control;
-		if (typeof result?.index === "number") plain.index = result.index;
-		return plain;
+		return buildDecisionLogResult(result, type => this.selectedValues(type));
 	}
 
 	accept(toolCall: ToolCallResult): { pending?: DecisionStage; result?: any } {
@@ -84,46 +112,68 @@ export class DecisionSession {
 			case "pass": return { result: { bool: false } };
 			case "bool": return { result: { bool: proposal.bool } };
 			case "card": return { result: this.materializeCard(proposal) };
-			case "respond": return { result: this.materializeRespond(proposal) };
+			case "respond": return this.startRespond(proposal);
 			case "discard": return { result: this.materializeDiscard(proposal) };
 			case "skill": return this.startSkill(proposal);
 		}
 	}
 
 	private materializeCard(proposal: ActionProposal): any {
-		const cards = this.resolveCards(proposal.cardRefs, "use_card", 1, 1);
+		const cards = resolveCandidateCards(this.cardMap, this.candidates.cards, proposal.cardRefs, "use_card", 1, 1);
 		const card = cards[0];
-		this.assertCardStillLegal(card);
-		let targets = this.resolveTargets(proposal.targetRefs, card, "use_card");
+		const action = requireAction(this.snapshot, "use_card", this.refsForCards(cards)[0]);
+		assertCardLegal(this.event, card, this.runtime);
+		let targets = resolveCandidateTargets(this.targetMap, assertActionTargets(action, proposal.targetRefs, "use_card"), "use_card");
+		for (const target of targets) assertTargetLegal(this.event, target, card, this.runtime);
 		this.registerProposalSelection(cards, targets, "card");
 		this.finalizeOrFail();
 		targets = this.selectedValues("target").map(ref => this.targetMap.get(ref)?.player).filter(Boolean);
 		return { bool: true, card, cards, targets };
 	}
 
-	private materializeRespond(proposal: ActionProposal): any {
-		const cards = this.resolveCards(proposal.cardRefs, "respond_card", 1, 1);
-		this.assertCardStillLegal(cards[0]);
+	private startRespond(proposal: ActionProposal): { pending?: DecisionStage; result?: any } {
+		const cards = resolveCandidateCards(this.cardMap, this.candidates.cards, proposal.cardRefs, "respond_card", 1, 1);
+		this.activeAction = requireAction(this.snapshot, "respond_card", this.refsForCards(cards)[0]);
+		assertCardLegal(this.event, cards[0], this.runtime);
+		this.responseCard = cards[0];
+		if (this.activeAction?.target.mode === "dynamic") {
+			const targetSteps = (this.eventSpec?.steps?.filter(step => step.type === "target") || []).map(step => ({ ...step, filter: step.filter || ((target: any) => this.event.filterTarget?.(cards[0], this.event.player, target) !== false) }));
+			if (!targetSteps.length) actionResolution("respond action has no explicit headless target step");
+			this.stages = this.registerSkillSteps({ steps: targetSteps }, {});
+			if (this.stage) return { pending: this.stage };
+			this.finalizeOrFail();
+			return { result: this.materializeResponse() };
+		}
 		this.registerProposalSelection(cards, [], "respond");
 		this.finalizeOrFail();
-		return { bool: true, card: cards[0], cards };
+		return { result: this.materializeResponse() };
+	}
+
+	private materializeResponse(): any {
+		const targets = this.selectedValues("target").map(ref => this.targetMap.get(ref)?.player).filter(Boolean);
+		return materializeResponseResult(this.responseCard, targets);
 	}
 
 	private materializeDiscard(proposal: ActionProposal): any {
-		const cards = this.resolveCards(proposal.cardRefs, "discard_cards", 1);
-		for (const card of cards) this.assertCardStillLegal(card);
+		const cards = resolveCandidateCards(this.cardMap, this.candidates.cards, proposal.cardRefs, "discard_cards", 1);
+		for (const card of cards) assertCardLegal(this.event, card, this.runtime);
 		this.registerProposalSelection(cards, [], "discard");
 		this.finalizeOrFail();
 		return { bool: true, cards };
 	}
 
 	private startSkill(proposal: ActionProposal): { pending?: DecisionStage; result?: any } {
-		if (!proposal.skillName || !this.candidates.skills.includes(proposal.skillName) || !isSkillEligible(this.event, this.event.player, proposal.skillName)) fail(`use_skill: skill "${proposal.skillName}" is no longer eligible`);
+		if (!proposal.skillName || !this.candidates.skills.includes(proposal.skillName) || !this.runtime.isSkillEligible(this.event, this.event.player, proposal.skillName)) fail(`use_skill: skill "${proposal.skillName}" is no longer eligible`);
+		const action = requireAction(this.snapshot, "use_skill", undefined, proposal.skillName);
+		proposal.cardRefs = this.canonicalCardRefs(proposal.cardRefs || []);
+		if (proposal.cardRefs?.some(ref => !action?.materialCardRefs.includes(ref))) fail("use_skill: material card is not allowed by this action");
+		proposal.targetRefs = assertActionTargets(action, proposal.targetRefs, "use_skill");
 		this.skillName = proposal.skillName;
-		const info = lib.skill[proposal.skillName];
+		const info = this.runtime.getSkillInfo(proposal.skillName);
 		if (!info) fail(`use_skill: unknown skill "${proposal.skillName}"`);
-		const spec = resolveSelectionSpec(info.selectionSpec, this.event, this.event.player);
-		if (!spec) fail(`use_skill: skill "${proposal.skillName}" has no headless selectionSpec`);
+		const plan = resolveSkillActionPlan(this.event, this.event.player, proposal.skillName, info);
+		if (!plan) fail(`use_skill: skill "${proposal.skillName}" has no headless selectionSpec`);
+		const spec = plan.spec;
 		this.installFinalPredicate(spec);
 		if (typeof info.filterOk === "function" && !spec.finalPredicate) fail(`use_skill: skill "${proposal.skillName}" has UI-dependent filterOk without finalPredicate`);
 		// chooseButton 的 dialog/link 可能包含不可序列化对象。由 content 创建
@@ -132,18 +182,15 @@ export class DecisionSession {
 			this.finalizeOrFail();
 			return { result: { bool: true, skill: proposal.skillName, cards: [], targets: [] } };
 		}
-		this.stages = this.registerSkillSteps(spec, info);
+		this.stages = this.registerSkillSteps(spec, info, plan.steps);
 		this.consumeInitialSkillSelections(proposal);
 		if (this.stage) return { pending: this.stage };
 		this.finalizeOrFail();
 		return { result: this.materializeSkill() };
 	}
 
-	private registerSkillSteps(spec: HeadlessSelectionSpec, info: any): DecisionStage[] {
-		const rawSteps = spec.steps ? spec.steps.slice() : deriveSimpleSteps(info);
-		if (!spec.steps && getViewAsSource(spec, info) && !rawSteps.some(step => step.type === "target") && typeof this.event.filterTarget === "function") {
-			rawSteps.push({ type: "target", select: () => this.viewAsTargetRange(info, spec) });
-		}
+	private registerSkillSteps(spec: HeadlessSelectionSpec, info: any, plannedSteps?: any[]): DecisionStage[] {
+		const rawSteps = plannedSteps || spec.steps?.slice() || deriveSimpleSteps(info);
 		const stages: DecisionStage[] = [];
 		for (let index = 0; index < rawSteps.length; index++) {
 			const raw = rawSteps[index];
@@ -155,19 +202,19 @@ export class DecisionSession {
 			const step = this.selection.register(new SelectionStep({
 				id,
 				type: raw.type,
-				items: values,
+				items: values as any,
 				select,
 				isSelectable: (value: string, context: any, selected: string[]) => this.isStepSelectable(raw, info, spec, itemMap.get(value), context, selected),
 				required: false,
 				forced: true,
-			}));
+			} as any));
 			let initial = this.selection.evaluate(id);
 			if (initial.status === "unsupported" || initial.status === "invalid") fail(`selection: cannot inspect ${id}`);
 			step.required = selectionRequired(initial.inspection?.range || normalizeRange(select), raw.required);
 			initial = this.selection.evaluate(id);
 			const inspectedRange = initial.inspection?.range || normalizeRange(select);
 			const range = initial.inspection?.automatic ? [initial.inspection.automaticSelected.length, initial.inspection.automaticSelected.length] as [number, number] : inspectedRange;
-			stages.push({ id, type: raw.type, items: Array.from(itemMap, ([ref, value]) => ({ ref, label: labelFor(value) })), range });
+			stages.push({ id, type: raw.type, items: Array.from(itemMap, ([ref, value]) => ({ ref, label: labelFor(value, this.runtime.translate) })), range });
 		}
 		return stages;
 	}
@@ -201,7 +248,7 @@ export class DecisionSession {
 			const { source, definition } = resolveViewAs(spec, info, cards, this.event.player);
 			if (source) {
 				if (!definition) return false;
-				const card = get.autoViewAs(definition, cards);
+				const card = this.runtime.autoViewAs(definition, cards);
 				if (typeof this.event._backup?.filterCard === "function" && this.event._backup.filterCard(card, this.event.player, this.event) === false) return false;
 			}
 			return spec.finalPredicate?.(context, this.event, this.event.player) !== false;
@@ -216,6 +263,8 @@ export class DecisionSession {
 		const key = `${stage.type}_refs`;
 		const refs = toolCall.arguments[key];
 		if (!Array.isArray(refs)) fail(`selection: ${key} must be an array`);
+		const actionRefs = stage.type === "card" ? this.currentActionCardRefs() : stage.type === "target" ? this.currentActionTargetRefs() : undefined;
+		if (actionRefs && refs.some((ref: string) => !actionRefs.includes(ref))) fail(`selection: ${stage.type} reference is outside the current action`);
 		const inspection = this.selection.evaluate(stage.id).inspection;
 		if (inspection?.automatic && refs.length && (refs.length !== inspection.automaticSelected.length || refs.some((ref: string, index: number) => ref !== inspection.automaticSelected[index]))) fail("selection: automatic selection contains stale or incomplete references");
 		const outcome = this.selection.setSelection(stage.id, refs);
@@ -223,12 +272,12 @@ export class DecisionSession {
 		this.currentStageIndex++;
 		if (this.stage) return { pending: this.stage };
 		this.finalizeOrFail();
-		return { result: this.backupKind ? this.materializeBackup() : this.directKind ? this.materializeDirect() : this.materializeSkill() };
+		return { result: this.responseCard ? this.materializeResponse() : this.backupKind ? this.materializeBackup() : this.directKind ? this.materializeDirect() : this.materializeSkill() };
 	}
 
 	private initializeBackupSelection(): boolean {
 		if (!this.event.skill || !["chooseToUse", "chooseToRespond"].includes(this.event.name)) return false;
-		const info = lib.skill[this.event.skill];
+		const info = this.runtime.getSkillInfo(this.event.skill);
 		if (!info) fail(`backup: unknown skill "${this.event.skill}"`);
 		const infoSpec = resolveSelectionSpec(info.selectionSpec, this.event, this.event.player);
 		if (!infoSpec && !this.eventSpec) fail(`backup: skill "${this.event.skill}" has no headless selectionSpec`);
@@ -238,8 +287,8 @@ export class DecisionSession {
 		this.backupInfo = info;
 		this.backupSpec = spec;
 		const steps = buildBackupStepDefinitions(this.event, info, spec, {
-			cardFilter: card => this.isCardOwned(card) && this.event.filterCard?.(card, this.event.player, this.event) !== false,
-			targetFilter: target => this.isTargetCurrent(target) && this.event.filterTarget?.(this.currentViewAsCard(info, spec), this.event.player, target) !== false,
+			cardFilter: card => isCardOwned(this.event, card, this.runtime) && this.event.filterCard?.(card, this.event.player, this.event) !== false,
+			targetFilter: target => isTargetCurrent(this.event, target, this.runtime) && this.event.filterTarget?.(this.currentViewAsCard(info, spec), this.event.player, target) !== false,
 			targetSelect: () => this.viewAsTargetRange(info, spec),
 		});
 		for (const step of steps) if (step.type === "card" && !step.items) step.items = this.candidates.cards.map(card => card.ref);
@@ -249,7 +298,8 @@ export class DecisionSession {
 		return true;
 	}
 	private initializeDirectSelection(): void {
-		const definition = directSelectionDefinition(this.event, this.eventSpec, { isCardOwned: card => this.isCardOwned(card), isTargetCurrent: target => this.isTargetCurrent(target), selectedCard: () => this.selectedDirectCard(), selectedNumbers: () => this.selectedNumbers() });
+		if (this.event.name === "chooseToUse" || this.event.name === "chooseToRespond") return;
+		const definition = directSelectionDefinition(this.event, this.eventSpec, { isCardOwned: card => isCardOwned(this.event, card, this.runtime), isTargetCurrent: target => isTargetCurrent(this.event, target, this.runtime), selectedCard: () => this.selectedDirectCard(), selectedNumbers: () => this.selectedNumbers() });
 		if (!definition) return;
 		this.directKind = definition.kind;
 		if (definition.filterOk) {
@@ -259,22 +309,21 @@ export class DecisionSession {
 		this.stages = this.registerSkillSteps({ steps: definition.steps }, {});
 		if (!this.stages.length) fail(`unsupported ${definition.kind}: no serializable candidates`);
 	}
-
 	private materializeSkill(): any {
 		const skill = this.skillName!;
-		if (!isSkillEligible(this.event, this.event.player, skill)) fail(`use_skill: skill "${skill}" is no longer eligible`);
-		const info = lib.skill[skill];
+		if (!this.runtime.isSkillEligible(this.event, this.event.player, skill)) fail(`use_skill: skill "${skill}" is no longer eligible`);
+		const info = this.runtime.getSkillInfo(skill);
 		const cards = this.selectedValues("card").map(ref => this.cardMap.get(ref)?.card).filter(Boolean);
 		const targets = this.selectedValues("target").map(ref => this.targetMap.get(ref)?.player).filter(Boolean);
 		const spec = resolveSelectionSpec(info.selectionSpec, this.event, this.event.player);
 		const { source: viewAs, definition } = resolveViewAs(spec, info, cards, this.event.player);
-		const viewAsCard = definition ? get.autoViewAs(definition, cards) : undefined;
+		const viewAsCard = definition ? this.runtime.autoViewAs(definition, cards) : undefined;
 		for (const card of cards) this.assertSkillCardLegal(card, info);
 		for (const target of targets) this.assertSkillTargetLegal(target, viewAsCard || cards[0], info, spec);
 		if (viewAs) {
 			if (!definition) fail(`use_skill: viewAs did not resolve for ${skill}`);
 			if (typeof this.event.filterCard === "function" && !this.event.filterCard(viewAsCard, this.event.player, this.event)) fail(`use_skill: viewAs card is no longer legal for ${skill}`);
-			return materializeViewAsResult(skill, definition, cards, targets, get.autoViewAs);
+			return materializeViewAsResult(skill, definition, cards, targets, this.runtime.autoViewAs);
 		}
 		return { bool: true, skill, cards, targets };
 	}
@@ -285,11 +334,11 @@ export class DecisionSession {
 		const spec = this.backupSpec;
 		const cards = this.selectedValues("card").map(ref => this.cardMap.get(ref)?.card).filter(Boolean);
 		const targets = this.selectedValues("target").map(ref => this.targetMap.get(ref)?.player).filter(Boolean);
-		for (const card of cards) this.assertCardStillLegal(card);
+		for (const card of cards) assertCardLegal(this.event, card, this.runtime);
 		const { definition } = resolveViewAs(spec, info, cards, this.event.player);
-		const card = definition ? get.autoViewAs(definition, cards) : cards[0];
-		for (const target of targets) this.assertTargetStillLegal(target, card);
-		return materializeViewAsResult(skill, definition, cards, targets, get.autoViewAs);
+		const card = definition ? this.runtime.autoViewAs(definition, cards) : cards[0];
+		for (const target of targets) assertTargetLegal(this.event, target, card, this.runtime);
+		return materializeViewAsResult(skill, definition, cards, targets, this.runtime.autoViewAs);
 	}
 
 	private materializeDirect(): any {
@@ -300,8 +349,8 @@ export class DecisionSession {
 			kind: this.directKind!, event: this.event, cards, targets, buttons,
 			control: this.selectedItems("control")[0], targetCard: this.selectedDirectCard(),
 			numbers: this.selectedNumbers(), stageCount: this.stages.length,
-			assertCard: card => this.assertCardStillLegal(card),
-			assertTarget: (target, card) => this.assertTargetStillLegal(target, card), fail,
+			assertCard: card => assertCardLegal(this.event, card, this.runtime),
+			assertTarget: (target, card) => assertTargetLegal(this.event, target, card, this.runtime), fail,
 		});
 	}
 	private selectedValues(type: DecisionStage["type"]): string[] {
@@ -327,14 +376,16 @@ export class DecisionSession {
 	}
 
 	private resolveStepItems(raw: any, info: any): Map<string, any> {
-		const scopedCards = this.candidates.cards.filter(card => !this.skillName || !card.skills || card.skills.includes(this.skillName));
-		const source = raw.items || (raw.type === "card" ? scopedCards.map(card => card.ref) : raw.type === "target" ? Array.from(this.targetMap.keys()) : []);
+		const allowedRefs = raw.type === "card" ? this.currentActionCardRefs() : raw.type === "target" ? this.currentActionTargetRefs() : undefined;
+		const source = raw.items || allowedRefs || [];
 		const map = new Map<string, any>();
 		for (const [index, value] of source.entries()) {
-			const existingRef = typeof value === "string" ? value : value?.ref;
-			const ref = this.cardMap.has(existingRef) || this.targetMap.has(existingRef) ? existingRef : value?.ref || `${shortRefPrefix(raw.type)}${index}`;
-			const item = this.cardMap.get(ref)?.card || this.targetMap.get(ref)?.player || value;
-			if (ref) map.set(ref, item);
+			const explicitRef = typeof value === "string" ? value : value?.ref;
+			const identityRef = raw.type === "card" ? this.candidates.cards.find(card => card.card === value)?.ref : raw.type === "target" ? Array.from(this.targetMap.values()).find(target => target.player === value)?.ref : undefined;
+			const ref = identityRef || (this.cardMap.has(explicitRef) || this.targetMap.has(explicitRef) ? explicitRef : raw.type === "card" || raw.type === "target" ? undefined : value?.ref || `${shortRefPrefix(raw.type)}${index}`);
+			if (!ref) actionResolution(`selection ${raw.id || raw.type} contains an object outside the decision snapshot`);
+			if (allowedRefs && !allowedRefs.includes(ref)) continue;
+			map.set(ref, this.cardMap.get(ref)?.card || this.targetMap.get(ref)?.player || value);
 		}
 		return map;
 	}
@@ -342,15 +393,16 @@ export class DecisionSession {
 	private isStepSelectable(raw: any, info: any, spec: HeadlessSelectionSpec, value: any, context: any, selected: string[]): boolean {
 		if (!value) return false;
 		try {
-			if (raw.type === "card" && !this.isCardOwned(value)) return false;
-			if (raw.type === "target" && !this.isTargetCurrent(value)) return false;
+			if (raw.type === "card" && !isCardOwned(this.event, value, this.runtime)) return false;
+			if (raw.type === "target" && !isTargetCurrent(this.event, value, this.runtime)) return false;
 			if (typeof raw.filter === "function") return !!raw.filter(value, this.event.player, context, selected);
 			if (raw.type === "card" && typeof info.filterCard === "function") return !!info.filterCard(value, this.event.player);
 			if (raw.type === "target" && typeof info.filterTarget === "function") return !!info.filterTarget(this.selectedCard(), this.event.player, value);
 			if (raw.type === "target" && getViewAsSource(spec, info) && typeof this.event.filterTarget === "function") return !!this.event.filterTarget(this.currentViewAsCard(info, spec), this.event.player, value);
 			return true;
-		} catch {
-			return false;
+		} catch (error) {
+			if ((error as any)?.stage) throw error;
+			actionResolution(`selection filter threw in ${raw.id || raw.type}: ${(error as Error)?.message || "unknown error"}`);
 		}
 	}
 
@@ -363,21 +415,22 @@ export class DecisionSession {
 		const cards = this.selectedValues("card").map(ref => this.cardMap.get(ref)?.card).filter(Boolean);
 		const resolvedSpec = spec ?? resolveSelectionSpec(info.selectionSpec, this.event, this.event.player);
 		const { definition } = resolveViewAs(resolvedSpec, info, cards, this.event.player);
-		return definition ? get.autoViewAs(definition, cards) : undefined;
+		return definition ? this.runtime.autoViewAs(definition, cards) : undefined;
 	}
 
 	private viewAsTargetRange(info: any, spec?: HeadlessSelectionSpec): any {
 		const card = this.currentViewAsCard(info, spec);
-		return resolveCardTargetSelect(card, this.event.player, value => get.info(value));
+		assertSupportedTargetRules(this.runtime.getCardInfo(card), `skill "${this.skillName}" viewAs card`);
+		return resolveAuthoritativeTargetRange(this.event, card, this.event.player, this.runtime);
 	}
 
 	private registerProposalSelection(cards: any[], targets: any[], kind: "card" | "respond" | "discard"): void {
 		const cardSpec = this.eventSpec?.steps?.find(step => step.type === "card");
 		const targetSpec = this.eventSpec?.steps?.find(step => step.type === "target");
 		const cardSelect = cardSpec?.select ?? (kind === "discard" ? (this.event.selectCard ?? 1) : 1);
-		const steps: any[] = [{ id: `proposal:${kind}:card`, type: "card", select: cardSelect, required: cardSpec?.required ?? (kind === "discard" ? undefined : true), filter: cardSpec?.filter || ((card: any) => this.isCardOwned(card) && this.event.filterCard?.(card, this.event.player) !== false) }];
+		const steps: any[] = [{ id: `proposal:${kind}:card`, type: "card", select: cardSelect, required: cardSpec?.required ?? (kind === "discard" ? undefined : true), filter: cardSpec?.filter || ((card: any) => isCardOwned(this.event, card, this.runtime) && this.event.filterCard?.(card, this.event.player) !== false) }];
 		if (kind === "card" && (typeof this.event.filterTarget === "function" || this.event.selectTarget !== undefined || this.event.targetRequired)) {
-			steps.push({ id: "proposal:card:target", type: "target", select: targetSpec?.select ?? this.authoritativeCardTargetSelect(cards[0]), required: targetSpec?.required ?? (this.event.targetRequired ? true : undefined), filter: targetSpec?.filter || ((target: any) => this.isTargetCurrent(target) && this.event.filterTarget?.(cards[0], this.event.player, target) !== false) });
+			steps.push({ id: "proposal:card:target", type: "target", select: targetSpec?.select ?? this.authoritativeCardTargetSelect(cards[0]), required: targetSpec?.required ?? (this.event.targetRequired ? true : undefined), filter: targetSpec?.filter || ((target: any) => isTargetCurrent(this.event, target, this.runtime) && this.event.filterTarget?.(cards[0], this.event.player, target) !== false) });
 		}
 		this.stages = this.registerSkillSteps({ steps }, {});
 		for (const stage of this.stages) {
@@ -388,7 +441,7 @@ export class DecisionSession {
 	}
 
 	private authoritativeCardTargetSelect(card: any): any {
-		return resolveCardTargetSelect(card, this.event.player, value => get.info(value));
+		return resolveAuthoritativeTargetRange(this.event, card, this.event.player, this.runtime);
 	}
 
 	private finalizeOrFail(): void {
@@ -398,7 +451,7 @@ export class DecisionSession {
 	}
 
 	private canonicalCardRefs(refs: string[]): string[] {
-		return this.refsForCards(this.resolveCards(refs, "selection", 0));
+		return this.refsForCards(resolveCandidateCards(this.cardMap, this.candidates.cards, refs, "selection", 0));
 	}
 
 	private refsForCards(cards: any[]): string[] {
@@ -417,60 +470,8 @@ export class DecisionSession {
 		});
 	}
 
-	private isCardOwned(card: any): boolean {
-		try {
-			return get.owner(card) === this.event.player || this.event.player.getCards("hejxs").includes(card);
-		} catch {
-			return false;
-		}
-	}
-
-	private isTargetCurrent(target: any): boolean {
-		if (game.players.includes(target)) return typeof target.isIn !== "function" || target.isIn();
-		return !!this.event.deadTarget && game.dead.includes(target);
-	}
-
-	private resolveCards(refs: string[] | undefined, action: string, min: number, max = Infinity): any[] {
-		if (!Array.isArray(refs) || refs.length < min || refs.length > max) fail(`${action}: invalid card count`);
-		const values = refs.map(ref => {
-			const direct = this.cardMap.get(ref)?.card;
-			if (direct) return direct;
-			return uniqueLegacyMatch(this.candidates.cards, ref, card => card.id)?.card;
-		});
-		if (values.some(card => !card) || new Set(values).size !== values.length) fail(`${action}: unknown or duplicate card reference`);
-		return values;
-	}
-
-	private resolveTargets(refs: string[] | undefined, card: any, action: string): any[] {
-		const values = refs || [];
-		const targets = values.map(ref => this.targetMap.get(ref)?.player);
-		if (targets.some(target => !target) || new Set(targets).size !== targets.length) fail(`${action}: unknown or duplicate target reference`);
-		for (const target of targets) this.assertTargetStillLegal(target, card);
-		return targets;
-	}
-
-	private assertCardStillLegal(card: any): void {
-		try {
-			if (!this.isCardOwned(card)) fail("card is no longer owned by the player");
-			if (typeof this.event.filterCard === "function" && !this.event.filterCard(card, this.event.player)) fail("card is no longer legal");
-		} catch (error) {
-			if ((error as any)?.stage) throw error;
-			fail("card legality could not be verified");
-		}
-	}
-
-	private assertTargetStillLegal(target: any, card: any): void {
-		try {
-			if (!this.isTargetCurrent(target)) fail("target is no longer current");
-			if (typeof this.event.filterTarget === "function" && !this.event.filterTarget(card, this.event.player, target)) fail("target is no longer legal");
-		} catch (error) {
-			if ((error as any)?.stage) throw error;
-			fail("target legality could not be verified");
-		}
-	}
-
 	private assertSkillCardLegal(card: any, info: any): void {
-		if (!this.isCardOwned(card)) fail("skill card is no longer owned by the player");
+		if (!isCardOwned(this.event, card, this.runtime)) fail("skill card is no longer owned by the player");
 		try {
 			if (typeof info.filterCard === "function" && !info.filterCard(card, this.event.player)) fail("skill card is no longer legal");
 		} catch (error) {
@@ -479,7 +480,7 @@ export class DecisionSession {
 		}
 	}
 	private assertSkillTargetLegal(target: any, card: any, info: any, spec?: HeadlessSelectionSpec): void {
-		if (!this.isTargetCurrent(target)) fail("skill target is no longer current");
+		if (!isTargetCurrent(this.event, target, this.runtime)) fail("skill target is no longer current");
 		try {
 			if (typeof info.filterTarget === "function" && !info.filterTarget(card, this.event.player, target)) fail("skill target is no longer legal");
 			if (getViewAsSource(spec, info) && typeof this.event.filterTarget === "function" && !this.event.filterTarget(card, this.event.player, target)) fail("viewAs target is no longer legal");
@@ -492,6 +493,7 @@ export class DecisionSession {
 }
 
 /** 保持旧的导出入口，调用方可以继续一次性翻译。 */
-export function translateResult(event: any, toolCall: ToolCallResult, candidates: { cards: CandidateCard[]; skills: string[] }, targets: CandidateTarget[] = []): any {
-	return new DecisionSession(event, candidates, targets).accept(toolCall).result ?? fail("Action requires additional selection turns");
+export function translateResult(event: any, toolCall: ToolCallResult, candidates: { cards: CandidateCard[]; skills: string[] }, targets: CandidateTarget[] = [], runtime?: DecisionRuntime): any {
+	if (!runtime) fail("translateResult requires a decision runtime");
+	return new DecisionSession(event, candidates, runtime, targets).accept(toolCall).result ?? fail("Action requires additional selection turns");
 }

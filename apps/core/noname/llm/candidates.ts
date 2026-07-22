@@ -24,12 +24,12 @@ export interface CandidateTarget {
 export function getCandidateCards(event: any, player: any, skills: string[] = []): CandidateCard[] {
 	const records = new Map<any, { cardAction: boolean; skills: string[] }>();
 	for (const card of player.getCards(event.position || "hs")) {
-		if (safeFilter(() => event.filterCard?.(card, player) === true)) records.set(card, { cardAction: true, skills: [] });
+		if (event.filterCard?.(card, player) === true) records.set(card, { cardAction: true, skills: [] });
 	}
 	for (const skill of skills) {
 		const info = lib.skill[skill];
 		for (const card of player.getCards(info?.position || event.position || "hs")) {
-			const eligible = info?.filterCard === true || safeFilter(() => info?.filterCard?.(card, player) === true);
+			const eligible = info?.filterCard === true || info?.filterCard?.(card, player) === true;
 			if (!eligible) continue;
 			const record = records.get(card) || { cardAction: false, skills: [] };
 			record.skills.push(skill);
@@ -44,22 +44,14 @@ export function getCandidateCards(event: any, player: any, skills: string[] = []
  * 保守策略：仅列出 enable 或 usable 有定义的技能，排除 _aiexclude。
  */
 export function getCandidateSkills(event: any, player: any): string[] {
-	try {
-		const excluded: string[] = Array.isArray(event._aiexclude) ? event._aiexclude : [];
-		const skills = game.expandSkills(player.getSkills("invisible").concat(lib.skill.global));
-		return skills.filter((skill: string) => !excluded.includes(skill) && isSkillEligible(event, player, skill));
-	} catch {
-		return [];
-	}
+	const excluded: string[] = Array.isArray(event._aiexclude) ? event._aiexclude : [];
+	const skills = game.expandSkills(player.getSkills("invisible").concat(lib.skill.global));
+	return skills.filter((skill: string) => !excluded.includes(skill) && isSkillEligible(event, player, skill));
 }
 
 /** 与 UI game.check 使用同一个引擎权威入口，并限制为已声明 headless 契约的技能。 */
 export function isSkillEligible(event: any, player: any, skill: string): boolean {
-	try {
-		return !!lib.skill[skill]?.selectionSpec && lib.filter.filterEnable(event, player, skill);
-	} catch {
-		return false;
-	}
+	return !!lib.skill[skill]?.selectionSpec && lib.filter.filterEnable(event, player, skill);
 }
 
 /**
@@ -68,13 +60,9 @@ export function isSkillEligible(event: any, player: any, skill: string): boolean
  */
 export function getCandidateTargets(event: any, player: any, card: any): any[] {
 	if (!event.filterTarget) return [];
-	try {
-		const all = Array.from(game.players);
-		if (event.deadTarget) all.push(...game.dead);
-		return all.filter((t: any) => event.filterTarget(card, player, t));
-	} catch {
-		return [];
-	}
+	const all = Array.from(game.players);
+	if (event.deadTarget) all.push(...game.dead);
+	return all.filter((t: any) => event.filterTarget(card, player, t));
 }
 
 /**
@@ -82,23 +70,19 @@ export function getCandidateTargets(event: any, player: any, card: any): any[] {
  * 避免把不稳定的数组下标直接暴露给模型。
  */
 export function getCandidateTargetRefs(event: any, player: any, card?: any): CandidateTarget[] {
-	try {
-		const players = Array.from(game.players);
-		if (event.deadTarget) players.push(...game.dead);
-		return players
-			.filter((target: any) => {
-				if (!event.filterTarget || !card) return true;
-				return event.filterTarget(card, player, target);
-			})
-			.map((target: any, index: number) => ({
-				player: target,
-				ref: `p${index}`,
-				id: target.playerid || String(index),
-				name: get.translation(target) || target.name || "未知",
-			}));
-	} catch {
-		return [];
-	}
+	const players = Array.from(game.players);
+	if (event.deadTarget) players.push(...game.dead);
+	return players
+		.filter((target: any) => {
+			if (!event.filterTarget || !card) return true;
+			return event.filterTarget(card, player, target);
+		})
+		.map((target: any, index: number) => ({
+			player: target,
+			ref: `p${index}`,
+			id: target.playerid || String(index),
+			name: get.translation(target) || target.name || "未知",
+		}));
 }
 
 /**
@@ -118,8 +102,4 @@ export function cardToId(card: any): string {
 export function findCardById(candidates: CandidateCard[], id: string): CandidateCard | undefined {
 	const matches = candidates.filter(candidate => candidate.id === id);
 	return matches.length === 1 ? matches[0] : undefined;
-}
-
-function safeFilter(callback: () => boolean): boolean {
-	try { return callback(); } catch { return false; }
 }

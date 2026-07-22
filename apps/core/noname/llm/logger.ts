@@ -1,98 +1,151 @@
-import { lib, game, _status } from "noname";
+import { lib, _status } from "noname";
+import { LLMLogLease } from "./logger-lease.js";
+import { LLMLogPersistenceQueue, retryLLMLogPersistence, retryPendingActiveCheckpoints, shouldRetryPendingLogWrites } from "./logger-queue.js";
+import { LLMLogStore, type ActiveCheckpointSnapshot, type ActiveLogRecord } from "./logger-store.js";
 import { plainLogValue } from "./protocol.js";
+import { buildGameSessions } from "./logger-sessions.js";
+import type { ActiveLogSnapshot, ErrorStage, GameSession, LogEntry, LogStatus, LogTurn } from "./logger-types.js";
 
-export type LogStatus = "success" | "fallback" | "error" | "timeout";
-export type ErrorStage = "fetch" | "parse" | "translate";
+export type { ActiveLogSnapshot, ErrorStage, GameSession, LogEntry, LogStatus, LogTurn } from "./logger-types.js";
 
-export interface LogEntry {
-	id: string;
-	gameId: string;
-	timestamp: number;
-	decisionPoint: string; // "chooseToUse" | "chooseToRespond" | "chooseToDiscard" | "chooseBool"
-	playerName: string;
-	playerSeatNum?: number;
-	durationMs: number;
-	status: LogStatus;
-	fallbackReason?: string;
-	meta: {
-		enabled: boolean;
-		configured: boolean;
-		model?: string;
-	};
-	request?: {
-		messages: any[];
-		tools: any[];
-	};
-	response?: {
-		toolCall?: { name: string; arguments: any };
-		translatedResult?: any;
-	};
-	error?: {
-		stage: ErrorStage;
-		message: string;
-		httpStatus?: number;
-	};
-	/** 多轮工具调用；缺省代表由旧版本写入的单轮日志。 */
-	turns?: Array<{
-		index: number;
-		stage?: string;
-		request: { messages: any[]; tools: any[] };
-		toolCall?: { id?: string; name: string; arguments: any };
-		result?: any;
-		error?: string;
-	}>;
+type InternalActiveLog = ActiveLogSnapshot & { deadlineAt: number; ownerId: string; revision: number };
+type PersistedActive = ActiveLogRecord<LogEntry>;
+
+const RECOVERY_INTERVAL = 60_000;
+const RECOVERY_GRACE = 60_000;
+const LEGACY_ACTIVE_TIMEOUT = 120_000;
+
+function cloneEntry(entry: LogEntry): LogEntry {
+	return plainLogValue(entry) as LogEntry;
 }
 
-export interface ActiveLogSnapshot {
-	entry: LogEntry;
-	partialArgs: string;
-	startedAt: number;
-}
+/**
+ * Keeps game-facing APIs synchronous while serializing all IndexedDB work in
+ * the background. Every persisted value is converted to plain JSON first.
+ */
+export class LLMLogger {
+	private readonly store = new LLMLogStore({ getDatabase: () => lib?.db as IDBDatabase | undefined });
+	private readonly persistence = new LLMLogPersistenceQueue({ reclaimQuota: () => this.store.reclaimQuota(), report: (operation, error) => this.announcePersistenceError(operation, error) });
+	private lease?: LLMLogLease;
+	private activeLogs = new Map<string, InternalActiveLog>();
+	private pendingActives = new Map<string, PersistedActive>();
+	private pendingFinals = new Map<string, { entry: LogEntry; generation: number; active: PersistedActive }>();
+	private pendingRetryScheduled = false;
+	private clearGeneration = 0;
+	private initialized?: Promise<void>;
+	private migrationComplete = false;
+	private migrationRetryQueued = false;
+	private recoveryTimer?: ReturnType<typeof setInterval>;
+	private pagehideInstalled = false;
 
-export interface GameSession {
-	gameId: string;
-	createdAt: number;
-	logCount: number;
-	successCount: number;
-	lastPlayerName: string;
-}
+	/** Initializes migration, the tab lease and interrupted-decision recovery. Idempotent. */
+	init(): Promise<void> {
+		if (!this.initialized) {
+			this.initialized = this.initialize().catch(error => {
+				this.announcePersistenceError("initialize", error);
+			});
+		} else if (!this.migrationComplete && !this.migrationRetryQueued) {
+			this.migrationRetryQueued = true;
+			this.enqueue("migrate_retry", async () => {
+				try {
+					await this.store.migrateLegacy();
+					this.migrationComplete = true;
+				} finally {
+					this.migrationRetryQueued = false;
+				}
+			});
+		}
+		return this.initialized;
+	}
 
-const STORAGE_KEY = "llm_logs";
-const BUFFER_LIMIT = 50;
+	private async initialize(): Promise<void> {
+		this.lease = new LLMLogLease({ store: this.store, prefix: String(lib.configprefix || "noname") });
+		try {
+			await this.runWithRetry("migrate", () => this.store.migrateLegacy());
+			this.migrationComplete = true;
+		} catch (error) {
+			// Migration failure must not prevent lease startup or later decision persistence.
+			this.announcePersistenceError("migrate", error);
+		}
+		await this.lease.start();
+		this.installPagehideHandler();
+		void this.recoverInterrupted();
+		if (!this.recoveryTimer) this.recoveryTimer = setInterval(() => void this.recoverInterrupted(), RECOVERY_INTERVAL);
+	}
 
-class LLMLogger {
-	private buffer: LogEntry[] = [];
-	private activeLogs = new Map<string, ActiveLogSnapshot>();
-
-	start(decisionPoint: string, playerName: string, meta: LogEntry["meta"], seatNum?: number): string {
+	start(decisionPoint: string, playerName: string, meta: LogEntry["meta"], seatNum?: number, deadlineAt = Date.now() + 120_000): string {
 		const startedAt = Date.now();
 		const id = `log_${startedAt}_${Math.random().toString(36).slice(2, 8)}`;
 		const gameId = (_status as { llmGameId?: string }).llmGameId || "game_unknown";
-		const entry: LogEntry = {
-			id,
-			gameId,
-			timestamp: startedAt,
-			decisionPoint,
-			playerName,
-			playerSeatNum: seatNum,
-			durationMs: 0,
-			status: "success",
-			meta,
-		};
-		this.activeLogs.set(id, { entry, partialArgs: "", startedAt });
-		// 通知订阅者新的 LLM 调用开始（用于 UI 实时面板）
-		try {
-			if (typeof lib !== "undefined" && lib.announce) {
-				lib.announce.publish("llm_log_start", entry);
-			}
-		} catch (_e) {
-			// publish 失败不影响主流程
-		}
+		const entry = cloneEntry({ id, gameId, timestamp: startedAt, decisionPoint, playerName, playerSeatNum: seatNum, durationMs: 0, status: "success", meta });
+		const active: InternalActiveLog = { entry, partialArgs: "", startedAt, deadlineAt, ownerId: this.lease?.instanceId || "llm_uninitialized", revision: 1 };
+		this.activeLogs.set(id, active);
+		this.enqueueActive(this.snapshotActive(active));
+		this.publish("llm_log_start", entry);
 		return id;
+	}
+
+	private snapshotActive(active: InternalActiveLog): PersistedActive {
+		return {
+			id: active.entry.id,
+			ownerId: active.ownerId,
+			revision: active.revision,
+			gameId: active.entry.gameId,
+			status: "active",
+			timestamp: active.entry.timestamp,
+			updatedAt: Date.now(),
+			deadlineAt: active.deadlineAt,
+			turns: active.entry.turns,
+			entry: cloneEntry(active.entry),
+		};
+	}
+
+	private enqueueActive(active: PersistedActive): void {
+		if (this.initialized && !this.migrationComplete) void this.init();
+		this.retryPendingFinals();
+		this.pendingActives.set(active.id, active);
+		this.enqueue("checkpoint", async () => {
+			await this.store.putActive(active);
+			if (this.pendingActives.get(active.id) === active) this.pendingActives.delete(active.id);
+		});
+	}
+
+	private enqueue(name: string, operation: () => Promise<void>): void {
+		this.persistence.enqueue(name, operation);
+	}
+
+	private enqueueCritical(name: string, operation: () => Promise<void>): Promise<void> {
+		return this.persistence.enqueueCritical(name, operation);
+	}
+
+	private async runWithRetry(name: string, operation: () => Promise<void>): Promise<void> {
+		await retryLLMLogPersistence(name, operation, () => this.store.reclaimQuota());
+	}
+
+	private publish(name: string, value: unknown): void {
+		try {
+			if (typeof lib !== "undefined" && lib.announce) lib.announce.publish(name, value);
+		} catch (_error) {
+			// Diagnostics must not affect an LLM decision.
+		}
+	}
+
+	private announcePersistenceError(operation: string, error: unknown): void {
+		this.publish("llm_log_persistence_error", { operation, error: error instanceof Error ? error.message : String(error), timestamp: Date.now() });
+		if (lib.config?.dev) {
+			console.warn(`[LLM] ${operation} persistence failed:`, error);
+		}
 	}
 
 	private getActive(id: string): LogEntry | undefined {
 		return this.activeLogs.get(id)?.entry;
+	}
+
+	private checkpoint(id: string): void {
+		const active = this.activeLogs.get(id);
+		if (!active) return;
+		active.revision++;
+		this.enqueueActive(this.snapshotActive(active));
 	}
 
 	private matchesGameAndPlayer(entry: LogEntry, gameId: string, playerName: string, seatNum?: number): boolean {
@@ -103,12 +156,11 @@ class LLMLogger {
 	}
 
 	getActiveLogByGameAndPlayer(gameId: string, playerName: string, seatNum?: number): ActiveLogSnapshot | undefined {
-		let latest: ActiveLogSnapshot | undefined;
+		let latest: InternalActiveLog | undefined;
 		for (const active of this.activeLogs.values()) {
-			if (!this.matchesGameAndPlayer(active.entry, gameId, playerName, seatNum)) continue;
-			if (!latest || active.startedAt > latest.startedAt) latest = active;
+			if (this.matchesGameAndPlayer(active.entry, gameId, playerName, seatNum) && (!latest || active.startedAt > latest.startedAt)) latest = active;
 		}
-		return latest ? { ...latest } : undefined;
+		return latest && { entry: cloneEntry(latest.entry), partialArgs: latest.partialArgs, startedAt: latest.startedAt };
 	}
 
 	logRequest(id: string, messages: any[], tools: any[]): void {
@@ -116,7 +168,7 @@ class LLMLogger {
 		if (entry) entry.request = plainLogValue({ messages, tools });
 	}
 
-	logResponse(id: string, toolCall: { name: string; arguments: any }, translatedResult?: any): void {
+	logResponse(id: string, toolCall: { name: string; reason: string; arguments: any }, translatedResult?: any): void {
 		const entry = this.getActive(id);
 		if (entry) entry.response = plainLogValue({ toolCall, translatedResult });
 	}
@@ -129,26 +181,35 @@ class LLMLogger {
 	end(id: string, status: LogStatus): void {
 		const active = this.activeLogs.get(id);
 		if (!active) return;
-		const entry = active.entry;
-		entry.durationMs = Date.now() - active.startedAt;
-		entry.status = status;
-		this.buffer.push(entry);
+		active.entry.durationMs = Date.now() - active.startedAt;
+		active.entry.status = status;
+		const entry = cloneEntry(active.entry);
 		this.activeLogs.delete(id);
-		if (lib.config.dev) {
-			// @ts-expect-error console 在引擎上下文可用
+		this.pendingActives.delete(id);
+		this.retryPendingFinals();
+		const generation = this.clearGeneration;
+		const persistedActive = this.snapshotActive(active);
+		const pending = { entry, generation, active: persistedActive };
+		this.pendingFinals.set(id, pending);
+		this.enqueue("finalize", async () => {
+			// A clear queued after this finalization must run after its active checkpoint
+			// has been deleted; otherwise recovery could recreate a cleared log.
+			await this.persistFinal(pending);
+			if (this.pendingFinals.get(id) === pending) this.pendingFinals.delete(id);
+		});
+		if (lib.config?.dev) {
 			console.log(`[LLM] ${entry.decisionPoint} ${entry.status} ${entry.durationMs}ms`, entry);
 		}
-		if (this.buffer.length >= BUFFER_LIMIT) {
-			this.flush().catch(() => {});
-		}
-		// 通知订阅者 LLM 调用结束（用于 UI 实时面板把"进行中"折叠到历史）
-		try {
-			if (typeof lib !== "undefined" && lib.announce) {
-				lib.announce.publish("llm_log_end", entry);
-			}
-		} catch (_e) {
-			// publish 失败不影响主流程
-		}
+		this.publish("llm_log_end", entry);
+	}
+
+	private async persistFinal(pending: { entry: LogEntry; generation: number; active: PersistedActive }): Promise<boolean> {
+		const checkpoint: ActiveCheckpointSnapshot = { id: pending.active.id, ownerId: pending.active.ownerId, revision: pending.active.revision, updatedAt: pending.active.updatedAt };
+		if (await this.store.finalize(checkpoint, pending.entry)) return true;
+		// A checkpoint may have exhausted retries before a fast decision ends. CAS
+		// permits recreation only when no completed or foreign/newer checkpoint exists.
+		if (!(await this.store.putActive(pending.active))) return false;
+		return this.store.finalize(checkpoint, pending.entry);
 	}
 
 	endFallback(id: string, reason: string): void {
@@ -157,122 +218,138 @@ class LLMLogger {
 		this.end(id, "fallback");
 	}
 
-	/**
-	 * 推送流式 chunk 事件。供 client.ts 在 SSE 流式调用时逐 chunk 调用，
-	 * UI 面板订阅 "llm_log_chunk" 事件实现"逐字出现"的视觉效果。
-	 *
-	 * 注意：本方法不写 IndexedDB，仅更新活动快照并发布事件。完整 entry 仍由 end() 写入。
-	 */
+	/** 流式内容仅用于实时 UI，不会产生 IndexedDB 写入。 */
 	logStreamChunk(logId: string, partialArgs: string): void {
 		const active = this.activeLogs.get(logId);
 		if (active) active.partialArgs = partialArgs;
-		try {
-			if (typeof lib !== "undefined" && lib.announce) {
-				lib.announce.publish("llm_log_chunk", { logId, partialArgs, ts: Date.now() });
+		this.publish("llm_log_chunk", { logId, partialArgs, ts: Date.now() });
+	}
+
+	logTurn(id: string, turn: LogTurn): void {
+		const entry = this.getActive(id);
+		if (!entry) return;
+		(entry.turns ||= []).push(plainLogValue(turn));
+		this.checkpoint(id);
+	}
+
+	private retryPendingFinals(): void {
+		if (this.pendingRetryScheduled || !shouldRetryPendingLogWrites(this.pendingActives.size, this.pendingFinals.size)) return;
+		this.pendingRetryScheduled = true;
+		this.enqueue("checkpoint_pending", () => retryPendingActiveCheckpoints(this.pendingActives, id => this.activeLogs.has(id), active => this.store.putActive(active)));
+		this.enqueue("finalize_pending", async () => {
+			try {
+				for (const [id, pending] of Array.from(this.pendingFinals)) {
+					if (pending.generation !== this.clearGeneration) continue;
+					await this.persistFinal(pending);
+					if (this.pendingFinals.get(id) === pending) this.pendingFinals.delete(id);
+				}
+			} finally {
+				this.pendingRetryScheduled = false;
 			}
-		} catch (_e) {
-			// publish 失败不影响主流程
-		}
+		});
 	}
 
 	async flush(): Promise<void> {
-		if (this.buffer.length === 0) return;
-		const toFlush = this.buffer;
-		this.buffer = [];
-		try {
-			const existing = (await game.getDB("data", STORAGE_KEY)) || [];
-			const merged = [...existing, ...toFlush];
-			const trimmed = merged.slice(-500);
-			await game.putDB("data", STORAGE_KEY, trimmed);
-		} catch (e) {
-			this.buffer.unshift(...toFlush);
-			if (lib.config.dev) {
-				// @ts-expect-error console
-				console.warn("[LLM] flush failed:", e);
-			}
+		this.retryPendingFinals();
+		await this.persistence.drain();
+	}
+
+	private mergePending(entries: LogEntry[]): LogEntry[] {
+		const merged = new Map<string, LogEntry>();
+		for (const entry of entries) merged.set(entry.id, entry);
+		for (const pending of this.pendingFinals.values()) {
+			if (pending.generation === this.clearGeneration) merged.set(pending.entry.id, pending.entry);
 		}
+		return Array.from(merged.values()).sort((a, b) => b.timestamp - a.timestamp);
 	}
 
 	async getLogs(): Promise<LogEntry[]> {
 		await this.flush();
-		let persisted: LogEntry[] = [];
 		try {
-			persisted = ((await game.getDB("data", STORAGE_KEY)) || []) as LogEntry[];
-		} catch (e) {
-			if (lib.config.dev) {
-				// @ts-expect-error console
-				console.warn("[LLM] read logs failed, using buffer:", e);
-			}
+			return this.mergePending(await this.store.listEntries<LogEntry>());
+		} catch (error) {
+			this.announcePersistenceError("read", error);
+			return this.mergePending([]);
 		}
-		const merged = new Map<string, LogEntry>();
-		for (const entry of persisted) merged.set(entry.id, entry);
-		for (const entry of this.buffer) merged.set(entry.id, entry);
-		return Array.from(merged.values());
 	}
 
 	async clearLogs(): Promise<void> {
-		this.buffer = [];
-		await game.deleteDB("data", STORAGE_KEY);
+		this.clearGeneration++;
+		const abandoned = Array.from(this.pendingFinals.values())
+			.filter(pending => pending.generation < this.clearGeneration)
+			.map(pending => ({ id: pending.active.id, ownerId: pending.active.ownerId, revision: pending.active.revision, updatedAt: pending.active.updatedAt }));
+		for (const [id, pending] of this.pendingFinals) if (pending.generation < this.clearGeneration) this.pendingFinals.delete(id);
+		const clearTask = this.enqueueCritical("clear", async () => {
+			await this.store.discardActives(abandoned);
+			await this.store.clearEntries();
+		});
+		await clearTask;
 	}
 
 	async getGameSessions(): Promise<GameSession[]> {
-		const all = await this.getLogs();
-		const map = new Map<string, GameSession>();
-		for (const e of all) {
-			const g = e.gameId || "game_unknown";
-			if (!map.has(g)) {
-				map.set(g, {
-					gameId: g,
-					createdAt: e.timestamp,
-					logCount: 1,
-					successCount: e.status === "success" ? 1 : 0,
-					lastPlayerName: e.playerName,
-				});
-			} else {
-				const s = map.get(g)!;
-				s.createdAt = Math.min(s.createdAt, e.timestamp);
-				s.logCount++;
-				if (e.status === "success") s.successCount++;
-				s.lastPlayerName = e.playerName;
-			}
-		}
-		return Array.from(map.values()).sort((a, b) => b.createdAt - a.createdAt);
+		return buildGameSessions(await this.getLogs());
 	}
 
 	async getLogsByGame(gameId: string): Promise<LogEntry[]> {
 		const all = await this.getLogs();
-		return all
-			.filter(e => (e.gameId || "game_unknown") === gameId)
-			.sort((a, b) => b.timestamp - a.timestamp);
+		return all.filter(entry => (entry.gameId || "game_unknown") === gameId);
 	}
 
-	logTurn(id: string, turn: NonNullable<LogEntry["turns"]>[number]): void {
-		const entry = this.getActive(id);
-		if (!entry) return;
-		(entry.turns ||= []).push(plainLogValue(turn));
-	}
-
-	/**
-	 * 按 gameId + 玩家过滤日志。
-	 * - seatNum 优先：传入时，新日志按 seatNum 严格过滤；仅旧日志缺 seatNum 时按玩家名兼容
-	 * - seatNum 缺省：降级按 playerName 过滤（向后兼容旧日志，可能误匹配同名武将）
-	 */
 	async getLogsByGameAndPlayer(gameId: string, playerName: string, seatNum?: number): Promise<LogEntry[]> {
-		const logs = await this.getLogsByGame(gameId);
-		return logs.filter(entry => this.matchesGameAndPlayer(entry, gameId, playerName, seatNum));
+		return (await this.getLogsByGame(gameId)).filter(entry => this.matchesGameAndPlayer(entry, gameId, playerName, seatNum));
 	}
 
-	/**
-	 * 旧数据迁移：如果检测到无 gameId 字段的日志，清空所有旧日志。
-	 * 幂等——已迁移/无数据时不操作。由 LLM 模块初始化时调用一次。
-	 */
+	/** Compatibility entry point retained for callers from the previous logger. */
 	async migrateIfNeeded(): Promise<void> {
-		const all = ((await game.getDB("data", STORAGE_KEY)) || []) as LogEntry[];
-		if (all.length === 0) return;
-		const hasOld = all.some(e => typeof e.gameId !== "string");
-		if (hasOld) {
-			await this.clearLogs();
+		await this.init();
+	}
+
+	private async recoverInterrupted(): Promise<void> {
+		if (!this.lease) return;
+		let active: PersistedActive[];
+		try {
+			active = await this.store.listActive<LogEntry>();
+		} catch (error) {
+			this.announcePersistenceError("scan_active", error);
+			return;
 		}
+		const owners = active.map(record => record.ownerId).filter(ownerId => ownerId !== this.lease!.instanceId);
+		const alive = await this.lease.confirmAlive(owners, 300);
+		const now = Date.now();
+		for (const record of active) {
+			if (record.ownerId === this.lease.instanceId || alive.has(record.ownerId)) continue;
+			let expired = false;
+			try {
+				expired = await this.store.isLeaseExpired(record.ownerId, now);
+			} catch (error) {
+				this.announcePersistenceError("check_lease", error);
+				continue;
+			}
+			const deadline = typeof record.deadlineAt === "number" ? record.deadlineAt + RECOVERY_GRACE : record.updatedAt + LEGACY_ACTIVE_TIMEOUT;
+			if (!expired || now <= deadline) continue;
+			const entry = cloneEntry({ ...record.entry, id: record.id, turns: (record.turns || record.entry.turns) as LogTurn[], status: "interrupted", fallbackReason: "page_reload_or_crash" });
+			entry.durationMs = Math.max(entry.durationMs || 0, now - entry.timestamp);
+			this.enqueue("recover", async () => {
+				await this.store.recover({ id: record.id, ownerId: record.ownerId, revision: record.revision, updatedAt: record.updatedAt }, entry);
+			});
+		}
+	}
+
+	private installPagehideHandler(): void {
+		if (this.pagehideInstalled || typeof window === "undefined") return;
+		this.pagehideInstalled = true;
+		window.addEventListener("pagehide", event => {
+			if (event.persisted) return;
+			for (const active of Array.from(this.activeLogs.values())) {
+				active.entry.fallbackReason = "page_reload_or_crash";
+				this.end(active.entry.id, "interrupted");
+			}
+			void this.flush();
+			void this.lease?.close();
+		});
+		document.addEventListener("visibilitychange", () => {
+			if (document.visibilityState === "hidden") void this.flush();
+		});
 	}
 }
 

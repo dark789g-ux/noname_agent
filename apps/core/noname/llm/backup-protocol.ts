@@ -78,3 +78,12 @@ export function materializeViewAsResult(skill: string, definition: any, cards: a
 	if (!card) throw new Error(`backup ${skill} did not materialize a card`);
 	return { bool: true, skill, card, cards, targets };
 }
+
+export function describeDecisionStage(stage: { id: string; type: string; range: [number, number]; items: { ref: string; label: string }[] }): string {
+	return `## 当前选择步骤\n- step_id: ${stage.id}\n- 类型: ${stage.type}\n- 数量: ${stage.range[0]}..${stage.range[1]}\n- 候选:\n${stage.items.map(item => `  - ${item.ref}: ${item.label}`).join("\n")}`;
+}
+
+export function appendPendingHistory(history: any[], toolCall: any, pending: { id: string; type: string; range: [number, number]; items: { ref: string; label: string }[] }): void {
+	history.push(assistantToolMessage(toolCall), { role: "tool", tool_call_id: toolCall.id, content: JSON.stringify({ accepted: true, next_step: pending }) }, { role: "user", content: describeDecisionStage(pending) });
+}
+import { assistantToolMessage } from "./protocol.js";

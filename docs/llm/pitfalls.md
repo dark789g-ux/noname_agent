@@ -15,8 +15,7 @@
 
 ### 调整 prompt
 
-- 修改 system 文案：编辑 `context.ts:30` 的 `content` 字符串。
-- 修改场面信息：编辑 `buildSnapshot` 函数（`context.ts:43-167`），调整段落结构或增减信息。
+- 修改 system 文案、场上武将采集或场面信息：编辑 `context.ts`；纯文本清理、排序和渲染规则位于 `prompt-format.ts`。
 - 修改决策描述映射：编辑 `DECISION_DESCRIPTIONS`（`context.ts:8-13`）。
 
 ### 增加新配置项
@@ -37,6 +36,24 @@
 菜单「其它」→「LLM 日志」，展示所有决策日志。支持清除。
 
 ## ⚠ 踩坑与契约
+
+### ⚠ 动作快照与严格回退
+
+`chooseToUse` / `chooseToRespond` 不再向模型提供全局“当前可选目标”，而是提供动作级候选。直接实体牌与经技能转换同一实体牌是不同动作，材料牌、目标范围和 `pN` 子集不得合并。`pN` 在整次决策中稳定；事件允许死亡目标时才将死亡角色加入目标池。
+
+`selectionSpec` 缺失的技能是正常不支持，应从动作列表排除。已声明 headless 支持却遇到 UI-only `filterOk`、无法解析的范围、过滤器异常或同一步顺序依赖，属于 `translate/action-resolution` 错误，整次调用回退原生 AI，不能把异常静默当作“不可选”。步骤的集合/顺序语义只能通过 `selectionMode: "set" | "sequential"` 声明，禁止根据过滤函数的参数个数猜测；`sequential` 当前不支持。`complexSelect`、`complexTarget`、`filterAddedTarget`、`changeTarget` 等 legacy 目标标志当前必须无条件严格回退，即使存在普通 target step 也不能视为覆盖；只有未来新增无歧义的 headless 契约及 addedTarget/changeTarget 专用 materializer 后才能支持。动态动作必须能够在前一步完成后生成有限、精确的下一步；pending 后必须追加 assistant tool message、tool result 和新的 user stage 描述。自动选择由 `DecisionSession` 内部推进，不向模型额外暴露空 `select_targets` 轮。
+
+技能步骤只能由共享 planner 推导。不要用“存在前序选牌”作为动态目标的判断条件，也不要遗漏 `selectionSpec: true` 的 `viewAs` 隐式目标步骤。普通 `chooseToRespond` 的实体牌没有目标；若事件确实需要响应后选目标，必须以显式 headless 目标步骤声明，并在选牌成功后才初始化该 pending。目标范围必须包含 `event.selectTarget` 和 `selectTarget` mod；`raw.items` 中的 Card/Player 要按对象身份反查快照引用，禁止在局部步骤重新生成 `cN/pN`。每轮 inspection 还需与当前动作的材料/目标子集取交集，并只输出实时 `available`。
+
+### ⚠ 提示词快照、全知身份与私有信息边界
+
+`tryLLMDecide` 每次调用只生成一次场面快照，后续选择会话的多轮请求必须复用它，不能在中途重新采集状态。这样同一决策的 tool 调用与上下文保持一致。
+
+system 中的场上信息仅来自 `game.players`，按座位号排序，未分配座位排末尾；它包含真实 `player.identity`，不检查 `identityShown`。此全知信息只供 LLM 决策使用，绝不能反向改变 UI、联机同步或真人玩家的信息可见性。
+
+user 中手牌披露继续遵循调用者视角：只保留本人手牌与 `getKnownCards(player)` 已知的他人手牌。不得因为身份全知或提示词增强而输出未知手牌。
+
+当前有效技能应覆盖武将、临时、额外和装备技能，同时排除隐藏、内部辅助和全局规则技能；技能描述以及判定牌描述移除 HTML 和多余空白后必须完整保留，不得为了控制 token 截断。判定牌有 `viewAs` 时，描述以生效牌为准，并保留必要的原始牌名。
 
 ### ⚠ baseURL 语义（破坏性）
 

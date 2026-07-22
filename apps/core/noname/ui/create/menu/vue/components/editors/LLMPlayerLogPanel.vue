@@ -26,8 +26,8 @@
 					</div>
 					<div class="field">
 						<span class="label">状态:</span>
-						<span :class="statusClass(selectedDetail.status)">
-							{{ statusIcon(selectedDetail.status) }} {{ statusText(selectedDetail.status) }}
+						<span :class="statusPresentation(selectedDetail.status).className">
+							{{ statusPresentation(selectedDetail.status).icon }} {{ statusPresentation(selectedDetail.status).text }}
 						</span>
 					</div>
 				</div>
@@ -54,28 +54,23 @@
 			<div v-if="selectedDetail.request" class="detail-card">
 				<div class="detail-card-title">请求 Prompt</div>
 				<div class="detail-card-body">
-					<details open>
-						<summary>messages</summary>
-						<div
-							v-for="(msg, i) in selectedDetail.request.messages"
-							:key="i"
-							class="msg-card"
-							:class="'msg-' + msg.role"
-						>
-							<div class="msg-role">{{ msg.role }}</div>
-							<pre class="code-block">{{ formatJson(msg.content || msg) }}</pre>
-						</div>
-					</details>
-					<details v-if="selectedDetail.request.tools?.length">
-						<summary>tools ({{ selectedDetail.request.tools.length }})</summary>
-						<div
-							v-for="(tool, i) in selectedDetail.request.tools"
-							:key="i"
-							class="msg-card"
-						>
-							<div class="msg-role">tool: {{ tool.function?.name }}</div>
-						</div>
-					</details>
+					<LLMLogContent
+						v-for="(msg, i) in selectedDetail.request.messages"
+						:key="`${selectedDetail.id}-message-${i}`"
+						:value="isPromptMessage(msg) ? msg.content : msg"
+						:mode="isPromptMessage(msg) ? 'auto' : 'json'"
+						:default-expanded="msg.role !== 'system'"
+						:label="msg.role"
+					/>
+					<div v-if="selectedDetail.request.tools?.length" class="content-group-label">tools ({{ selectedDetail.request.tools.length }})</div>
+					<LLMLogContent
+						v-for="(tool, i) in selectedDetail.request.tools"
+						:key="`${selectedDetail.id}-tool-${i}`"
+						:value="tool"
+						mode="json"
+						:default-expanded="false"
+						:label="`tool: ${tool.function?.name || i + 1}`"
+					/>
 				</div>
 			</div>
 
@@ -86,25 +81,8 @@
 			>
 				<div class="detail-card-title">响应结果</div>
 				<div class="detail-card-body">
-					<div v-if="selectedDetail.response.toolCall" class="field">
-						<span class="label">tool_call:</span>
-						{{ selectedDetail.response.toolCall.name }}
-					</div>
-					<pre
-						v-if="selectedDetail.response.toolCall"
-						class="code-block"
-					>{{ formatJson(selectedDetail.response.toolCall.arguments) }}</pre>
-					<div
-						v-if="selectedDetail.response.translatedResult != null"
-						class="field"
-						style="margin-top: 8px"
-					>
-						<span class="label">translatedResult:</span>
-					</div>
-					<pre
-						v-if="selectedDetail.response.translatedResult != null"
-						class="code-block"
-					>{{ formatJson(selectedDetail.response.translatedResult) }}</pre>
+					<LLMLogContent v-if="selectedDetail.response.toolCall" :key="`${selectedDetail.id}-tool-call`" :value="selectedDetail.response.toolCall" mode="json" :default-expanded="true" label="tool_call" />
+					<LLMLogContent v-if="selectedDetail.response.translatedResult != null" :key="`${selectedDetail.id}-translated-result`" :value="selectedDetail.response.translatedResult" mode="auto" :default-expanded="true" label="translatedResult" />
 				</div>
 			</div>
 
@@ -139,10 +117,10 @@
 				</div>
 			</div>
 
-			<div v-if="selectedDetail.fallbackReason" class="detail-card card-fallback">
-				<div class="detail-card-title">回退说明</div>
+			<div v-if="statusDetail(selectedDetail.status, selectedDetail.fallbackReason)" class="detail-card" :class="selectedDetail.status === 'interrupted' ? 'card-interrupted' : 'card-fallback'">
+				<div class="detail-card-title">{{ selectedDetail.status === "interrupted" ? "中断说明" : "回退说明" }}</div>
 				<div class="detail-card-body">
-					{{ selectedDetail.fallbackReason }}
+					{{ statusDetail(selectedDetail.status, selectedDetail.fallbackReason) }}
 				</div>
 			</div>
 		</div>
@@ -178,9 +156,9 @@
 						<span class="decision">{{ entry.decisionPoint }}</span>
 						<span
 							class="status"
-							:class="statusClass(entry.status)"
+							:class="statusPresentation(entry.status).className"
 						>
-							{{ statusIcon(entry.status) }}
+							{{ statusPresentation(entry.status).icon }}
 						</span>
 						<span class="duration">{{ entry.durationMs }}ms</span>
 					</div>
@@ -202,6 +180,8 @@
 import { ref, onMounted, onUnmounted } from "vue";
 import { llmLogger, type ActiveLogSnapshot, type LogEntry } from "@/llm/logger.js";
 import { lib } from "noname";
+import { getLLMLogStatusDetail, getLLMLogStatusPresentation } from "./llmLogStatus.js";
+import LLMLogContent from "./LLMLogContent.vue";
 
 const props = defineProps<{
 	playerSeatNum: number;
@@ -379,56 +359,18 @@ function formatJson(obj: any): string {
 	}
 }
 
-function statusClass(status: string): string {
-	switch (status) {
-		case "success":
-			return "status-success";
-		case "fallback":
-			return "status-fallback";
-		case "error":
-			return "status-error";
-		case "timeout":
-			return "status-timeout";
-		default:
-			return "";
-	}
+function isPromptMessage(message: any): message is { role: "system" | "user"; content: unknown } {
+	return message?.role === "system" || message?.role === "user";
 }
 
-function statusIcon(status: string): string {
-	switch (status) {
-		case "success":
-			return "\u2713";
-		case "fallback":
-			return "\u21A9";
-		case "error":
-			return "\u2717";
-		case "timeout":
-			return "\u23F1";
-		default:
-			return "?";
-	}
-}
-
-function statusText(status: string): string {
-	switch (status) {
-		case "success":
-			return "成功";
-		case "fallback":
-			return "回退";
-		case "error":
-			return "错误";
-		case "timeout":
-			return "超时";
-		default:
-			return status;
-	}
-}
+const statusPresentation = getLLMLogStatusPresentation;
+const statusDetail = getLLMLogStatusDetail;
 </script>
 
 <style scoped>
 .llm-player-log-panel, .llm-player-log-panel div { position: static !important; }
 .llm-player-log-panel { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden; box-sizing: border-box; color: #ddd; font-size: 12px; }
-.active-call, .stream-area, .active-meta, .history-section, .section-title, .empty, .detail-view, .detail-card, .detail-card-title, .detail-card-body, .field, .msg-card, .msg-role { display: block; box-sizing: border-box; }
+.active-call, .stream-area, .active-meta, .history-section, .section-title, .empty, .detail-view, .detail-card, .detail-card-title, .detail-card-body, .field { display: block; box-sizing: border-box; }
 .toolbar { display: flex; flex: 0 0 auto; align-items: center; padding: 6px 8px; border-bottom: 1px solid #444; gap: 6px; }
 .llm-player-log-panel > .toolbar { border-top: 1px solid #444; border-bottom: 0; }
 .btn { background: #333; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
@@ -451,25 +393,21 @@ function statusText(status: string): string {
 .history-item .time { font-family: monospace; font-size: 11px; color: #999; white-space: nowrap; }
 .history-item .decision { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-item .duration { font-family: monospace; font-size: 11px; color: #888; }
-.status-success { color: #4caf50; }
-.status-fallback { color: #ff9800; }
-.status-error { color: #f44336; }
-.status-timeout { color: #ff9800; }
+.llm-log-status-success { color: #4caf50; }
+.llm-log-status-fallback, .llm-log-status-timeout { color: #ff9800; }
+.llm-log-status-error { color: #f44336; }
+.llm-log-status-interrupted { color: #ffb74d; }
 .detail-view { flex: 1 1 auto; min-height: 0; padding: 0; overflow: auto; }
 .detail-card { margin: 8px; border: 1px solid #444; border-radius: 4px; overflow: hidden; }
 .detail-card-title { background: #333; padding: 5px 8px; font-weight: bold; color: #ccc; border-bottom: 1px solid #444; }
 .detail-card-body { padding: 6px 8px; }
 .card-error .detail-card-title { color: #f44336; }
 .card-fallback .detail-card-title { color: #ff9800; }
+.card-interrupted .detail-card-title { color: #ffb74d; }
 .field { margin: 3px 0; word-break: break-all; }
 .label { color: #999; margin-right: 4px; }
-.code-block { background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 3px; padding: 6px 8px; margin: 4px 0; font-size: 11px; font-family: monospace; white-space: pre-wrap; word-break: break-all; overflow: auto; max-height: 200px; color: #ccc; }
-.msg-card { margin: 4px 0; border: 1px solid #3a3a3a; border-radius: 3px; overflow: hidden; }
-.msg-role { padding: 3px 6px; font-size: 11px; font-weight: bold; color: #aaa; background: #2a2a2a; border-bottom: 1px solid #3a3a3a; }
-.msg-system .msg-role { color: #64b5f6; }
-.msg-user .msg-role { color: #81c784; }
-.msg-assistant .msg-role { color: #ffb74d; }
-.msg-card .code-block { border: none; margin: 0; border-radius: 0; }
+.code-block { background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 3px; padding: 6px 8px; margin: 4px 0; font-size: 11px; font-family: monospace; white-space: pre-wrap; word-break: break-all; overflow-x: auto; color: #ccc; }
+.content-group-label { margin-top: 8px; color: #aaa; font-size: 12px; }
 details { margin: 4px 0; }
 details summary { cursor: pointer; color: #aaa; font-size: 12px; padding: 2px 0; }
 details summary:hover { color: #ddd; }
