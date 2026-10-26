@@ -1,4 +1,5 @@
 import { game, get, lib } from "noname";
+import { getRegisteredSkill } from "../library/skillRegistry.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
 import type { DecisionCandidateSnapshot } from "./action-candidates.js";
@@ -54,7 +55,7 @@ function createPromptRuntime(): PromptRuntime {
 		getPlayerName: player => displayText(get.translation(player) || player.name),
 		getSkillName: skillName,
 		getSkillDescription: engineSkillDescription,
-		getSkillMeta: skill => lib.skill[skill],
+		getSkillMeta: skill => getRegisteredSkill(lib.skill, skill),
 		getEquipmentSkills: card => Array.from(get.skillsFromEquips?.([card]) || []),
 		isEquipmentCard: card => get.info(card, false)?.type === "equip",
 		getCardName: card => displayText(get.translation(card) || translateId(viewAsName(card) || card.name)),

@@ -1033,7 +1033,7 @@ function setWindowListener() {
 				e.stopPropagation();
 				return false;
 			} else if (e.key.toLowerCase() === "j" && (e.ctrlKey || e.metaKey) && typeof lib.node != "undefined") {
-				lib.node.debug();
+				lib.requireNodePlatform().debug();
 			}
 		} else {
 			game.closePopped();
@@ -1085,7 +1085,7 @@ function setWindowListener() {
 				e.stopPropagation();
 				return false;
 			} else if (e.key.toLowerCase() === "j" && (e.ctrlKey || e.metaKey) && typeof lib.node != "undefined") {
-				lib.node.debug();
+				lib.requireNodePlatform().debug();
 			}
 			// else if(e.key=="Escape"){
 			// 	if(!ui.arena.classList.contains('paused')) ui.click.config();
@@ -1124,6 +1124,9 @@ async function createBackground() {
 	if (lib.config.image_background.startsWith("custom_")) {
 		try {
 			const fileToLoad = await game.getDB("image", lib.config.image_background);
+			if (!(fileToLoad instanceof Blob)) {
+				throw new TypeError("The stored background must be a Blob");
+			}
 			const fileReader = new FileReader();
 			const fileLoadedEvent = await new Promise(resolve => {
 				fileReader.onload = resolve;
@@ -1185,6 +1188,9 @@ async function tryLoadCustomStyle(
 			Object.entries(keys).map(async ([key, callback]) => {
 				const fileToLoad = await game.getDB("image", key);
 				if (fileToLoad) {
+					if (!(fileToLoad instanceof Blob)) {
+						throw new TypeError("The stored style must be a Blob");
+					}
 					const fileLoadedEvent = await new Promise((resolve, reject) => {
 						const fileReader = new FileReader();
 						fileReader.onload = resolve;

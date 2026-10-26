@@ -4,6 +4,7 @@ import OpenAI, {
 	APIConnectionTimeoutError,
 } from "openai";
 import type {
+	ChatCompletionCreateParamsNonStreaming,
 	ChatCompletionMessageParam,
 	ChatCompletionTool,
 } from "openai/resources/chat/completions.js";
@@ -72,7 +73,7 @@ export async function callLLMWithTimeout(
 	let httpStatus: number | undefined;
 
 	try {
-		const body: Record<string, any> = {
+		const body: ChatCompletionCreateParamsNonStreaming = {
 			model: config.model,
 			messages,
 			tools,
@@ -93,11 +94,11 @@ export async function callLLMWithTimeout(
 			throwErr("parse", calls.length ? "LLM returned multiple tool_calls" : "No tool_calls in LLM response");
 		}
 		const tc = calls[0];
-		if (!tc?.id || !tc.function?.name) {
+		if (!tc?.id || tc.type !== "function" || !tc.function?.name) {
 			throwErr("parse", "Malformed tool_call without id or function name");
 		}
 
-		const rawArgs = tc.function?.arguments ?? "";
+		const rawArgs = tc.function.arguments ?? "";
 		return parseToolCallResult(tc.id, tc.function.name, rawArgs);
 	} catch (e: any) {
 		// 内部已带 stage 的错误透传（parse 错误）

@@ -25,7 +25,7 @@ export interface DecisionRuntime extends ActionCandidateRuntime, ValidationRunti
 export class DecisionSession {
 	private readonly cardMap = new Map<string, CandidateCard>();
 	private readonly targetMap = new Map<string, CandidateTarget>();
-	private readonly selection: SelectionSession;
+	private readonly selection: SelectionSession<string>;
 	private readonly stepItems = new Map<string, Map<string, any>>();
 	private skillName?: string;
 	private stages: DecisionStage[] = [];
@@ -50,7 +50,7 @@ export class DecisionSession {
 		for (const card of candidates.cards) this.cardMap.set(card.ref, card);
 		for (const target of targets) this.targetMap.set(target.ref, target);
 		this.eventSpec = resolveSelectionSpec(event.selectionSpec, event, event.player);
-		this.selection = new SelectionSession({ context: new SelectionContext({ event, player: event.player, source: "llm" } as any), filterOk: this.eventSpec?.finalPredicate ? context => this.eventSpec!.finalPredicate!(context, event, event.player) : undefined });
+		this.selection = new SelectionSession<string>({ context: new SelectionContext<string>({ event, player: event.player, source: "llm" }), filterOk: this.eventSpec?.finalPredicate ? context => this.eventSpec!.finalPredicate!(context, event, event.player) : undefined });
 		this.hasExplicitFinalPredicate = !!this.eventSpec?.finalPredicate;
 		if (!this.initializeBackupSelection()) this.initializeDirectSelection();
 	}

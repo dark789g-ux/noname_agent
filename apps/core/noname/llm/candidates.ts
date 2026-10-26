@@ -1,4 +1,5 @@
 import { game, get, lib } from "noname";
+import { getRegisteredSkill } from "../library/skillRegistry.js";
 
 export interface CandidateCard {
 	card: any;
@@ -27,9 +28,13 @@ export function getCandidateCards(event: any, player: any, skills: string[] = []
 		if (event.filterCard?.(card, player) === true) records.set(card, { cardAction: true, skills: [] });
 	}
 	for (const skill of skills) {
-		const info = lib.skill[skill];
+		const info = getRegisteredSkill(lib.skill, skill);
 		for (const card of player.getCards(info?.position || event.position || "hs")) {
-			const eligible = info?.filterCard === true || info?.filterCard?.(card, player) === true;
+			const filterCard = info?.filterCard;
+			if (filterCard != null && filterCard !== true && typeof filterCard !== "function") {
+				throw new TypeError("Headless card candidates require a callable filterCard or true");
+			}
+			const eligible = filterCard === true || filterCard?.call(info, card, player) === true;
 			if (!eligible) continue;
 			const record = records.get(card) || { cardAction: false, skills: [] };
 			record.skills.push(skill);
@@ -44,14 +49,14 @@ export function getCandidateCards(event: any, player: any, skills: string[] = []
  * 保守策略：仅列出 enable 或 usable 有定义的技能，排除 _aiexclude。
  */
 export function getCandidateSkills(event: any, player: any): string[] {
-	const excluded: string[] = Array.isArray(event._aiexclude) ? event._aiexclude : [];
+	const excluded: (string | Card)[] = Array.isArray(event._aiexclude) ? event._aiexclude : [];
 	const skills = game.expandSkills(player.getSkills("invisible").concat(lib.skill.global));
-	return skills.filter((skill: string) => !excluded.includes(skill) && isSkillEligible(event, player, skill));
+	return skills.filter((skill: string) => !excluded.some(item => typeof item === "string" && item === skill) && isSkillEligible(event, player, skill));
 }
 
 /** 与 UI game.check 使用同一个引擎权威入口，并限制为已声明 headless 契约的技能。 */
 export function isSkillEligible(event: any, player: any, skill: string): boolean {
-	return !!lib.skill[skill]?.selectionSpec && lib.filter.filterEnable(event, player, skill);
+	return !!getRegisteredSkill(lib.skill, skill)?.selectionSpec && lib.filter.filterEnable(event, player, skill);
 }
 
 /**
