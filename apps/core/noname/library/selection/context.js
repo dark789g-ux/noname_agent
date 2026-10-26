@@ -1,14 +1,29 @@
 const selectionTypes = ["button", "card", "target", "control", "number"];
 
+/** @typedef {import("./step.js").SelectionItem} SelectionItem */
+/**
+ * @template {SelectionItem} T
+ * @typedef {object} SelectionContextOptions
+ * @property {object} [event] Opaque event identity, never inspected by the context.
+ * @property {object} [player] Opaque player identity, never inspected by the context.
+ * @property {string} [source]
+ * @property {Record<string, T[]>} [selected]
+ */
+
 /**
  * Stores headless selections by step id. It never reads ui.selected or
  * _status.event, and only exposes copied data to rule callbacks.
+ * @template {SelectionItem} [T=SelectionItem]
  */
 export class SelectionContext {
+	/** @param {SelectionContextOptions<T>} [options] */
 	constructor({ event, player, source = "unknown", selected = {} } = {}) {
+		/** @type {object | undefined} */
 		this.event = event;
+		/** @type {object | undefined} */
 		this.player = player;
 		this.source = source;
+		/** @type {Map<string, { type: string, items: T[] }>} */
 		this.selections = new Map();
 		for (const type of selectionTypes) {
 			if (Array.isArray(selected[type])) {
@@ -17,10 +32,12 @@ export class SelectionContext {
 		}
 	}
 
+	/** @param {string} stepId */
 	getStepSelected(stepId) {
 		return this.selections.get(stepId)?.items.slice() || [];
 	}
 
+	/** @param {string} stepId @param {string} type @param {T[]} items */
 	setStepSelected(stepId, type, items) {
 		this.assertType(type);
 		if (!stepId || !Array.isArray(items)) {
@@ -30,6 +47,7 @@ export class SelectionContext {
 		return this;
 	}
 
+	/** @param {string} stepId @param {string} type */
 	bindInitialSelection(stepId, type) {
 		this.assertType(type);
 		const initialId = `initial:${type}`;
@@ -42,12 +60,14 @@ export class SelectionContext {
 		return this;
 	}
 
+	/** @param {string} type */
 	getSelected(type) {
 		this.assertType(type);
 		return this.getSelectedView()[type];
 	}
 
 	getSelectedView() {
+		/** @type {Record<string, T[]>} */
 		const selected = Object.fromEntries(selectionTypes.map(type => [type, []]));
 		for (const { type, items } of this.selections.values()) {
 			selected[type].push(...items);

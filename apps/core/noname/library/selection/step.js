@@ -1,6 +1,27 @@
 import { SelectionValidator } from "./validator.js";
 
+/**
+ * @typedef {Card | Player | Button | { id: string } | string | number} SelectionItem
+ */
+
+/**
+ * @typedef {object} SelectionStepOptions
+ * @property {string} [id]
+ * @property {string} [type]
+ * @property {SelectionItem[] | ((context: object | undefined, selected: SelectionItem[], step: SelectionStep | undefined) => SelectionItem[])} [items]
+ * @property {number | Select | string | ((context: object | undefined, selected: SelectionItem[], step: SelectionStep | undefined) => number | Select | string)} [select]
+ * @property {(value: string | number | Select) => number | Select | string} [getSelect]
+ * @property {(item: SelectionItem, context: object | undefined, selected: SelectionItem[], step: SelectionStep | undefined) => boolean} [isIncluded]
+ * @property {(item: SelectionItem, context: object | undefined, selected: SelectionItem[], step: SelectionStep | undefined) => boolean} [isSelectable]
+ * @property {boolean} [required]
+ * @property {boolean} [forced]
+ * @property {boolean} [complex]
+ */
+
 export class SelectionStep {
+	/**
+	 * @param {SelectionStepOptions} options
+	 */
 	constructor({ id, type, items = [], select, getSelect, isIncluded, isSelectable, required, forced, complex } = {}) {
 		this.id = id || type;
 		this.type = type;

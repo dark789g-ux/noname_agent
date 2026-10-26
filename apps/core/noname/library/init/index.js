@@ -3,6 +3,14 @@ import { LibInitPromises } from "./promises.js";
 import { ContentCompiler } from "@/library/element/gameEvent.js";
 import { security } from "@/util/sandbox.js";
 
+/**
+ * @param {HTMLStyleElement} style
+ * @returns {style is HTMLStyleElement & { sheet: CSSStyleSheet }}
+ */
+function hasStyleSheet(style) {
+	return style.sheet !== null;
+}
+
 export class LibInit {
 	#promises;
 	/**
@@ -137,7 +145,10 @@ export class LibInit {
 			delete lib.onfree;
 			var loop = function () {
 				if (onfree.length) {
-					onfree.shift()();
+					const callback = onfree.shift();
+					if (callback) {
+						callback();
+					}
 					setTimeout(loop, 100);
 				}
 			};
@@ -150,7 +161,7 @@ export class LibInit {
 
 	connection(ws) {
 		const client = new lib.element.Client(ws);
-		lib.node.clients.push(client);
+		lib.requireNodeServer().clients.push(client);
 		ws.on("message", function (messagestr) {
 			var message;
 			try {
@@ -183,9 +194,15 @@ export class LibInit {
 		client.send("opened");
 	}
 
+	/**
+	 * @returns {HTMLStyleElement & { sheet: CSSStyleSheet }}
+	 */
 	sheet() {
 		var style = document.createElement("style");
 		document.head.appendChild(style);
+		if (!hasStyleSheet(style)) {
+			throw new TypeError("style sheet is unavailable");
+		}
 		for (var i = 0; i < arguments.length; i++) {
 			if (typeof arguments[i] == "string") {
 				style.sheet.insertRule(arguments[i], 0);
@@ -204,7 +221,19 @@ export class LibInit {
 			if (file) {
 				path = `${path}${/^db:extension-[^:]*$/.test(path) ? ":" : "/"}${file}.css`;
 			}
-			(path.startsWith("db:") ? game.getDB("image", path.slice(3)).then(get.objectURL) : new Promise(resolve => resolve(path))).then(
+			(path.startsWith("db:")
+				? (() => {
+						const pending = game.getDB("image", path.slice(3));
+						const objectURL = get.objectURL;
+						return pending.then(value => {
+							if (typeof value != "string") {
+								throw new TypeError("The stored stylesheet path must be a string");
+							}
+							return objectURL(value);
+						});
+					})()
+				: new Promise(resolve => resolve(path))
+			).then(
 				resolvedPath => {
 					style.href = resolvedPath;
 					if (typeof before == "function") {
@@ -269,7 +298,16 @@ export class LibInit {
 		const script = document.createElement("script");
 		//script.type = "module";
 		(scriptSource.startsWith("db:")
-			? game.getDB("image", scriptSource.slice(3)).then(get.objectURL)
+			? (() => {
+						const pending = game.getDB("image", scriptSource.slice(3));
+						const objectURL = get.objectURL;
+						return pending.then(value => {
+							if (typeof value != "string") {
+								throw new TypeError("The stored script path must be a string");
+							}
+							return objectURL(value);
+						});
+					})()
 			: new Promise(resolve => resolve(scriptSource))
 		).then(resolvedScriptSource => {
 			script.src = resolvedScriptSource;
@@ -314,27 +352,27 @@ export class LibInit {
 			oReq.addEventListener("load", result => {
 				if (![0, 200].includes(oReq.status)) {
 					if (typeof onerror == "function") {
-						onerror(new Error(oReq.statusText || oReq.status));
+						onerror(new Error(oReq.statusText || String(oReq.status)));
+						}
+						return;
 					}
-					return;
-				}
-				onload(oReq.responseText);
-			});
+					onload(oReq.responseText);
+				});
+			}
+			if (typeof onerror == "function") {
+				oReq.addEventListener("error", onerror);
+			}
+			oReq.open("GET", sScriptURL);
+			oReq.send();
 		}
-		if (typeof onerror == "function") {
-			oReq.addEventListener("error", onerror);
-		}
-		oReq.open("GET", sScriptURL);
-		oReq.send();
-	}
 
-	json(url, onload, onerror) {
-		const oReq = new XMLHttpRequest();
-		if (typeof onload == "function") {
-			oReq.addEventListener("load", () => {
-				if (![0, 200].includes(oReq.status)) {
-					if (typeof onerror == "function") {
-						onerror(new Error(oReq.statusText || oReq.status));
+		json(url, onload, onerror) {
+			const oReq = new XMLHttpRequest();
+			if (typeof onload == "function") {
+				oReq.addEventListener("load", () => {
+					if (![0, 200].includes(oReq.status)) {
+						if (typeof onerror == "function") {
+							onerror(new Error(oReq.statusText || String(oReq.status)));
 					}
 					return;
 				}
@@ -365,49 +403,51 @@ export class LibInit {
 			ui.css.styles.remove();
 		}
 		ui.css.styles = lib.init.sheet();
-		ui.css.styles.sheet.insertRule(
-			"#arena .player>.name,#arena .button.character>.name {font-family: " + (lib.config.name_font || "xinwei") + ",xinwei}",
-			0
-		);
-		ui.css.styles.sheet.insertRule(
-			"#arena .player>.name,.button.character>.name {font-family: " + (lib.config.name_font || "xinwei") + ",xinwei}",
-			0
-		);
-		ui.css.styles.sheet.insertRule("#arena .player .identity>div {font-family: " + (lib.config.identity_font || "huangcao") + ",xinwei}", 0);
-		ui.css.styles.sheet.insertRule(
-			".button.character.newstyle>.identity {font-family: " + (lib.config.identity_font || "huangcao") + ",xinwei}",
-			0
-		);
-		if (lib.config.cardtext_font && lib.config.cardtext_font != "default") {
-			ui.css.styles.sheet.insertRule(".card div:not(.info):not(.background) {font-family: " + lib.config.cardtext_font + ";}", 0);
-		}
-		if (lib.config.global_font && lib.config.global_font != "default") {
-			ui.css.styles.sheet.insertRule("#window {font-family: " + lib.config.global_font + ",xinwei}", 0);
-			ui.css.styles.sheet.insertRule(
-				"#window #control{font-family: STHeiti,SimHei,Microsoft JhengHei,Microsoft YaHei,WenQuanYi Micro Hei,Suits,Helvetica,Arial,sans-serif}",
+			const sheet = ui.css.styles.sheet;
+			if (!sheet) return;
+			sheet.insertRule(
+				"#arena .player>.name,#arena .button.character>.name {font-family: " + (lib.config.name_font || "xinwei") + ",xinwei}",
 				0
 			);
-		}
-		switch (lib.config.glow_phase) {
-			case "yellow":
-				ui.css.styles.sheet.insertRule(
-					"#arena .player:not(.selectable):not(.selected).glow_phase {box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgb(217, 152, 62) 0 0 15px, rgb(217, 152, 62) 0 0 15px !important;}",
+			sheet.insertRule(
+				"#arena .player>.name,.button.character>.name {font-family: " + (lib.config.name_font || "xinwei") + ",xinwei}",
+				0
+			);
+			sheet.insertRule("#arena .player .identity>div {font-family: " + (lib.config.identity_font || "huangcao") + ",xinwei}", 0);
+			sheet.insertRule(
+				".button.character.newstyle>.identity {font-family: " + (lib.config.identity_font || "huangcao") + ",xinwei}",
+				0
+			);
+			if (lib.config.cardtext_font && lib.config.cardtext_font != "default") {
+				sheet.insertRule(".card div:not(.info):not(.background) {font-family: " + lib.config.cardtext_font + ";}", 0);
+			}
+			if (lib.config.global_font && lib.config.global_font != "default") {
+				sheet.insertRule("#window {font-family: " + lib.config.global_font + ",xinwei}", 0);
+				sheet.insertRule(
+					"#window #control{font-family: STHeiti,SimHei,Microsoft JhengHei,Microsoft YaHei,WenQuanYi Micro Hei,Suits,Helvetica,Arial,sans-serif}",
 					0
 				);
-				break;
-			case "green":
-				ui.css.styles.sheet.insertRule(
-					"#arena .player:not(.selectable):not(.selected).glow_phase {box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgba(10, 155, 67, 1) 0 0 15px, rgba(10, 155, 67, 1) 0 0 15px !important;}",
-					0
-				);
-				break;
-			case "purple":
-				ui.css.styles.sheet.insertRule(
-					"#arena .player:not(.selectable):not(.selected).glow_phase {box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgb(189, 62, 170) 0 0 15px, rgb(189, 62, 170) 0 0 15px !important;}",
-					0
-				);
-				break;
-		}
+			}
+			switch (lib.config.glow_phase) {
+				case "yellow":
+					sheet.insertRule(
+						"#arena .player:not(.selectable):not(.selected).glow_phase {box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgb(217, 152, 62) 0 0 15px, rgb(217, 152, 62) 0 0 15px !important;}",
+						0
+					);
+					break;
+				case "green":
+					sheet.insertRule(
+						"#arena .player:not(.selectable):not(.selected).glow_phase {box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgba(10, 155, 67, 1) 0 0 15px, rgba(10, 155, 67, 1) 0 0 15px !important;}",
+						0
+					);
+					break;
+				case "purple":
+					sheet.insertRule(
+						"#arena .player:not(.selectable):not(.selected).glow_phase {box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgb(189, 62, 170) 0 0 15px, rgb(189, 62, 170) 0 0 15px !important;}",
+						0
+					);
+					break;
+			}
 	}
 
 	layout(layout, nosave) {
@@ -427,10 +467,10 @@ export class LibInit {
 		new Promise(resolve => setTimeout(resolve, 500))
 			.then(() => {
 				if (game.layout == "default") {
-					ui.css.layout.href = "";
-				} else {
-					ui.css.layout.href = lib.assetURL + "layout/" + game.layout + "/layout.css";
-				}
+						if (ui.css.layout instanceof HTMLLinkElement) ui.css.layout.href = "";
+					} else {
+						if (ui.css.layout instanceof HTMLLinkElement) ui.css.layout.href = lib.assetURL + "layout/" + game.layout + "/layout.css";
+					}
 				if (game.layout == "mobile" || game.layout == "long") {
 					ui.arena.classList.add("mobile");
 				} else {
@@ -438,10 +478,11 @@ export class LibInit {
 				}
 				if (game.layout == "mobile" || game.layout == "long" || game.layout == "long2" || game.layout == "nova") {
 					if (game.me && game.me.node.handcards2.childNodes.length) {
-						while (game.me.node.handcards2.childNodes.length) {
-							game.me.node.handcards1.appendChild(game.me.node.handcards2.firstChild);
+							while (game.me.node.handcards2.childNodes.length) {
+								const firstChild = game.me.node.handcards2.firstChild;
+								if (firstChild) game.me.node.handcards1.appendChild(firstChild);
+							}
 						}
-					}
 				}
 				if (game.layout == "default") {
 					ui.arena.classList.add("oldlayout");
@@ -465,12 +506,12 @@ export class LibInit {
 					ui.arena.classList.remove("textequip");
 				}
 				if (get.is.phoneLayout()) {
-					ui.css.phone.href = lib.assetURL + "layout/default/phone.css";
-					ui.arena.classList.add("phone");
-				} else {
-					ui.css.phone.href = "";
-					ui.arena.classList.remove("phone");
-				}
+						if (ui.css.phone instanceof HTMLLinkElement) ui.css.phone.href = lib.assetURL + "layout/default/phone.css";
+						ui.arena.classList.add("phone");
+					} else {
+						if (ui.css.phone instanceof HTMLLinkElement) ui.css.phone.href = "";
+						ui.arena.classList.remove("phone");
+					}
 				for (var i = 0; i < game.players.length; i++) {
 					if (get.is.linked2(game.players[i])) {
 						if (game.players[i].classList.contains("linked")) {
@@ -528,7 +569,10 @@ export class LibInit {
 			.then(() => {
 				ui.updatec();
 				loadingScreenStyle.animationName = "opacity-1-0";
-				loadingScreen.addEventListener("animationend", animationEvent => animationEvent.target.remove());
+				loadingScreen.addEventListener("animationend", animationEvent => {
+						const target = animationEvent.target;
+						if (target instanceof Element) target.remove();
+					});
 			});
 	}
 
@@ -678,9 +722,12 @@ export class LibInit {
 			if (resultUrl.protocol == "db:") {
 				// 我思索了一下，如果这玩意能造成无限递归
 				// 那么我只能说，你赢了
-				game.getDB("image", linkString.slice(3)).then(storeResult =>
-					this.parseResourceAddress(storeResult, defaultHandle, loadAsDataUrlCallback, true)
-				);
+				game.getDB("image", linkString.slice(3)).then(storeResult => {
+					if (typeof storeResult != "string") {
+						throw new TypeError("The stored resource address must be a string");
+					}
+					return this.parseResourceAddress(storeResult, defaultHandle, loadAsDataUrlCallback, true);
+				});
 			} else {
 				get.blobFromUrl(resultUrl)
 					.then(blob => get.dataUrlAsync(blob))

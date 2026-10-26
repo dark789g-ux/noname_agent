@@ -9,7 +9,10 @@ let proxyed = {};
  * 缓存上下文，用于在各种方法中暂时缓存值，以第一次获取的缓存值为准。
  */
 export class CacheContext {
-	constructor() {
+	/**
+	 * @param {{ lib: Library, game: Game, get: Get }} [context]
+	 */
+	constructor(context) {
 		// this.lib = this._createCacheProxy(lib);
 		// this.game = this._createCacheProxy(game);
 		// this.get = this._createCacheProxy(get);
@@ -134,7 +137,7 @@ export class CacheContext {
 
 	/**
 	 * @template T
-	 * @param {T} delegateObject
+	 * @param {T & object} delegateObject
 	 * @returns {T}
 	 */
 	_createCacheProxy(delegateObject) {
@@ -146,10 +149,10 @@ export class CacheContext {
 					return delegateObject;
 				}
 				let value = target[key];
-				if (key.indexOf("cache") == 0) {
+				if (typeof key === "symbol" || key.indexOf("cache") == 0) {
 					return value;
 				}
-				if (typeof target.cacheSupportFunction == "function") {
+				if ("cacheSupportFunction" in target && typeof target.cacheSupportFunction == "function") {
 					if (!target.cacheSupportFunction().includes(key)) {
 						return value;
 					}

@@ -20,7 +20,7 @@ export function showRecoveryDialog(options) {
 
 	// 移动端优先用 Cordova 原生三按钮对话框
 	if (isMobile && typeof navigator !== "undefined" && navigator.notification) {
-		showMobileDialog(options);
+		showMobileDialog(options, navigator.notification);
 		return;
 	}
 
@@ -28,7 +28,8 @@ export function showRecoveryDialog(options) {
 	showDomDialog(options);
 }
 
-function showMobileDialog(options) {
+/** @param {NonNullable<Navigator["notification"]>} notification */
+function showMobileDialog(options, notification) {
 	var context = options.context || "timeout";
 	var title = context === "error" ? "游戏加载失败" : "游戏加载未完成";
 
@@ -44,7 +45,7 @@ function showMobileDialog(options) {
 		buttons.splice(1, 0, "跳过扩展");
 	}
 
-	navigator.notification.confirm(
+	notification.confirm(
 		message,
 		function (index) {
 			// index 从 1 开始

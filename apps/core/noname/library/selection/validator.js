@@ -1,5 +1,33 @@
 import { SelectionOutcome } from "./outcome.js";
 
+/** @typedef {Card | Player | Button | { id: string } | string | number} SelectionItem */
+/** @typedef {import("./step.js").SelectionStep} SelectionStep */
+
+/**
+ * @template {SelectionItem} T
+ * @typedef {number | Select | string | ((context: object | undefined, selected: T[], step: SelectionStep | undefined) => number | Select | string)} SelectionRange
+ */
+
+/**
+ * @template {SelectionItem} T
+ * @typedef {(item: T, context: object | undefined, selected: T[], step: SelectionStep | undefined) => boolean} SelectionPredicate
+ */
+
+/**
+ * @template {SelectionItem} T
+ * @typedef {{
+ * 	type?: string;
+ * 	items?: T[];
+ * 	selected?: T[];
+ * 	range?: SelectionRange<T>;
+ * 	getSelect?: (value: string | number | Select) => number | Select | string;
+ * 	isIncluded?: SelectionPredicate<T>;
+ * 	isSelectable?: SelectionPredicate<T>;
+ * 	context?: object;
+ * 	step?: SelectionStep;
+ * }} SelectionInspectionOptions
+ */
+
 export class SelectionValidator {
 	/**
 	 * Match get.select semantics for numbers, callbacks and select tuples while
@@ -37,6 +65,10 @@ export class SelectionValidator {
 	 * the engine's left-to-right accumulation by passing prior legal items to
 	 * each predicate and returning that automatic collection.
 	 */
+	/**
+	 * @template {SelectionItem} T
+	 * @param {SelectionInspectionOptions<T>} options
+	 */
 	static inspect({ type, items = [], selected = [], range, getSelect, isIncluded, isSelectable, context, step }) {
 		if (!Array.isArray(items) || !Array.isArray(selected)) {
 			throw new TypeError("Selection items and selected values must be arrays");
@@ -45,6 +77,7 @@ export class SelectionValidator {
 		const included = typeof isIncluded === "function" ? isIncluded : () => true;
 		const selectable = typeof isSelectable === "function" ? isSelectable : () => true;
 		const automatic = normalizedRange[1] < 0;
+		/** @type {T[]} */
 		const automaticSelected = [];
 		const entries = items.map(item => {
 			const proposedSelected = automatic ? automaticSelected.slice() : selected.slice();

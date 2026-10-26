@@ -1,8 +1,22 @@
 import { SelectionOutcome } from "./outcome.js";
 import { SelectionStep } from "./step.js";
 
-/** Holds explicit selections by step id for one headless decision. */
+/** @typedef {import("./step.js").SelectionItem} SelectionItem */
+
+/**
+ * @template {SelectionItem} T
+ * @typedef {{
+ *   context: import("./context.js").SelectionContext<T>,
+ *   filterOk?: (context: ReturnType<import("./context.js").SelectionContext<T>["getReadonlyView"]>) => boolean,
+ * }} SelectionSessionOptions
+ */
+
+/**
+ * Holds explicit selections by step id for one headless decision.
+ * @template {SelectionItem} [T=SelectionItem]
+ */
 export class SelectionSession {
+	/** @param {SelectionSessionOptions<T> | { context?: undefined, filterOk?: undefined }} [options] */
 	constructor({ context, filterOk } = {}) {
 		if (!context) {
 			throw new TypeError("SelectionSession requires a SelectionContext");

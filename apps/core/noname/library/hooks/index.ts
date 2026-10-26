@@ -58,38 +58,11 @@ export const defaultHooks: {
 			if (typeof config != "object") {
 				config = {};
 			}
-			/**
-			 * @type {boolean}
-			 */
-			// @ts-expect-error ignore
-			let linked = config.linked;
-			/**
-			 * @type {number}
-			 */
-			// @ts-expect-error ignore
-			let order = config.order;
-			/**
-			 * @type {string}
-			 */
-			// @ts-expect-error ignore
-			let background = config.background;
-			/**
-			 * @type {number[]}
-			 */
-			// @ts-expect-error ignore
-			let lineColor = config.lineColor;
-			if (typeof linked != "boolean") {
-				linked = true;
-			}
-			if (typeof order != "number") {
-				order = 0;
-			}
-			if (typeof background != "string") {
-				background = "";
-			}
-			if (!Array.isArray(lineColor) || lineColor.length != 3) {
-				lineColor = [];
-			} else if (background.startsWith("ext:")) {
+			let linked = typeof config.linked == "boolean" ? config.linked : true;
+			let order = typeof config.order == "number" ? config.order : 0;
+			let background = typeof config.background == "string" ? config.background : "";
+			let lineColor = Array.isArray(config.lineColor) && config.lineColor.length == 3 && config.lineColor.every(item => typeof item == "number") ? config.lineColor : [];
+			if (lineColor.length && background.startsWith("ext:")) {
 				background = background.replace(/^ext:/, "extension/");
 			}
 			if (linked) {
@@ -138,14 +111,12 @@ export const defaultHooks: {
 					color: `rgba(${color1.join()})`,
 					border: `1px solid rgba(${color2.join()})`,
 				};
-				// @ts-expect-error ignore
 				game.dynamicStyle.addObject(result);
 
 				let result2 = {};
 				result2[`.tempname.${nature}:not([data-nature])>.span`] = {
 					color: `rgba(${color1.join()})`,
 				};
-				// @ts-expect-error ignore
 				game.dynamicStyle.addObject(result2);
 			}
 		},
@@ -215,20 +186,17 @@ export const defaultHooks: {
 			if (!event.isMine()) {
 				return;
 			}
-			const skillinfo = get.info(event.skill) || {};
-			// @ts-expect-error ignore
-			if (ok && auto && (autoConfirm || skillinfo.direct) && !_status.touchnocheck && !_status.mousedown && (!_status.mousedragging || !_status.mouseleft)) {
+			const skillinfo = event.skill ? get.info(event.skill) : undefined;
+			if (ok && auto && (autoConfirm || skillinfo?.direct) && !_status.touchnocheck && !_status.mousedown && (!_status.mousedragging || !_status.mouseleft)) {
 				if (ui.confirm) {
 					ui.confirm.close();
 				}
-				// @ts-expect-error ignore
 				if (event.skillDialog === true) {
 					event.skillDialog = false;
 				}
 				ui.click.ok();
-				// @ts-expect-error ignore
 				_status.mousedragging = null;
-				if (skillinfo.preservecancel) {
+				if (skillinfo?.preservecancel) {
 					ui.create.confirm("c");
 				}
 			}
@@ -278,13 +246,10 @@ export const defaultHooks: {
 
 	uncheckCard: [
 		function removeTempname(card, event) {
-			// @ts-expect-error ignore
 			if (!card._tempName) {
 				return;
 			}
-			// @ts-expect-error ignore
 			card._tempName.delete();
-			// @ts-expect-error ignore
 			delete card._tempName;
 		},
 	],
@@ -314,13 +279,17 @@ export const defaultHooks: {
 
 	checkOverflow: [
 		function updateDialog(itemOption, itemContainer, addedItems, game) {
+			if (!("originWidth" in itemContainer) || typeof itemContainer.originWidth != "number") {
+				return;
+			}
+			const originWidth = itemContainer.originWidth;
 			//计算压缩折叠的量
 			const gap = 3;
 			function isEqual(a, b) {
 				return Math.abs(a - b) < 3;
 			}
-			let equal = isEqual(itemContainer.originWidth, itemContainer.getBoundingClientRect().width);
-			const L = (itemContainer.originWidth - 2 * gap) * (equal ? 0.8 : 1);
+			let equal = isEqual(originWidth, itemContainer.getBoundingClientRect().width);
+			const L = (originWidth - 2 * gap) * (equal ? 0.8 : 1);
 			const W = 90; //这里需要填卡的实际宽度，扩展中需要自行调整。
 			// @ts-expect-error ignore
 			let n = addedItems.length;
@@ -350,7 +319,7 @@ export const defaultHooks: {
 					let eqipContainerTop = player.node.equips.offsetTop;
 					let equipTop = 0;
 					for (let equip of Array.from(player.node.equips.children)) {
-						if (!equip.classList.contains("emptyequip")) {
+						if (equip instanceof HTMLElement && !equip.classList.contains("emptyequip")) {
 							equipTop = equip.offsetTop;
 							break;
 						}
@@ -370,7 +339,7 @@ export const defaultHooks: {
 			}
 		},
 		function jyliezhou(event, player) {
-			if (event.player.isLinked()) {
+			if (event.getPlayer().isLinked()) {
 				event.checkJyliezhou = true;
 			}
 		},

@@ -54,11 +54,12 @@ export class LibInitPromises {
 	/**
 	 * Promise版的`lib.init.sheet`
 	 *
+	 * @param {...string} args
 	 * @returns {Promise<HTMLStyleElement>}
 	 */
-	sheet() {
+	sheet(...args) {
 		return new Promise((resolve, reject) => {
-			const style = lib.init.sheet.apply(lib.init, arguments);
+			const style = lib.init.sheet.apply(lib.init, args);
 			style.addEventListener("load", () => resolve(style));
 			style.addEventListener("error", reject);
 		});

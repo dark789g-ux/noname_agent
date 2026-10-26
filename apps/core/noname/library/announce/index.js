@@ -127,8 +127,7 @@ export class Announce {
 
 /**
  * @template T
- */
-/**
+ *
  *
  * 订阅者类，该类的构造函数需要一个处理函数和一个事件目标对象作为参数
  * @example

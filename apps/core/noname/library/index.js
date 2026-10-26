@@ -8,6 +8,27 @@
  * @typedef { InstanceType<typeof lib.element.NodeWS> } NodeWS
  * @typedef { InstanceType<typeof lib.element.Control> } Control
  */
+/**
+ * @typedef {{
+ * 	id: string | null,
+ * 	onlineKey: string | null,
+ * 	avatar: string,
+ * 	nickname: string,
+ * 	versionLocal: string,
+ * 	extension: boolean
+ * }} ClientInitConfig
+ */
+/**
+ * @typedef {{
+ * translate: string,
+ * areaStatusName: string,
+ * toName: string,
+ * fromName: string,
+ * isUnseen?: boolean,
+ * addHandeler: (event: GameEvent & {cards: Card[]}, trigger?: GameEvent, player?: Player | null) => Promise<void>,
+ * removeHandeler: (event: GameEvent & {cards: Card[]}, trigger?: GameEvent, player?: Player | null) => Promise<void>
+ * }} CommonAreaDefinition
+ */
 import { ai, get, game, _status, ui } from "noname";
 import { LibInit } from "./init/index.js";
 import { Announce } from "./announce/index.js";
@@ -23,10 +44,135 @@ import dedent from "dedent";
 import { PoptipManager, HTMLPoptipElement } from "./poptip.js";
 import { ZhanfaManager } from "./zhanfa.js";
 import skills from "./skill.js";
+import { getRegisteredSkill, requireRegisteredSkill } from "./skillRegistry.js";
+import { readMaximumNumberOfPlayers } from "./playerLimit.js";
+import { menuBridge } from "@/ui/create/menu/vue/utils/menuBridge";
 
 const html = dedent;
 
+/**
+ * 扩展地址的菜单项在 Vue 选项菜单中由数据层缓存。旧实现直接操作该菜单的
+ * DOM 节点；这里通过其已注册的刷新桥接更新缓存。地址创建/删除只能由已打开的
+ * 菜单触发，桥接缺失代表菜单生命周期不完整，保留原来会失败的必需性。
+ */
+function refreshExtensionSourceMenu() {
+	const refresh = menuBridge.refreshOptionsConfig;
+	if (!refresh) {
+		throw new TypeError("扩展地址菜单尚未初始化");
+	}
+	refresh("extension_source");
+}
+
+/**
+ * 导入设置的文件控件由当前 Vue 选项面板持有，而不是全局 UI 节点。
+ */
+function requestImportData() {
+	const request = menuBridge.requestImportData;
+	if (!request) {
+		throw new TypeError("导入设置菜单尚未初始化");
+	}
+	request();
+}
+
+/**
+ * 所有 lib.node 生命周期阶段共享的可选字段集合。空对象重置阶段不保证其中任意字段。
+ * @typedef {{
+ * 	fs?: typeof import("fs"),
+ * 	path?: typeof import("path"),
+ * 	debug?: () => void,
+ * 	http?: typeof import("http"),
+ * 	https?: typeof import("https"),
+ * 	clients?: Element.Client[],
+ * 	banned?: string[],
+ * 	observing?: Element.Client[],
+ * 	torespond?: Record<string, GameEventResult | NodeResponseCallback>,
+ * 	torespondtimeout?: Record<string, ReturnType<typeof setTimeout>>,
+ * 	waitForResult?: Record<string, ((result: GameEventResult) => void)[]>
+ * }} NodeRuntimeBase
+ */
+/**
+ * Node 平台初始化完成后提供的本地文件与调试能力。
+ * @typedef {NodeRuntimeBase & {
+ * 	fs: typeof import("fs"),
+ * 	path: typeof import("path"),
+ * 	debug: () => void
+ * }} NodePlatformRuntime
+ */
+/**
+ * @typedef {((result: GameEventResult, player: Player) => boolean | void | (() => void)) & { _noname_waiting?: boolean }} NodeResponseCallback
+ */
+/**
+ * 浏览器房主和 Node 平台都可创建的联机服务器能力；不要求本地文件 API。
+ * @typedef {NodeRuntimeBase & {
+ * 	clients: Element.Client[],
+ * 	banned: string[],
+ * 	observing: Element.Client[],
+ * 	torespond: Record<string, GameEventResult | NodeResponseCallback>,
+ * 	torespondtimeout: Record<string, ReturnType<typeof setTimeout>>,
+ * 	waitForResult: Record<string, ((result: GameEventResult) => void)[]>
+ * }} NodeServerRuntime
+ */
+/**
+ * 联机大厅切换房间后保留的空对象状态；它不是 Node 平台，也不是服务器。
+ * @typedef {NodeRuntimeBase} NodeRuntimeReset
+ */
+
+/**
+ * @param {NodePlatformRuntime | NodeServerRuntime | NodeRuntimeReset | undefined} node
+ * @returns {node is NodePlatformRuntime}
+ */
+function isNodePlatformRuntime(node) {
+	return !!node && node.fs != null && node.path != null && typeof node.debug == "function";
+}
+
+/**
+ * @param {NodePlatformRuntime | NodeServerRuntime | NodeRuntimeReset | undefined} node
+ * @returns {node is NodeServerRuntime}
+ */
+function isNodeServerRuntime(node) {
+	return (
+		!!node &&
+		"clients" in node &&
+		Array.isArray(node.clients) &&
+		"banned" in node &&
+		Array.isArray(node.banned) &&
+		"observing" in node &&
+		Array.isArray(node.observing) &&
+		"torespond" in node &&
+		typeof node.torespond == "object" &&
+		node.torespond !== null &&
+		!Array.isArray(node.torespond) &&
+		"torespondtimeout" in node &&
+		typeof node.torespondtimeout == "object" &&
+		node.torespondtimeout !== null &&
+		!Array.isArray(node.torespondtimeout) &&
+		"waitForResult" in node &&
+		typeof node.waitForResult == "object" &&
+		node.waitForResult !== null &&
+		!Array.isArray(node.waitForResult)
+	);
+}
+
+/**
+ * @returns {Player[]}
+ */
+function requireConnectPlayers() {
+	const connectPlayers = game.connectPlayers;
+	if (!connectPlayers) {
+		throw new Error("联机大厅生命周期错误：game.connectPlayers 未初始化");
+	}
+	return connectPlayers;
+}
+
 export class Library {
+	/** @param {string | symbol} name */
+	getSkill(name) {
+		return getRegisteredSkill(this.skill, name);
+	}
+	/** @param {string | symbol} name */
+	requireSkill(name) {
+		return requireRegisteredSkill(this.skill, name);
+	}
 	configprefix = "noname_0.9_";
 	versionOL = 27;
 	updateURLS = updateURLs;
@@ -47,6 +193,7 @@ export class Library {
 	connectBanned = [];
 	characterIntro = {};
 	characterTitle = {};
+	/** @type {Record<string, Record<string, Character>>} */
 	characterPack = new Proxy(
 		{},
 		{
@@ -58,15 +205,17 @@ export class Library {
 			},
 			set(target, prop, newValue) {
 				if (typeof prop == "string") {
+					let packName = prop;
 					// 新增武将包，且不是“收藏”和“禁用”
 					if (!["mode_favourite", "mode_banned"].includes(prop) && !Reflect.has(target, prop)) {
 						Promise.resolve().then(() => {
-							ui.updateCharacterPackMenu.forEach(fun => fun(prop));
+							ui.updateCharacterPackMenu.forEach(fun => fun(packName));
 						});
 					}
 
 					if (prop.startsWith("mode_extension_")) {
 						prop = prop.slice("mode_extension_".length);
+						packName = prop;
 					}
 				}
 				const newPack = new Proxy(
@@ -89,6 +238,7 @@ export class Library {
 		}
 	);
 	characterFilter = {};
+	/** @type {Record<string, Record<string, string[]> | undefined>} */
 	characterSort = new Proxy(
 		{},
 		{
@@ -113,11 +263,13 @@ export class Library {
 		}
 	);
 	characterReplace = {};
+	/** @type {Record<string, [string, string[]][]>} */
 	characterSubstitute = {};
 	characterAppend = {};
 	characterInitFilter = {};
 	characterGuozhanFilter = ["mode_guozhan"];
 	dynamicTranslate = {};
+	/** @type {Record<string, string[]>} */
 	cardPack = new Proxy(
 		{},
 		{
@@ -129,14 +281,18 @@ export class Library {
 			},
 			set(target, prop, newValue) {
 				if (typeof prop == "string") {
+					let packName = prop;
 					if (!Reflect.has(target, prop)) {
 						Promise.resolve().then(() => {
-							ui.updateCardPackMenu.forEach(fun => fun(prop));
+							ui.updateCardPackMenu.forEach(fun => fun(packName));
 						});
 					}
-				}
-				if (prop.startsWith("mode_extension_")) {
-					prop = prop.slice("mode_extension_".length);
+					if (prop.startsWith("mode_extension_")) {
+						prop = prop.slice("mode_extension_".length);
+						packName = prop;
+					}
+				} else {
+					throw new TypeError("prop.startsWith is not a function");
 				}
 				return Reflect.set(target, prop, newValue);
 			},
@@ -172,6 +328,7 @@ export class Library {
 	onresize = [];
 	onphase = [];
 	onwash = [];
+	/** @type {((event: GameEvent, player?: Player) => boolean)[]} */
 	onround = [
 		function roundSkillCheck(event) {
 			return !event.skill;
@@ -194,21 +351,27 @@ export class Library {
 	arenaReady = [
 		//提前缓存表情包
 		function () {
-			_status.emotion_cache = {};
+			const emotionCache = (_status.emotion_cache = {});
 			const findFiles = function (name) {
 				const srcBase = `${lib.assetURL}image/emotion/${name}/`;
+				if (typeof game.getFileList !== "function") {
+					throw new TypeError("Emotion caching requires the platform getFileList API");
+				}
 				game.getFileList(
 					srcBase,
 					function (folders, files) {
 						if (!files.length) {
 							return;
 						}
-						_status.emotion_cache[name] = files.sort((a, b) => parseInt(a.split(".")[0]) - parseInt(b.split(".")[0]));
+						emotionCache[name] = files.sort((a, b) => parseInt(a.split(".")[0]) - parseInt(b.split(".")[0]));
 					},
 					() => {}
 				);
 			};
 			const srcBase = `${lib.assetURL}image/emotion/`;
+			if (typeof game.getFileList !== "function") {
+				throw new TypeError("Emotion caching requires the platform getFileList API");
+			}
 			game.getFileList(
 				srcBase,
 				function (folders, files) {
@@ -219,7 +382,7 @@ export class Library {
 						if (folder == "throw_emotion") {
 							continue;
 						}
-						_status.emotion_cache[folder] = [];
+						emotionCache[folder] = [];
 						findFiles(folder);
 					}
 				},
@@ -273,7 +436,7 @@ export class Library {
 					if (info[3]?.length > 0) {
 						let skills = info[3].slice(0);
 						for (const skill of skills) {
-							const skillInfo = lib.skill[skill];
+							const skillInfo = getRegisteredSkill(lib.skill, skill);
 							if (!skillInfo) {
 								continue;
 							}
@@ -332,32 +495,36 @@ export class Library {
 							return;
 						}
 						var fileReader = new FileReader();
-						fileReader.onload = function (fileLoadedEvent) {
+						fileReader.onload = function () {
+							const data = fileReader.result;
+							if (typeof data !== "string") {
+								return;
+							}
 							if (ui.css.cardback_stylesheet) {
 								ui.css.cardback_stylesheet.remove();
 							}
-							ui.css.cardback_stylesheet = lib.init.sheet(
-								".card:empty,.card.infohidden{background-image:url(" + fileLoadedEvent.target.result + ")}"
-							);
-							document.documentElement.style.setProperty("--cardback-url", `url(${fileLoadedEvent.target.result})`);
+							ui.css.cardback_stylesheet = lib.init.sheet(".card:empty,.card.infohidden{background-image:url(" + data + ")}");
+							document.documentElement.style.setProperty("--cardback-url", `url(${data})`);
 							game.getDB("image", "cardback_style2", function (fileToLoad) {
 								if (!fileToLoad) {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.cardback_stylesheet2) {
 										ui.css.cardback_stylesheet2.remove();
 									}
-									ui.css.cardback_stylesheet2 = lib.init.sheet(
-										".card.infohidden:not(.infoflip){background-image:url(" + fileLoadedEvent.target.result + ")}"
-									);
-									document.documentElement.style.setProperty("--cardback-url", `url(${fileLoadedEvent.target.result})`);
+									ui.css.cardback_stylesheet2 = lib.init.sheet(".card.infohidden:not(.infoflip){background-image:url(" + data + ")}");
+									document.documentElement.style.setProperty("--cardback-url", `url(${data})`);
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						};
-						fileReader.readAsDataURL(fileToLoad, "UTF-8");
+						fileReader.readAsDataURL(fileToLoad);
 					});
 					return;
 				case "default":
@@ -368,6 +535,7 @@ export class Library {
 			document.documentElement.style.setProperty("--cardback-url", `url(${lib.assetURL}/${url})`);
 		},
 	];
+	/** @type {Array<() => void> | undefined} */
 	onfree = [];
 	inpile = [];
 	inpile_nature = [];
@@ -375,7 +543,7 @@ export class Library {
 	extensionPack = {};
 
 	/**
-	 * @type { IOnloadSplash[] }
+	 * @type { import("../init/onload/onload-splash.js").OnloadSplash[] }
 	 */
 	onloadSplashes = [...defaultSplashs];
 
@@ -397,20 +565,55 @@ export class Library {
 	 * @type { Videos[] }
 	 */
 	videos;
-	/**
-	 * @type { {
-	 * 	fs: typeof import("fs"),
-	 *  path: typeof import("path"),
-	 *  debug: () => void,
-	 *  clients: Element.Client[],
-	 *  banned:[],
-	 *  observing:[],
-	 *  torespond:{},
-	 *  torespondtimeout:{},
-	 *  waitForResult: Record<number | string, ((result: any) => void)[]>,
-	 * } }
-	 */
+	/** @type {NodePlatformRuntime | NodeServerRuntime | NodeRuntimeReset | undefined} */
 	node;
+	/**
+	 * @returns {NodePlatformRuntime}
+	 */
+	requireNodePlatform() {
+		const node = this.node;
+		if (!isNodePlatformRuntime(node)) {
+			throw new TypeError("Node 平台生命周期错误：平台能力未初始化");
+		}
+		return node;
+	}
+	/**
+	 * @returns {NodeServerRuntime | undefined}
+	 */
+	getNodeServer() {
+		const node = this.node;
+		if (!isNodeServerRuntime(node)) {
+			return undefined;
+		}
+		return node;
+	}
+	/**
+	 * @returns {NodeServerRuntime}
+	 */
+	requireNodeServer() {
+		const node = this.getNodeServer();
+		if (!node) {
+			throw new TypeError("联机服务器生命周期错误：服务器能力未初始化");
+		}
+		return node;
+	}
+	/**
+	 * 在已初始化的 Node 平台上建立联机服务器状态。保留原对象身份，避免断开外部引用。
+	 * @returns {NodeServerRuntime}
+	 */
+	startNodeServer() {
+		const node = this.node;
+		if (!node) {
+			throw new TypeError("联机服务器生命周期错误：服务器容器未初始化");
+		}
+		node.clients = [];
+		node.banned = [];
+		node.observing = [];
+		node.torespond = {};
+		node.torespondtimeout = {};
+		node.waitForResult = {};
+		return this.requireNodeServer();
+	}
 	// 谁写的值类型是string，这也太离谱了喵
 	/**
 	 * @type { { [key: string]: Player } }
@@ -822,7 +1025,7 @@ export class Library {
 					);
 					const map = event.customArgs;
 					game.players.concat(game.dead).forEach(current => {
-						const id = current.playerid;
+						const id = String(current.playerid);
 						if (!map[id]) {
 							map[id] = {};
 						}
@@ -963,6 +1166,7 @@ export class Library {
 		return this.#poptip;
 	}
 
+	/** @type {Map<string, CommonAreaDefinition>} */
 	commonArea = new Map([
 		[
 			"renku",
@@ -1090,15 +1294,16 @@ export class Library {
 					intro: "防止屏幕自动关闭<br>注：旧版本通过NoSleep.js实现的屏幕常亮可能会影响外置音频的音量",
 					onclick(bool) {
 						game.saveConfig("keep_awake", bool);
+						const noSleep = window.noSleep;
 						if (bool) {
 							if (window.plugins && window.plugins.insomnia) {
 								window.plugins.insomnia.keepAwake();
-							} else if (window.noSleep) {
+							} else if (noSleep) {
 								document.addEventListener(
 									lib.config.touchscreen ? "touchend" : "click",
 									function enableNoSleepX() {
 										document.removeEventListener(lib.config.touchscreen ? "touchend" : "click", enableNoSleepX, false);
-										window.noSleep.enable();
+										noSleep.enable();
 									},
 									false
 								);
@@ -1106,8 +1311,8 @@ export class Library {
 						} else {
 							if (window.plugins && window.plugins.insomnia) {
 								window.plugins.insomnia.allowSleepAgain();
-							} else if (window.noSleep) {
-								window.noSleep.disable();
+							} else if (noSleep) {
+								noSleep.disable();
 							}
 						}
 					},
@@ -1505,8 +1710,8 @@ export class Library {
 							ui.handcards1Container.onmousewheel = ui.click.mousewheel;
 							ui.handcards2Container.onmousewheel = ui.click.mousewheel;
 						} else {
-							ui.handcards1Container.onmousewheel = null;
-							ui.handcards2Container.onmousewheel = null;
+							ui.handcards1Container.onmousewheel = undefined;
+							ui.handcards2Container.onmousewheel = undefined;
 						}
 					},
 				},
@@ -1602,33 +1807,10 @@ export class Library {
 										map[str] = str2;
 										game.saveConfig("extension_sources", map);
 										game.saveConfig("extension_source", str);
-										var nodexx = ui.extension_source;
-										nodexx.updateInner();
-										var nodeyy = nodexx._link.menu;
-										var nodezz = nodexx._link.config;
-										for (var i = 0; i < nodeyy.childElementCount; i++) {
-											if (nodeyy.childNodes[i]._link == str) {
-												nodeyy.childNodes[i].remove();
-												break;
-											}
-										}
-										var textMenu = ui.create.div("", str, nodeyy, function () {
-											var node = this.parentNode._link;
-											var config = node._link.config;
-											node._link.current = this.link;
-											var tmpName = node.lastChild.innerHTML;
-											node.lastChild.innerHTML = config.item[this._link];
-											if (config.onclick) {
-												if (config.onclick.call(node, this._link, this) === false) {
-													node.lastChild.innerHTML = tmpName;
-												}
-											}
-											if (config.update) {
-												config.update();
-											}
-										});
-										textMenu._link = str;
-										nodezz.item[name] = str;
+										var item = lib.configMenu.general.config.extension_source.item;
+										delete item[str];
+										item[str] = str;
+										refreshExtensionSourceMenu();
 										alert("已添加扩展地址：" + str);
 									}
 								});
@@ -1642,8 +1824,9 @@ export class Library {
 					unfrequent: true,
 					onclick() {
 						var bool = false,
-							map = lib.config.extension_sources;
-						for (var i in map) {
+							map = lib.config.extension_sources,
+							i = "";
+						for (i in map) {
 							if (i != lib.config.extension_source) {
 								bool = true;
 								break;
@@ -1657,17 +1840,8 @@ export class Library {
 						game.saveConfig("extension_source", i);
 						delete map[name];
 						game.saveConfig("extension_sources", map);
-						var nodexx = ui.extension_source;
-						nodexx.updateInner();
-						var nodeyy = nodexx._link.menu;
-						var nodezz = nodexx._link.config;
-						for (var i = 0; i < nodeyy.childElementCount; i++) {
-							if (nodeyy.childNodes[i]._link == name) {
-								nodeyy.childNodes[i].remove();
-								break;
-							}
-						}
-						delete nodezz.item[name];
+						delete lib.configMenu.general.config.extension_source.item[name];
+						refreshExtensionSourceMenu();
 						alert("已删除扩展地址：" + name);
 					},
 				},
@@ -1848,7 +2022,12 @@ export class Library {
 							var list = ["re_caocao", "re_liubei", "sp_zhangjiao", "sunquan"];
 							for (var i = 0; i < 4; i++) {
 								var player = ui.create.div(".fakeplayer", node);
-								ui.create.div(".avatar", player).setBackground(list.randomRemove(), "character");
+								var avatar = ui.create.div(".avatar", player);
+								var name = list.randomRemove();
+								if (name === undefined) {
+									throw new TypeError("fake player character is missing");
+								}
+								avatar.setBackground(name, "character");
 								player.style.borderRadius = "2px";
 								if (i != 3) {
 									player.style.top = "auto";
@@ -2075,6 +2254,8 @@ export class Library {
 
 						if (isNaN(zoom)) {
 							alert("请填写数值！");
+							text.innerText = originalValue;
+							return;
 						}
 						if (zoom < 50 || zoom > 300) {
 							alert("请填入50~300以内的整数！");
@@ -2114,8 +2295,8 @@ export class Library {
 							return;
 						}
 						node.created = true;
-						var fileInput = ui.create.filediv(".menubutton", "添加背景", node, function (file) {
-							var files = this.files;
+							var fileInput = ui.create.filediv(".menubutton", "添加背景", node, /** @this {HTMLInputElement} */ function (file) {
+								var files = this.files;
 							if (files && files.length > 0) {
 								// 支持多文件导入
 								var fileList = Array.from(files);
@@ -2158,13 +2339,20 @@ export class Library {
 						});
 						fileInput.inputNode.accept = "image/*";
 						fileInput.inputNode.multiple = true;
-						var editbg = function () {
-							this.classList.toggle("active");
-							var page = this.parentNode.parentNode;
-							for (var i = 0; i < page.childElementCount; i++) {
-								if (page.childNodes[i].classList.contains("button")) {
-									var link = page.childNodes[i]._link;
-									if (link && link != "default") {
+							var editbg = /** @this {HTMLDivElement} */ function () {
+								this.classList.toggle("active");
+								const page = this.parentElement?.parentElement;
+								if (!(page instanceof HTMLElement)) {
+									return;
+								}
+								/** @typedef {HTMLDivElement & { _link?: string }} BackgroundButton */
+								/** @param {Element} child @returns {child is BackgroundButton} */
+								const isBackgroundButton = child => child instanceof HTMLDivElement;
+								const buttons = Array.from(page.children).filter(isBackgroundButton);
+								for (const button of buttons) {
+									if (button.classList.contains("button")) {
+										var link = button._link;
+								if (link && link != "default") {
 										var str;
 										if (this.classList.contains("active")) {
 											if (link.startsWith("custom_") || link.startsWith("cdv_")) {
@@ -2175,7 +2363,10 @@ export class Library {
 										} else {
 											str = item[link];
 										}
-										page.childNodes[i].firstChild.innerHTML = get.verticalStr(str);
+										const firstChild = button.firstElementChild;
+										if (firstChild instanceof HTMLElement) {
+											firstChild.innerHTML = get.verticalStr(str);
+										}
 									}
 								}
 							}
@@ -2198,13 +2389,16 @@ export class Library {
 										return;
 									}
 									var fileReader = new FileReader();
-									fileReader.onload = function (fileLoadedEvent) {
-										var data = fileLoadedEvent.target.result;
+									fileReader.onload = function () {
+										const data = fileReader.result;
+										if (typeof data !== "string") {
+											return;
+										}
 										node.style.backgroundImage = "url(" + data + ")";
 										node.style.backgroundSize = "cover";
 										node.classList.remove("dashedmenubutton");
 									};
-									fileReader.readAsDataURL(fileToLoad, "UTF-8");
+									fileReader.readAsDataURL(fileToLoad);
 								});
 							} else {
 								node.parentNode.defaultNode = node;
@@ -2243,7 +2437,7 @@ export class Library {
 									lib.config.customBackgroundPack.remove(background);
 									game.saveConfig("customBackgroundPack", lib.config.customBackgroundPack);
 									if (background.startsWith("cdv_")) {
-										game.removeFile("image/background/" + background + ".jpg");
+										game.removeFile?.("image/background/" + background + ".jpg");
 									} else {
 										game.deleteDB("image", background);
 									}
@@ -2297,10 +2491,14 @@ export class Library {
 						}
 						game.saveConfig("phonelayout", bool);
 						if (get.is.phoneLayout()) {
-							ui.css.phone.href = lib.assetURL + "layout/default/phone.css";
+							if (ui.css.phone instanceof HTMLLinkElement) {
+								ui.css.phone.href = lib.assetURL + "layout/default/phone.css";
+							}
 							ui.arena.classList.add("phone");
 						} else {
-							ui.css.phone.href = "";
+							if (ui.css.phone instanceof HTMLLinkElement) {
+								ui.css.phone.href = "";
+							}
 							ui.arena.classList.remove("phone");
 						}
 					},
@@ -2374,13 +2572,16 @@ export class Library {
 											return;
 										}
 										var fileReader = new FileReader();
-										fileReader.onload = function (fileLoadedEvent) {
-											var data = fileLoadedEvent.target.result;
+										fileReader.onload = function () {
+											const data = fileReader.result;
+											if (typeof data !== "string") {
+												return;
+											}
 											button.style.backgroundImage = "url(" + data + ")";
 											button.className = "button card fullskin";
 											node.classList.add("showdelete");
 										};
-										fileReader.readAsDataURL(fileToLoad, "UTF-8");
+										fileReader.readAsDataURL(fileToLoad);
 									});
 								});
 							}
@@ -2438,13 +2639,16 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
-									var data = fileLoadedEvent.target.result;
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									node.style.backgroundImage = "url(" + data + ")";
 									node.className = "button card fullskin";
 									node.parentNode.lastChild.classList.add("showdelete");
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						}
 					},
@@ -2463,15 +2667,17 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.card_stylesheet) {
 										ui.css.card_stylesheet.remove();
 									}
-									ui.css.card_stylesheet = lib.init.sheet(
-										".card:not(*:empty){background-image:url(" + fileLoadedEvent.target.result + ")}"
-									);
+									ui.css.card_stylesheet = lib.init.sheet(".card:not(*:empty){background-image:url(" + data + ")}");
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						}
 					},
@@ -2514,13 +2720,16 @@ export class Library {
 											return;
 										}
 										var fileReader = new FileReader();
-										fileReader.onload = function (fileLoadedEvent) {
-											var data = fileLoadedEvent.target.result;
+										fileReader.onload = function () {
+											const data = fileReader.result;
+											if (typeof data !== "string") {
+												return;
+											}
 											button.style.backgroundImage = "url(" + data + ")";
 											button.className = "button character";
 											node.classList.add("showdelete");
 										};
-										fileReader.readAsDataURL(fileToLoad, "UTF-8");
+										fileReader.readAsDataURL(fileToLoad);
 									});
 								});
 							}
@@ -2593,8 +2802,11 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
-									var data = fileLoadedEvent.target.result;
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									node.style.backgroundImage = "url(" + data + ")";
 									node.className = "button character";
 									node.parentNode.lastChild.classList.add("showdelete");
@@ -2604,7 +2816,7 @@ export class Library {
 										}
 									});
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						}
 					},
@@ -2650,32 +2862,36 @@ export class Library {
 										return;
 									}
 									var fileReader = new FileReader();
-									fileReader.onload = function (fileLoadedEvent) {
+									fileReader.onload = function () {
+										const data = fileReader.result;
+										if (typeof data !== "string") {
+											return;
+										}
 										if (ui.css.cardback_stylesheet) {
 											ui.css.cardback_stylesheet.remove();
 										}
-										ui.css.cardback_stylesheet = lib.init.sheet(
-											".card:empty,.card.infohidden{background-image:url(" + fileLoadedEvent.target.result + ")}"
-										);
-										document.documentElement.style.setProperty("--cardback-url", `url(${fileLoadedEvent.target.result})`);
+										ui.css.cardback_stylesheet = lib.init.sheet(".card:empty,.card.infohidden{background-image:url(" + data + ")}");
+										document.documentElement.style.setProperty("--cardback-url", `url(${data})`);
 										game.getDB("image", "cardback_style2", function (fileToLoad) {
 											if (!fileToLoad) {
 												return;
 											}
 											var fileReader = new FileReader();
-											fileReader.onload = function (fileLoadedEvent) {
+											fileReader.onload = function () {
+												const data = fileReader.result;
+												if (typeof data !== "string") {
+													return;
+												}
 												if (ui.css.cardback_stylesheet2) {
 													ui.css.cardback_stylesheet2.remove();
 												}
-												ui.css.cardback_stylesheet2 = lib.init.sheet(
-													".card.infohidden:not(.infoflip){background-image:url(" + fileLoadedEvent.target.result + ")}"
-												);
-												document.documentElement.style.setProperty("--cardback-url", `url(${fileLoadedEvent.target.result})`);
+												ui.css.cardback_stylesheet2 = lib.init.sheet(".card.infohidden:not(.infoflip){background-image:url(" + data + ")}");
+												document.documentElement.style.setProperty("--cardback-url", `url(${data})`);
 											};
-											fileReader.readAsDataURL(fileToLoad, "UTF-8");
+											fileReader.readAsDataURL(fileToLoad);
 										});
 									};
-									fileReader.readAsDataURL(fileToLoad, "UTF-8");
+									fileReader.readAsDataURL(fileToLoad);
 								});
 								return;
 							case "default":
@@ -2724,8 +2940,11 @@ export class Library {
 											return;
 										}
 										var fileReader = new FileReader();
-										fileReader.onload = function (fileLoadedEvent) {
-											var data = fileLoadedEvent.target.result;
+										fileReader.onload = function () {
+											const data = fileReader.result;
+											if (typeof data !== "string") {
+												return;
+											}
 											button.childNodes[node.currentDB - 1].style.backgroundImage = "url(" + data + ")";
 											button.classList.add("shown");
 											node.classList.add("showdelete");
@@ -2736,7 +2955,7 @@ export class Library {
 												delete node.currentDB;
 											}
 										};
-										fileReader.readAsDataURL(fileToLoad, "UTF-8");
+										fileReader.readAsDataURL(fileToLoad);
 									});
 								});
 							}
@@ -2785,8 +3004,11 @@ export class Library {
 										return;
 									}
 									var fileReader = new FileReader();
-									fileReader.onload = function (fileLoadedEvent) {
-										var data = fileLoadedEvent.target.result;
+									fileReader.onload = function () {
+										const data = fileReader.result;
+										if (typeof data !== "string") {
+											return;
+										}
 										node.childNodes[num - 1].style.backgroundImage = "url(" + data + ")";
 										node.classList.add("shown");
 										node.parentNode.lastChild.classList.add("showdelete");
@@ -2798,7 +3020,7 @@ export class Library {
 											delete node.parentNode.firstChild.currentDB;
 										}
 									};
-									fileReader.readAsDataURL(fileToLoad, "UTF-8");
+									fileReader.readAsDataURL(fileToLoad);
 								});
 							};
 							getDB(1);
@@ -2831,66 +3053,80 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.hp_stylesheet1) {
 										ui.css.hp_stylesheet1.remove();
 									}
 									ui.css.hp_stylesheet1 = lib.init.sheet(
 										'.hp:not(.text):not(.actcount)[data-condition="high"]>div:not(.lost){background-image:url(' +
-											fileLoadedEvent.target.result +
+											data +
 											")}"
 									);
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 							game.getDB("image", "hp_style2", function (fileToLoad) {
 								if (!fileToLoad) {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.hp_stylesheet2) {
 										ui.css.hp_stylesheet2.remove();
 									}
 									ui.css.hp_stylesheet2 = lib.init.sheet(
 										'.hp:not(.text):not(.actcount)[data-condition="mid"]>div:not(.lost){background-image:url(' +
-											fileLoadedEvent.target.result +
+											data +
 											")}"
 									);
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 							game.getDB("image", "hp_style3", function (fileToLoad) {
 								if (!fileToLoad) {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.hp_stylesheet3) {
 										ui.css.hp_stylesheet3.remove();
 									}
 									ui.css.hp_stylesheet3 = lib.init.sheet(
 										'.hp:not(.text):not(.actcount)[data-condition="low"]>div:not(.lost){background-image:url(' +
-											fileLoadedEvent.target.result +
+											data +
 											")}"
 									);
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 							game.getDB("image", "hp_style4", function (fileToLoad) {
 								if (!fileToLoad) {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.hp_stylesheet4) {
 										ui.css.hp_stylesheet4.remove();
 									}
-									ui.css.hp_stylesheet4 = lib.init.sheet(
-										".hp:not(.text):not(.actcount)>.lost{background-image:url(" + fileLoadedEvent.target.result + ")}"
-									);
+									ui.css.hp_stylesheet4 = lib.init.sheet(".hp:not(.text):not(.actcount)>.lost{background-image:url(" + data + ")}");
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						}
 					},
@@ -2930,14 +3166,17 @@ export class Library {
 											return;
 										}
 										var fileReader = new FileReader();
-										fileReader.onload = function (fileLoadedEvent) {
-											var data = fileLoadedEvent.target.result;
+										fileReader.onload = function () {
+											const data = fileReader.result;
+											if (typeof data !== "string") {
+												return;
+											}
 											button.style.backgroundImage = "url(" + data + ")";
 											button.className = "button character";
 											button.style.backgroundSize = "100% 100%";
 											node.classList.add("showdelete");
 										};
-										fileReader.readAsDataURL(fileToLoad, "UTF-8");
+										fileReader.readAsDataURL(fileToLoad);
 									});
 								});
 							}
@@ -2984,14 +3223,17 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
-									var data = fileLoadedEvent.target.result;
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									node.style.backgroundImage = "url(" + data + ")";
 									node.className = "button character";
 									node.parentNode.lastChild.classList.add("showdelete");
 									node.style.backgroundSize = "100% 100%";
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						}
 					},
@@ -3007,15 +3249,17 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.player_stylesheet) {
 										ui.css.player_stylesheet.remove();
 									}
-									ui.css.player_stylesheet = lib.init.sheet(
-										'#window .player{background-image:url("' + fileLoadedEvent.target.result + '");background-size:100% 100%;}'
-									);
+									ui.css.player_stylesheet = lib.init.sheet('#window .player{background-image:url("' + data + '");background-size:100% 100%;}');
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						} else if (layout != "default") {
 							var str = "";
@@ -3061,7 +3305,11 @@ export class Library {
 					onclick(items) {
 						game.saveConfig("zhishixian", items);
 						if (items == "default") {
-							game.linexy = game.zsOriginLineXy;
+							const originalLine = game.zsOriginLineXy;
+							if (typeof originalLine !== "function") {
+								throw new TypeError("Line themes require initialized original line drawing");
+							}
+							game.linexy = originalLine;
 						} else {
 							game.linexy = game["zs" + items + "LineXy"];
 						}
@@ -3105,14 +3353,17 @@ export class Library {
 											return;
 										}
 										var fileReader = new FileReader();
-										fileReader.onload = function (fileLoadedEvent) {
-											var data = fileLoadedEvent.target.result;
+										fileReader.onload = function () {
+											const data = fileReader.result;
+											if (typeof data !== "string") {
+												return;
+											}
 											button.style.backgroundImage = "url(" + data + ")";
 											button.className = "button character";
 											button.style.backgroundSize = "100% 100%";
 											node.classList.add("showdelete");
 										};
-										fileReader.readAsDataURL(fileToLoad, "UTF-8");
+										fileReader.readAsDataURL(fileToLoad);
 									});
 								});
 							}
@@ -3154,14 +3405,17 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
-									var data = fileLoadedEvent.target.result;
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									node.style.backgroundImage = "url(" + data + ")";
 									node.className = "button character";
 									node.parentNode.lastChild.classList.add("showdelete");
 									node.style.backgroundSize = "100% 100%";
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						}
 					},
@@ -3177,32 +3431,38 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.border_stylesheet) {
 										ui.css.border_stylesheet.remove();
 									}
-									ui.css.border_stylesheet = lib.init.sheet();
-									ui.css.border_stylesheet.id = "ui.css.border";
-									ui.css.border_stylesheet.sheet.insertRule(
-										'#window .player>.framebg{display:block;background-image:url("' + fileLoadedEvent.target.result + '")}',
+									const borderStylesheet = lib.init.sheet();
+									ui.css.border_stylesheet = borderStylesheet;
+									borderStylesheet.id = "ui.css.border";
+									borderStylesheet.sheet.insertRule(
+										'#window .player>.framebg{display:block;background-image:url("' + data + '")}',
 										0
 									);
-									ui.css.border_stylesheet.sheet.insertRule(
+									borderStylesheet.sheet.insertRule(
 										".player>.count{z-index: 3 !important;border-radius: 2px !important;text-align: center !important;}",
 										0
 									);
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						} else if (layout != "default" && layout != "auto") {
-							ui.css.border_stylesheet = lib.init.sheet();
+							const borderStylesheet = lib.init.sheet();
+							ui.css.border_stylesheet = borderStylesheet;
 							if (layout.startsWith("dragon_")) {
 								layout = layout.slice(7);
 								ui.arena.dataset.framedecoration = layout;
 							} else {
 								ui.arena.dataset.framedecoration = "";
 							}
-							ui.css.border_stylesheet.sheet.insertRule(
+							borderStylesheet.sheet.insertRule(
 								'#window .player>.framebg,#window #arena.long.mobile:not(.fewplayer) .player[data-position="0"]>.framebg{display:block;background-image:url("' +
 									lib.assetURL +
 									"theme/style/player/" +
@@ -3210,7 +3470,7 @@ export class Library {
 									'1.png")}',
 								0
 							);
-							ui.css.border_stylesheet.sheet.insertRule(
+							borderStylesheet.sheet.insertRule(
 								'#window #arena.long:not(.fewplayer) .player>.framebg, #arena.oldlayout .player>.framebg{background-image:url("' +
 									lib.assetURL +
 									"theme/style/player/" +
@@ -3218,7 +3478,7 @@ export class Library {
 									'3.png")}',
 								0
 							);
-							ui.css.border_stylesheet.sheet.insertRule(
+							borderStylesheet.sheet.insertRule(
 								".player>.count{z-index: 3 !important;border-radius: 2px !important;text-align: center !important;}",
 								0
 							);
@@ -3316,14 +3576,17 @@ export class Library {
 											return;
 										}
 										var fileReader = new FileReader();
-										fileReader.onload = function (fileLoadedEvent) {
-											var data = fileLoadedEvent.target.result;
+										fileReader.onload = function () {
+											const data = fileReader.result;
+											if (typeof data !== "string") {
+												return;
+											}
 											button.style.backgroundImage = "url(" + data + ")";
 											button.style.backgroundSize = "cover";
 											button.className = "button character";
 											node.classList.add("showdelete");
 										};
-										fileReader.readAsDataURL(fileToLoad, "UTF-8");
+										fileReader.readAsDataURL(fileToLoad);
 									});
 								});
 							}
@@ -3370,14 +3633,17 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
-									var data = fileLoadedEvent.target.result;
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									node.style.backgroundImage = "url(" + data + ")";
 									node.style.backgroundSize = "cover";
 									node.className = "button character";
 									node.parentNode.lastChild.classList.add("showdelete");
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						}
 					},
@@ -3393,17 +3659,21 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.menu_stylesheet) {
 										ui.css.menu_stylesheet.remove();
 									}
 									ui.css.menu_stylesheet = lib.init.sheet(
 										'html #window>.dialog.popped,html .menu,html .menubg{background-image:url("' +
-											fileLoadedEvent.target.result +
+											data +
 											'");background-size:cover}'
 									);
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						} else if (layout != "default") {
 							var str = "";
@@ -3458,13 +3728,16 @@ export class Library {
 											return;
 										}
 										var fileReader = new FileReader();
-										fileReader.onload = function (fileLoadedEvent) {
-											var data = fileLoadedEvent.target.result;
+										fileReader.onload = function () {
+											const data = fileReader.result;
+											if (typeof data !== "string") {
+												return;
+											}
 											button.style.backgroundImage = "url(" + data + ")";
 											button.className = "button character controlbutton";
 											node.classList.add("showdelete");
 										};
-										fileReader.readAsDataURL(fileToLoad, "UTF-8");
+										fileReader.readAsDataURL(fileToLoad);
 									});
 								});
 							}
@@ -3510,13 +3783,16 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
-									var data = fileLoadedEvent.target.result;
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									node.style.backgroundImage = "url(" + data + ")";
 									node.className = "button character controlbutton";
 									node.parentNode.lastChild.classList.add("showdelete");
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						}
 					},
@@ -3532,17 +3808,21 @@ export class Library {
 									return;
 								}
 								var fileReader = new FileReader();
-								fileReader.onload = function (fileLoadedEvent) {
+								fileReader.onload = function () {
+									const data = fileReader.result;
+									if (typeof data !== "string") {
+										return;
+									}
 									if (ui.css.control_stylesheet) {
 										ui.css.control_stylesheet.remove();
 									}
 									ui.css.control_stylesheet = lib.init.sheet(
 										'#window .control,.menubutton:not(.active):not(.highlight):not(.red):not(.blue),#window #system>div>div{background-image:url("' +
-											fileLoadedEvent.target.result +
+											data +
 											'")}'
 									);
 								};
-								fileReader.readAsDataURL(fileToLoad, "UTF-8");
+								fileReader.readAsDataURL(fileToLoad);
 							});
 						} else if (layout != "default") {
 							var str = "";
@@ -3913,8 +4193,9 @@ export class Library {
 						oblong: "长方",
 					},
 					onclick(item) {
+						const me = game.me;
 						var linked = false;
-						if (game.me && game.me.isLinked()) {
+						if (me && me.isLinked()) {
 							linked = true;
 						}
 						game.saveConfig("cardshape", item);
@@ -3928,13 +4209,13 @@ export class Library {
 							ui.arena.classList.remove("oblongcard");
 							ui.window.classList.remove("oblongcard");
 						}
-						if (linked) {
-							if (get.is.linked2(game.me)) {
-								game.me.classList.remove("linked");
-								game.me.classList.add("linked2");
+						if (me && linked) {
+							if (get.is.linked2(me)) {
+								me.classList.remove("linked");
+								me.classList.add("linked2");
 							} else {
-								game.me.classList.add("linked");
-								game.me.classList.remove("linked2");
+								me.classList.add("linked");
+								me.classList.remove("linked2");
 							}
 						}
 					},
@@ -3957,7 +4238,8 @@ export class Library {
 						}
 						var hs = game.me.getCards("h");
 						for (var i = 0; i < hs.length; i++) {
-							if (hs[i]._tempName) {
+							const tempName = hs[i]._tempName;
+							if (tempName) {
 								switch (item) {
 									case "default":
 									case "horizon":
@@ -3965,7 +4247,7 @@ export class Library {
 										ui.create.cardTempName(hs[i]);
 										break;
 									default:
-										hs[i]._tempName.delete();
+										tempName.delete();
 										delete hs[i]._tempName;
 								}
 							}
@@ -4504,7 +4786,7 @@ export class Library {
 					onclick(bool) {
 						game.saveConfig("remember_round_button", bool);
 						if (!bool) {
-							ui.click.resetround();
+							ui.click.resetround?.();
 						}
 					},
 				},
@@ -4807,9 +5089,13 @@ export class Library {
 					onclick(bool) {
 						game.saveConfig("show_commonCardpile", bool);
 						if (bool) {
-							ui.commonCardPileButton.style.display = "";
+							if (ui.commonCardPileButton) {
+								ui.commonCardPileButton.style.display = "";
+							}
 						} else {
-							ui.commonCardPileButton.style.display = "none";
+							if (ui.commonCardPileButton) {
+								ui.commonCardPileButton.style.display = "none";
+							}
 						}
 					},
 				},
@@ -5119,6 +5405,9 @@ export class Library {
 							for (var i in lib.config.customBackgroundMusic) {
 								lib.config.all.background_music.remove(i);
 								if (i.startsWith("cdv_")) {
+									if (typeof game.removeFile !== "function") {
+										throw new TypeError("Removing platform music requires the removeFile API");
+									}
 									game.removeFile("audio/background/" + i + ".mp3");
 								} else {
 									game.deleteDB("audio", i);
@@ -5198,6 +5487,7 @@ export class Library {
 					init: "60",
 					input: true,
 					intro: "多轮决策允许使用的总时长；单轮请求仍受「超时（秒）」限制。",
+					/** @type {(this: HTMLDivElement) => void} */
 					onblur: function () {
 						let val = parseInt(this.innerHTML.replace(/<br>/g, ""));
 						if (isNaN(val) || val < 10) val = 60;
@@ -5211,6 +5501,7 @@ export class Library {
 					init: "",
 					input: true,
 					intro: "OpenAI 兼容的 API baseURL（SDK 会自动拼接 /chat/completions）。如 https://api.openai.com/v1 或 http://localhost:11434/v1。浏览器模式需自建代理（CORS），Electron 模式可直接使用。",
+					/** @type {(this: HTMLDivElement) => void} */
 					onblur: function () {
 						game.saveConfig("llm_url", this.innerHTML.replace(/<br>/g, ""));
 					},
@@ -5220,6 +5511,7 @@ export class Library {
 					init: "",
 					input: true,
 					intro: "API Key。敏感信息，仅存本地 IndexedDB，不会上传 git或任何远端。",
+					/** @type {(this: HTMLDivElement) => void} */
 					onblur: function () {
 						game.saveConfig("llm_apikey", this.innerHTML.replace(/<br>/g, ""));
 					},
@@ -5229,6 +5521,7 @@ export class Library {
 					init: "",
 					input: true,
 					intro: "要调用的模型，如 gpt-4o-mini、deepseek-chat 等",
+					/** @type {(this: HTMLDivElement) => void} */
 					onblur: function () {
 						game.saveConfig("llm_model", this.innerHTML.replace(/<br>/g, ""));
 					},
@@ -5260,6 +5553,7 @@ export class Library {
 					init: "30",
 					input: true,
 					intro: "LLM 请求超时秒数，超时自动回退本地 AI",
+					/** @type {(this: HTMLDivElement) => void} */
 					onblur: function () {
 						let val = parseInt(this.innerHTML.replace(/<br>/g, ""));
 						if (isNaN(val) || val < 1) val = 30;
@@ -5373,7 +5667,7 @@ export class Library {
 				import_data: {
 					name: "导入游戏设置",
 					onclick() {
-						ui.import_data_button.classList.toggle("hidden");
+						requestImportData();
 					},
 					clear: true,
 				},
@@ -5705,9 +5999,14 @@ export class Library {
 							for (var i in mode.translate) {
 								storage.translate[i] = mode.translate[i];
 							}
-							for (var i in mode.characterPack.mode_boss) {
-								if (mode.characterPack.mode_boss[i].isBossAllowed) {
-									storage.boss[i] = mode.characterPack.mode_boss[i];
+							const characterPack = mode.characterPack;
+							if (!characterPack) {
+								throw new TypeError("Boss mode must provide characterPack");
+							}
+							for (var i in characterPack.mode_boss) {
+								const character = characterPack.mode_boss[i];
+								if ("isBossAllowed" in character && character.isBossAllowed) {
+									storage.boss[i] = character;
 								}
 							}
 							loadversus();
@@ -6282,7 +6581,7 @@ export class Library {
 					init: "8",
 					get item() {
 						const minimumNumberOfPlayers = 2,
-							maximumNumberOfPlayers = Math.max(_status.maximumNumberOfPlayers || 10, minimumNumberOfPlayers),
+							maximumNumberOfPlayers = readMaximumNumberOfPlayers(_status, 10, minimumNumberOfPlayers),
 							item = {};
 						for (let playerNumber = minimumNumberOfPlayers; playerNumber <= maximumNumberOfPlayers; playerNumber++) {
 							item[playerNumber] = `${get.cnNumber(playerNumber)}人`;
@@ -6373,7 +6672,7 @@ export class Library {
 								num = 0;
 								break;
 						}
-						if (num & !_status.identityShown && game.phaseNumber > game.players.length * num && game.showIdentity) {
+						if (num & +!_status.identityShown && game.phaseNumber > game.players.length * num && game.showIdentity) {
 							_status.identityShown = true;
 							game.showIdentity(false);
 						}
@@ -6405,7 +6704,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat2 && get.config("free_choose")) {
-							ui.create.cheat2();
+							ui.create.cheat2?.();
 						} else if (ui.cheat2 && !get.config("free_choose")) {
 							ui.cheat2.close();
 							delete ui.cheat2;
@@ -6445,7 +6744,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat && get.config("change_choice")) {
-							ui.create.cheat();
+							ui.create.cheat?.();
 						} else if (ui.cheat && !get.config("change_choice")) {
 							ui.cheat.close();
 							delete ui.cheat;
@@ -6497,7 +6796,7 @@ export class Library {
 					onclick(bool) {
 						game.saveConfig("dierestart", bool, this._link.config.mode);
 						if (get.config("dierestart") && get.mode() == "identity") {
-							if (!ui.restart && game.me.isDead() && !_status.connectMode) {
+							if (!ui.restart && game.getMe().isDead() && !_status.connectMode) {
 								ui.restart = ui.create.control("restart", game.reload);
 							}
 						} else if (ui.restart) {
@@ -6512,7 +6811,7 @@ export class Library {
 					onclick(bool) {
 						game.saveConfig("revive", bool, this._link.config.mode);
 						if (get.config("revive") && get.mode() == "identity") {
-							if (!ui.revive && game.me.isDead()) {
+							if (!ui.revive && game.getMe().isDead()) {
 								ui.revive = ui.create.control("revive", ui.click.dierevive);
 							}
 						} else if (ui.revive) {
@@ -6822,7 +7121,7 @@ export class Library {
 					init: "8",
 					get item() {
 						const minimumNumberOfPlayers = 2,
-							maximumNumberOfPlayers = Math.max(_status.maximumNumberOfPlayers || 12, minimumNumberOfPlayers),
+							maximumNumberOfPlayers = readMaximumNumberOfPlayers(_status, 12, minimumNumberOfPlayers),
 							item = {};
 						for (let playerNumber = minimumNumberOfPlayers; playerNumber <= maximumNumberOfPlayers; playerNumber++) {
 							item[playerNumber] = `${get.cnNumber(playerNumber)}人`;
@@ -6976,7 +7275,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat2 && get.config("free_choose")) {
-							ui.create.cheat2();
+							ui.create.cheat2?.();
 						} else if (ui.cheat2 && !get.config("free_choose")) {
 							ui.cheat2.close();
 							delete ui.cheat2;
@@ -7022,7 +7321,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat && get.config("change_choice")) {
-							ui.create.cheat();
+							ui.create.cheat?.();
 						} else if (ui.cheat && !get.config("change_choice")) {
 							ui.cheat.close();
 							delete ui.cheat;
@@ -7061,7 +7360,7 @@ export class Library {
 					onclick(bool) {
 						game.saveConfig("dierestart", bool, this._link.config.mode);
 						if (get.config("dierestart") && get.mode() == "guozhan") {
-							if (!ui.restart && game.me.isDead() && !_status.connectMode) {
+							if (!ui.restart && game.getMe().isDead() && !_status.connectMode) {
 								ui.restart = ui.create.control("restart", game.reload);
 							}
 						} else if (ui.restart) {
@@ -7076,7 +7375,7 @@ export class Library {
 					onclick(bool) {
 						game.saveConfig("revive", bool, this._link.config.mode);
 						if (get.config("revive") && get.mode() == "guozhan") {
-							if (!ui.revive && game.me.isDead()) {
+							if (!ui.revive && game.getMe().isDead()) {
 								ui.revive = ui.create.control("revive", ui.click.dierevive);
 							}
 						} else if (ui.revive) {
@@ -7385,16 +7684,24 @@ export class Library {
 								return;
 							}
 							if (bool) {
-								if (_status.event.parent.addSetting) {
-									_status.event.parent.addSetting();
+								const parent = _status.event.parent;
+								if (!parent) {
+									throw new TypeError("identity configuration requires a parent event");
+								}
+								if (parent.addSetting) {
+									parent.addSetting();
 								}
 							} else {
-								var seats = _status.event.parent.seatsbutton;
+								const parent = _status.event.parent;
+								if (!parent) {
+									throw new TypeError("identity configuration requires a parent event");
+								}
+								var seats = parent.seatsbutton;
 								if (seats) {
 									while (seats.length) {
 										seats.shift().remove();
 									}
-									delete _status.event.parent.seatsbutton;
+									delete parent.seatsbutton;
 								}
 							}
 						} else {
@@ -7406,9 +7713,17 @@ export class Library {
 							}
 							if (!_status.brawl || !_status.brawl.noAddSetting) {
 								if (!dialog.querySelector("table") && get.config("change_identity")) {
-									_status.event.getParent().addSetting(dialog);
+									const parent = _status.event.getParent();
+									if (typeof parent.addSetting != "function") {
+										throw new TypeError("identity configuration parent requires addSetting");
+									}
+									parent.addSetting(dialog);
 								} else {
-									_status.event.getParent().removeSetting(dialog);
+									const parent = _status.event.getParent();
+									if (typeof parent.removeSetting != "function") {
+										throw new TypeError("identity configuration parent requires removeSetting");
+									}
+									parent.removeSetting(dialog);
 								}
 							}
 							ui.update();
@@ -7424,7 +7739,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat && get.config("change_choice")) {
-							ui.create.cheat();
+							ui.create.cheat?.();
 						} else if (ui.cheat && !get.config("change_choice")) {
 							ui.cheat.close();
 							delete ui.cheat;
@@ -7480,7 +7795,9 @@ export class Library {
 								top: 900,
 								month: new Date().getMonth(),
 							});
-							ui.ladder.innerHTML = "卫士五";
+							if (ui.ladder) {
+								ui.ladder.innerHTML = "卫士五";
+							}
 							clearTimeout(node._clearing);
 							node.firstChild.innerHTML = "重置天梯数据";
 							delete node._clearing;
@@ -7589,7 +7906,8 @@ export class Library {
 						game.saveConfig("connect_avatar", item);
 						game.saveConfig("connect_avatar", item, "connect");
 					},
-					onblur() {
+					/** @type {(this: HTMLDivElement) => void} */
+					onblur: function () {
 						const input = this;
 						const value = input.innerHTML.replace(/<br>/g, "").trim();
 						if (!value) {
@@ -7604,7 +7922,7 @@ export class Library {
 							const name = lib.translate[id];
 							if (!name) continue;
 
-							if (searchReg.test(name) || searchReg.test(id) || searchReg.test(lib.translate[id + "_ab"])) {
+							if (searchReg.test(name) || searchReg.test(id) || searchReg.test(String(lib.translate[id + "_ab"]))) {
 								matches.push(id);
 							}
 						}
@@ -7617,7 +7935,7 @@ export class Library {
 							const id = matches[0];
 							game.saveConfig("connect_avatar", id);
 							game.saveConfig("connect_avatar", id, "connect");
-							input.innerHTML = lib.translate[id];
+							input.innerHTML = String(lib.translate[id]);
 						} else {
 							game.closeMenu();
 							const dialog = ui.create.dialog("选择头像", [matches, "character"], "hidden");
@@ -7629,7 +7947,7 @@ export class Library {
 								button.listen(function () {
 									game.saveConfig("connect_avatar", characterId);
 									game.saveConfig("connect_avatar", characterId, "connect");
-									input.innerHTML = lib.translate[characterId];
+									input.innerHTML = String(lib.translate[characterId]);
 									dialog.close();
 								});
 							}
@@ -7731,7 +8049,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat2 && get.config("free_choose")) {
-							ui.create.cheat2();
+							ui.create.cheat2?.();
 						} else if (ui.cheat2 && !get.config("free_choose")) {
 							ui.cheat2.close();
 							delete ui.cheat2;
@@ -7747,7 +8065,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat && get.config("change_choice")) {
-							ui.create.cheat();
+							ui.create.cheat?.();
 						} else if (ui.cheat && !get.config("change_choice")) {
 							ui.cheat.close();
 							delete ui.cheat;
@@ -8019,7 +8337,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat2 && get.config("free_choose")) {
-							ui.create.cheat2();
+							ui.create.cheat2?.();
 						} else if (ui.cheat2 && !get.config("free_choose")) {
 							ui.cheat2.close();
 							delete ui.cheat2;
@@ -8059,7 +8377,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat && get.config("change_choice")) {
-							ui.create.cheat();
+							ui.create.cheat?.();
 						} else if (ui.cheat && !get.config("change_choice")) {
 							ui.cheat.close();
 							delete ui.cheat;
@@ -8098,7 +8416,7 @@ export class Library {
 					onclick(bool) {
 						game.saveConfig("dierestart", bool, this._link.config.mode);
 						if (get.config("dierestart")) {
-							if (!ui.restart && game.me.isDead() && !_status.connectMode) {
+							if (!ui.restart && game.getMe().isDead() && !_status.connectMode) {
 								ui.restart = ui.create.control("restart", game.reload);
 							}
 						} else if (ui.restart) {
@@ -8113,7 +8431,7 @@ export class Library {
 					onclick(bool) {
 						game.saveConfig("revive", bool, this._link.config.mode);
 						if (get.config("revive")) {
-							if (!ui.revive && game.me.isDead()) {
+							if (!ui.revive && game.getMe().isDead()) {
 								ui.revive = ui.create.control("revive", ui.click.dierevive);
 							}
 						} else if (ui.revive) {
@@ -8343,7 +8661,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat2 && get.config("free_choose")) {
-							ui.create.cheat2();
+							ui.create.cheat2?.();
 						} else if (ui.cheat2 && !get.config("free_choose")) {
 							ui.cheat2.close();
 							delete ui.cheat2;
@@ -8528,7 +8846,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat2 && get.config("free_choose")) {
-							ui.create.cheat2();
+							ui.create.cheat2?.();
 						} else if (ui.cheat2 && !get.config("free_choose")) {
 							ui.cheat2.close();
 							delete ui.cheat2;
@@ -8544,7 +8862,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat && get.config("change_choice")) {
-							ui.create.cheat();
+							ui.create.cheat?.();
 						} else if (ui.cheat && !get.config("change_choice")) {
 							ui.cheat.close();
 							delete ui.cheat;
@@ -8808,7 +9126,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat2 && get.config("free_choose")) {
-							ui.create.cheat2();
+							ui.create.cheat2?.();
 						} else if (ui.cheat2 && !get.config("free_choose")) {
 							ui.cheat2.close();
 							delete ui.cheat2;
@@ -8827,7 +9145,7 @@ export class Library {
 							return;
 						}
 						if (!ui.cheat && get.config("change_choice")) {
-							ui.create.cheat();
+							ui.create.cheat?.();
 						} else if (ui.cheat && !get.config("change_choice")) {
 							ui.cheat.close();
 							delete ui.cheat;
@@ -8878,11 +9196,10 @@ export class Library {
 			);
 		},
 	};
-	/**
-	 * @type {import('path-browserify-esm')}
-	 */
-	// @ts-expect-error ignore
-	path = {};
+		/**
+		 * @type {typeof import("path-browserify-esm").default | typeof import("path")}
+		 */
+		path;
 	getErrorTip(msg) {
 		if (typeof msg != "string") {
 			try {
@@ -9204,7 +9521,7 @@ export class Library {
 		 * 自己的下家(如果下家是主公身份则是下家的下家)立即死亡
 		 */
 		dy() {
-			let next = game.me.next;
+			let next = game.getMe().next;
 			for (let i = 0; i < 10; i++) {
 				if (next.identity != "zhu") {
 					break;
@@ -9221,6 +9538,7 @@ export class Library {
 		 * @param  { ...string } args 只需要显示的文件夹首字符
 		 */
 		x(...args) {
+			const node = lib.requireNodePlatform();
 			/**
 			 * @param { string } dir
 			 * @param { (folders: string[], files: string[]) => any } callback
@@ -9229,13 +9547,13 @@ export class Library {
 				const files = [],
 					folders = [];
 				// dir = '/Users/widget/Documents/extension/' + dir;
-				dir = lib.node.path.join(__dirname, "extension", dir);
-				lib.node.fs.promises
+				dir = node.path.join(__dirname, "extension", dir);
+				node.fs.promises
 					.readdir(dir)
 					.then(filelist => {
 						for (let i = 0; i < filelist.length; i++) {
 							if (filelist[i][0] != "." && filelist[i][0] != "_") {
-								if (lib.node.fs.statSync(dir + "/" + filelist[i]).isDirectory()) {
+								if (node.fs.statSync(dir + "/" + filelist[i]).isDirectory()) {
 									folders.push(filelist[i]);
 								} else {
 									files.push(filelist[i]);
@@ -9556,7 +9874,11 @@ export class Library {
 		 */
 		pt(...list) {
 			while (list.length) {
-				const card = lib.cheat.gn(list.pop());
+				const name = list.pop();
+				if (name === undefined) {
+					throw new TypeError("A card name is required when adding to the draw pile");
+				}
+				const card = lib.cheat.gn(name);
 				if (card) {
 					ui.cardPile.insertBefore(card, ui.cardPile.firstChild);
 				}
@@ -9610,7 +9932,10 @@ export class Library {
 			if (typeof i == "number") {
 				target = game.players[i];
 			} else {
-				target = game.me.next;
+				target = game.getMe().next;
+			}
+			if (!target) {
+				throw new Error("The requested player does not exist.");
 			}
 			if (!lib.character[name]) {
 				target.node.avatar.setBackground(name, "character");
@@ -9619,7 +9944,7 @@ export class Library {
 				target.init(name);
 			}
 			if (skin) {
-				lib.config.skin[name] = skin - 1;
+				lib.config.skin[name] = Number(skin) - 1;
 				// 换肤时skin - 1变成skin
 				ui.click.skin(target.node.avatar, name);
 			}
@@ -9632,14 +9957,8 @@ export class Library {
 			}
 		},
 		/**
-		 * @overload
-		 * @description 不传参数默认装备麒麟弓，八卦阵，的卢，赤兔，木牛
-		 * @returns { void }
-		 */
-		/**
-		 * @overload
-		 * @description 指定的玩家或自己装备指定的牌
-		 * @param  {...Player | string} args 玩家或卡牌名
+		 * 不传参数默认装备麒麟弓，八卦阵，的卢，赤兔，木牛；也可指定玩家或卡牌名。
+		 * @param  {...(Player | string)} args 玩家或卡牌名
 		 * @returns { void }
 		 */
 		e(...args) {
@@ -9648,9 +9967,9 @@ export class Library {
 			 */
 			let cards = [];
 			/**
-			 * @type { Player }
+			 * @type { Player | undefined }
 			 */
-			let target;
+			let target = undefined;
 			for (let i = 0; i < arguments.length; i++) {
 				if (get.itemtype(arguments[i]) == "player") {
 					target = arguments[i];
@@ -9665,7 +9984,7 @@ export class Library {
 				cards.push(game.createCard("chitu"));
 				cards.push(game.createCard("muniu"));
 			}
-			target = target || game.me;
+			target = target || game.getMe();
 			for (let i = 0; i < cards.length; i++) {
 				const card = target.getEquip(cards[i]);
 				if (card) {
@@ -9906,7 +10225,7 @@ export class Library {
 		 * 显示场上所有的角色的身份
 		 */
 		id() {
-			game.showIdentity();
+			game.showIdentity?.();
 		},
 		/**
 		 * 替换dialog中待选择的卡牌(或其他东西)对应的真实卡牌(或其他东西)
@@ -9930,11 +10249,12 @@ export class Library {
 		 */
 		uy(me) {
 			if (me) {
-				game.me.useCard({ name: "spell_yexinglanghun" }, game.me);
+				const player = game.getMe();
+				player.useCard({ card: new lib.element.VCard({ name: "spell_yexinglanghun" }), targets: [player] });
 			} else {
 				// player.getEnemy是炉石模式的函数
-				const enemy = game.me.getEnemy();
-				enemy.useCard({ name: "spell_yexinglanghun" }, enemy);
+				const enemy = game.getMe().getEnemy();
+				enemy.useCard({ card: new lib.element.VCard({ name: "spell_yexinglanghun" }), targets: [enemy] });
 			}
 		},
 		/**
@@ -9944,9 +10264,10 @@ export class Library {
 		 */
 		gs(name = "yexinglanghun", act) {
 			const card = game.createCard("spell_" + name);
-			game.me.node.handcards1.appendChild(card);
+			const player = game.getMe();
+			player.node.handcards1.appendChild(card);
 			if (!act) {
-				game.me.actused = -99;
+				player.actused = -99;
 			}
 			ui.updatehl();
 			delete _status.event._buttonChoice;
@@ -9962,9 +10283,10 @@ export class Library {
 		 */
 		gc(name = "falifulong", act) {
 			var card = game.createCard("stone_" + name + "_stonecharacter");
-			game.me.node.handcards1.appendChild(card);
+			const player = game.getMe();
+			player.node.handcards1.appendChild(card);
 			if (!act) {
-				game.me.actused = -99;
+				player.actused = -99;
 			}
 			ui.updatehl();
 			delete _status.event._buttonChoice;
@@ -10010,11 +10332,12 @@ export class Library {
 		 */
 		uj() {
 			lib.cheat.e("qilin");
-			game.me.next.useCard({ name: "jiedao" }, [game.me, game.me.previous]);
+			const player = game.getMe();
+			player.next.useCard({ card: new lib.element.VCard({ name: "jiedao" }), targets: [player, player.previous] });
 		},
 		/**
 		 * 下家对你使用一张牌
-		 * @param  {...Player | Player[] | string | VCard } args
+		 * @param  {...(Player | Player[] | Card | VCard | string)} args
 		 *
 		 * @example
 		 * ```js
@@ -10026,33 +10349,51 @@ export class Library {
 		 * ```
 		 */
 		u(...args) {
-			let card = new lib.element.VCard({ name: "sha" }),
-				source = game.me.next,
-				targets = [];
+			/**
+			 * @param {Player | Player[] | Card | VCard | string} value
+			 * @returns {value is Player}
+			 */
+			const isPlayer = value => get.itemtype(value) == "player";
+			/**
+			 * @param {Player | Player[] | Card | VCard | string} value
+			 * @returns {value is Player[]}
+			 */
+			const isPlayers = value => get.itemtype(value) == "players";
+			/** @type {VCard} */
+			let card = new lib.element.VCard({ name: "sha" });
+			/** @type {Player} */
+			const me = game.getMe();
+			let source = me.next;
+			/** @type {Player[]} */
+			let targets = [];
 			for (let i = 0; i < args.length; i++) {
-				if (get.itemtype(args[i]) == "player") {
-					source = args[i];
-				} else if (Array.isArray(args[i])) {
-					targets = args[i];
-				} else if (args instanceof lib.element.VCard) {
-					card = args[i];
-				} else if (typeof args[i] == "object" && args[i] != null && args[i].name) {
-					console.warn("lib.cheat.u: 以普通obj形式传入的类卡牌形式已经废弃");
-					card = new lib.element.VCard(args[i]);
-				} else if (typeof args[i] == "string") {
-					card = new lib.element.VCard({ name: args[i] });
+				const arg = args[i];
+				if (isPlayer(arg)) {
+					source = arg;
+				} else if (isPlayers(arg)) {
+					targets = arg;
+				} else if (arg instanceof lib.element.VCard) {
+					card = arg;
+				} else if (get.itemtype(arg) == "card") {
+					card = new lib.element.VCard(arg);
+				} else if (typeof arg == "string") {
+					card = new lib.element.VCard({ name: arg });
 				}
 			}
 			if (!targets.length) {
-				targets.push(game.me);
+				targets.push(me);
 			}
-			source.useCard(game.createCard(card.name, card.suit, card.number, card.nature), targets);
+			source.useCard({ card: game.createCard(card.name, card.suit, card.number, card.nature), targets });
 		},
 		/**
 		 * 输出每个强度的武将数量、每个武将包的每个强度的武将数量、每个武将对应的id和翻译
 		 * @param { boolean } [bool] 为false不输出无名杀自带的武将id和翻译
 		 */
 		r(bool) {
+			const rank = lib.rank;
+			if (!rank) {
+				return;
+			}
 			const log = function (...args) {
 				console.log(...args);
 				game.print(...args);
@@ -10063,7 +10404,7 @@ export class Library {
 				if (str) {
 					str += " 、 ";
 				}
-				str += list[i] + "-" + lib.rank[list[i]].length;
+				str += list[i] + "-" + rank[list[i]].length;
 			}
 			log(str);
 			for (let i in lib.characterPack) {
@@ -10093,15 +10434,15 @@ export class Library {
 				}
 			}
 
-			let list2 = lib.rank.s
-				.concat(lib.rank.ap)
-				.concat(lib.rank.a)
-				.concat(lib.rank.am)
-				.concat(lib.rank.bp)
-				.concat(lib.rank.b)
-				.concat(lib.rank.bm)
-				.concat(lib.rank.c)
-				.concat(lib.rank.d);
+			let list2 = rank.s
+				.concat(rank.ap)
+				.concat(rank.a)
+				.concat(rank.am)
+				.concat(rank.bp)
+				.concat(rank.b)
+				.concat(rank.bm)
+				.concat(rank.c)
+				.concat(rank.d);
 			Object.keys(lib.character).forEach(key => {
 				if (!lib.config.forbidai.includes(key) && !key.startsWith("boss_") && !key.startsWith("tafang_") && !list2.includes(key)) {
 					log(get.translation(key), key);
@@ -10170,7 +10511,7 @@ export class Library {
 		 * @param { string } name
 		 * @param { Player } target
 		 */
-		gx(name, target = game.me) {
+		gx(name, target = game.getMe()) {
 			const card = lib.cheat.gn(name);
 			if (!card) {
 				return;
@@ -10190,7 +10531,7 @@ export class Library {
 		 * 如果lib.card里没有对应卡牌名返回null
 		 *
 		 * @param { string } name
-		 * @returns { Card }
+		 * @returns { Card | null }
 		 * @example
 		 * ```js
 		 * // 创建一个梅花杀
@@ -10236,7 +10577,7 @@ export class Library {
 			if (!lib.card[name]) {
 				return null;
 			}
-			return game.createCard(name, suit, null, nature);
+			return game.createCard(name, suit, undefined, nature);
 		},
 		/**
 		 * 指定的玩家或自己立即获得诸葛连弩，青龙刀，八卦阵，的卢，赤兔，木牛
@@ -10286,16 +10627,17 @@ export class Library {
 		 * @param { Player } [target]
 		 */
 		d(num = 1, target) {
+			const me = game.getMe();
 			const cards = get.cards(num);
 			for (let i = 0; i < num; i++) {
 				const card = cards[i];
-				game.me.node.handcards1.appendChild(card);
+				me.node.handcards1.appendChild(card);
 				delete _status.event._buttonChoice;
 				delete _status.event._cardChoice;
 				delete _status.event._targetChoice;
 				delete _status.event._skillChoice;
 				game.check();
-				game.me.update();
+				me.update();
 				ui.updatehl();
 			}
 		},
@@ -10304,8 +10646,9 @@ export class Library {
 		 * @param {...string} args 技能名
 		 */
 		s(...args) {
+			const me = game.getMe();
 			for (var i = 0; i < args.length; i++) {
-				game.me.addSkill(args[i], true);
+				me.addSkill(args[i], true);
 			}
 			delete _status.event._buttonChoice;
 			delete _status.event._cardChoice;
@@ -10321,16 +10664,14 @@ export class Library {
 		 * @param { number | Player } [num]
 		 */
 		t(num) {
-			if (game.players.includes(num)) {
-				num = game.players.indexOf(num);
-			}
 			if (num == undefined) {
 				for (let i = 0; i < game.players.length; i++) {
 					lib.cheat.t(i);
 				}
 				return;
 			}
-			const player = game.players[num];
+			const index = typeof num === "number" ? num : game.players.indexOf(num);
+			const player = game.players[index];
 			const cards = player.getCards("hej");
 			for (let i = 0; i < cards.length; i++) {
 				cards[i].discard();
@@ -10352,7 +10693,7 @@ export class Library {
 		 * 弃置自己所有牌
 		 */
 		tm() {
-			lib.cheat.t(game.me);
+			lib.cheat.t(game.getMe());
 		},
 		/**
 		 * 指定一个目标，弃置所有牌，血量变1，并且自己获得一张"juedou"
@@ -10410,13 +10751,13 @@ export class Library {
 					break;
 			}
 			game.zhu.init(name);
-			game.zhu.maxHp++;
-			game.zhu.hp++;
+			game.zhu.maxHp = Number(game.zhu.maxHp) + 1;
+			game.zhu.hp = Number(game.zhu.hp) + 1;
 			game.zhu.update();
 		},
 	};
 	/**
-	 * @type { Record<string, string> }
+	 * @type { Record<string, string | undefined> }
 	 */
 	translate = new Proxy(
 		{
@@ -10793,7 +11134,7 @@ export class Library {
 					if ((game.servermode || game.onlinehall) && _status.over) {
 						void 0;
 					} else {
-						localStorage.setItem(lib.configprefix + "directstart", true);
+					localStorage.setItem(lib.configprefix + "directstart", "true");
 						game.reload();
 					}
 				} else {
@@ -10861,7 +11202,7 @@ export class Library {
 	};
 	card = {
 		/**
-		 * @type { [CardBaseUIData['suit'], CardBaseUIData['number'], string][] }
+		 * @type {import("./element/card.js").CardPileEntry[]}
 		 */
 		list: [],
 		cooperation_damage: {
@@ -11009,7 +11350,7 @@ export class Library {
 		 *
 		 * @param { Card } card - 需要判断的牌
 		 * @param { Player } [player] - 拥有牌的角色
-		 * @param { Player } [source] - 执行重铸的玩家
+		 * @param { Player | null } [source] - 执行重铸的玩家
 		 * @param { boolean } [strict] - 是否执行合法性校验
 		 */
 		cardRecastable(card, player, source, strict) {
@@ -11074,7 +11415,6 @@ export class Library {
 		 */
 		cardSavable(card, player, target) {
 			if (get.itemtype(card) === "card") {
-				// @ts-expect-error 我们需要ts
 				const mod2 = game.checkMod(card, player, "unchanged", "cardEnabled2", player);
 				if (mod2 !== "unchanged") {
 					return Boolean(mod2);
@@ -11105,7 +11445,7 @@ export class Library {
 			if (
 				player._hookTrigger &&
 				player._hookTrigger.some(i => {
-					const info = lib.skill[i].hookTrigger;
+					const info = requireRegisteredSkill(lib.skill, i).hookTrigger;
 					return info && info.block && info.block(event, player, triggerName, skill);
 				})
 			) {
@@ -11113,7 +11453,7 @@ export class Library {
 			}
 			const info = get.info(skill);
 			if (!info) {
-				console.error(new ReferenceError("缺少info的技能:", skill));
+				console.error(new ReferenceError("缺少info的技能:"));
 				return false;
 			}
 			if (!game.expandSkills(player.getSkills("invisible").concat(lib.skill.global)).includes(skill)) {
@@ -11134,19 +11474,20 @@ export class Library {
 			if (!info.forceOut && (player.isOut() || player.removed)) {
 				return false;
 			}
-			if (!info.trigger) {
+			const triggers = info.trigger;
+			if (!triggers) {
 				return false;
 			}
 			if (
-				!Object.keys(info.trigger).some(role => {
+				!Object.keys(triggers).some(role => {
 					if (role !== "global" && player !== event[role]) {
 						return false;
 					}
 					const list = [];
-					if (typeof info.trigger[role] === "string") {
-						list.add(info.trigger[role]);
-					} else if (Array.isArray(info.trigger[role])) {
-						list.addArray(info.trigger[role]);
+					if (typeof triggers[role] === "string") {
+						list.add(triggers[role]);
+					} else if (Array.isArray(triggers[role])) {
+						list.addArray(triggers[role]);
 					}
 					if (list.includes(triggerName)) {
 						return true;
@@ -11174,7 +11515,7 @@ export class Library {
 			if (info.usable !== undefined) {
 				let num = info.usable;
 				if (typeof num === "function") {
-					num = info.usable(skill, player);
+					num = num.call(info, skill, player);
 				}
 				if (typeof num === "number" && (player.getStat("triggerSkill")[skill] ?? 0) >= num) {
 					return false;
@@ -11188,7 +11529,7 @@ export class Library {
 					continue;
 				}
 				const skillName = item.slice(9);
-				if (!lib.skill[skillName]) {
+				if (!getRegisteredSkill(lib.skill, skillName)) {
 					continue;
 				}
 				const skills = game.expandSkills([skillName]);
@@ -11209,7 +11550,7 @@ export class Library {
 		filterEnable(event, player, skill) {
 			const info = get.info(skill);
 			if (!info) {
-				console.error(new ReferenceError("缺少info的技能:", skill));
+				console.error(new ReferenceError("缺少info的技能:"));
 				return false;
 			}
 			if (!game.expandSkills(player.getSkills(false).concat(lib.skill.global)).includes(skill)) {
@@ -11249,14 +11590,18 @@ export class Library {
 				if (info.viewAsFilter && info.viewAsFilter(player) === false) {
 					return false;
 				}
-				if (event.filterCard && !event.filterCard(get.autoViewAs(info.viewAs, "unsure"), player, event)) {
-					return false;
+				if (event.filterCard) {
+					const viewAs = info.viewAs;
+					const card = typeof viewAs === "string" ? { name: viewAs } : viewAs;
+					if (!event.filterCard(get.autoViewAs(card, "unsure"), player, event)) {
+						return false;
+					}
 				}
 			}
 			if (info.usable !== undefined) {
 				let num = info.usable;
 				if (typeof num === "function") {
-					num = info.usable(skill, player);
+					num = num.call(info, skill, player);
 				}
 				if (typeof num === "number" && get.skillCount(skill, player) >= num) {
 					return false;
@@ -11276,7 +11621,7 @@ export class Library {
 					continue;
 				}
 				const skillName = item.slice(9);
-				if (!lib.skill[skillName]) {
+				if (!getRegisteredSkill(lib.skill, skillName)) {
 					continue;
 				}
 				const skills = game.expandSkills([skillName]);
@@ -11367,7 +11712,7 @@ export class Library {
 			if (!lib.translate[skill] || !lib.translate[skill + "_info"]) {
 				return true;
 			}
-			const info = lib.skill[skill];
+			const info = getRegisteredSkill(lib.skill, skill);
 			return Boolean(!info || info.unique || info.temp || info.sub || info.fixed || info.vanish);
 		},
 		/**
@@ -11375,23 +11720,23 @@ export class Library {
 		 *
 		 * @param { Card | VCard | CardBaseUIData } card - 需要判断的牌
 		 * @param { Player } [player] - 使用/发动此牌的角色。
-		 * @param { GameEvent | "forceEnable" } [event] - 当前事件上下文；传`"forceEnable"`时强制跳过牌自身 enable 判断。
+		 * @param { GameEvent | import("./element/gameEvent.js").GameEventParentFallback | "forceEnable" } [event] - 当前事件上下文；传`"forceEnable"`时强制跳过牌自身 enable 判断。
 		 * @returns { boolean }
 		 */
 		cardEnabled(card, player, event) {
-			player ??= get.player();
-			if (!player) {
+			const currentPlayer = player ?? get.player();
+			if (!currentPlayer) {
 				return false;
 			}
 			if (get.itemtype(card) === "card") {
-				const mod2 = game.checkMod(card, player, event, "unchanged", "cardEnabled2", player);
+				const mod2 = game.checkMod(card, currentPlayer, event, "unchanged", "cardEnabled2", currentPlayer);
 				if (mod2 !== "unchanged") {
 					return Boolean(mod2);
 				}
 			}
 			const card2 = get.autoViewAs(card);
 			if (event === "forceEnable") {
-				const mod = game.checkMod(card2, player, event, "unchanged", "cardEnabled", player);
+				const mod = game.checkMod(card2, currentPlayer, event, "unchanged", "cardEnabled", currentPlayer);
 				if (mod != "unchanged") {
 					return Boolean(mod);
 				}
@@ -11401,7 +11746,7 @@ export class Library {
 				if (!filter) {
 					return false;
 				}
-				const mod = game.checkMod(card2, player, event, "unchanged", "cardEnabled", player);
+				const mod = game.checkMod(card2, currentPlayer, event, "unchanged", "cardEnabled", currentPlayer);
 				if (mod !== "unchanged") {
 					return Boolean(mod);
 				}
@@ -11409,7 +11754,7 @@ export class Library {
 					return filter;
 				}
 				if (typeof filter === "function") {
-					return filter(card2, player, event);
+					return filter(card2, currentPlayer, event);
 				}
 			}
 			return false;
@@ -11419,7 +11764,7 @@ export class Library {
 		 *
 		 * @param { Card | VCard | CardBaseUIData } card 
 		 * @param { Player } [player]
-		 * @param { GameEvent } [event]
+		 * @param { GameEvent | import("./element/gameEvent.js").GameEventParentFallback } [event]
 		 * @returns { boolean }
 		 */
 		cardRespondable(card, player, event) {
@@ -11427,24 +11772,27 @@ export class Library {
 			if (event.name !== "chooseToRespond") {
 				return true;
 			}
-			player ??= get.player();
-			if (!player) {
+			const currentPlayer = player ?? get.player();
+			if (!currentPlayer) {
 				return false;
 			}
+			if (typeof event.getParent != "function") {
+				throw new TypeError("card response requires an event parent");
+			}
 			const source = event.getParent()?.player;
-			if (source && source !== player) {
-				if (source.hasSkillTag("norespond", false, [card, player, event], true)) {
+			if (source && source !== currentPlayer) {
+				if (source.hasSkillTag("norespond", false, [card, currentPlayer, event], true)) {
 					return false;
 				}
 			}
 			if (get.itemtype(card) === "card") {
-				const mod2 = game.checkMod(card, player, event, "unchanged", "cardEnabled2", player);
+				const mod2 = game.checkMod(card, currentPlayer, event, "unchanged", "cardEnabled2", currentPlayer);
 				if (mod2 !== "unchanged") {
 					return Boolean(mod2);
 				}
 			}
 			const card2 = get.autoViewAs(card);
-			const mod = game.checkMod(card2, player, "unchanged", "cardRespondable", player);
+			const mod = game.checkMod(card2, currentPlayer, "unchanged", "cardRespondable", currentPlayer);
 			if (mod !== "unchanged") {
 				return Boolean(mod);
 			}
@@ -11455,24 +11803,30 @@ export class Library {
 		 *
 		 * @param { Card | VCard | CardBaseUIData } card - 需要判断的牌
 		 * @param { Player } [player] - 使用/发动此牌的角色。
-		 * @param { GameEvent } [event] - 当前事件上下文。
+		 * @param { GameEvent | import("./element/gameEvent.js").GameEventParentFallback } [event] - 当前事件上下文。
 		 * @returns { boolean }
 		 */
 		cardUsable2(card, player, event) {
 			const card2 = get.autoViewAs(card);
 			const info = get.info(card2);
 			if (info.updateUsable === "phaseUse") {
-				event ??= _status.event;
-				if (event.type === "chooseToUse_button") {
-					event = event.getParent();
-					if (event == null) {
+				let currentEvent = event ?? _status.event;
+				if (currentEvent.type === "chooseToUse_button") {
+					if (typeof currentEvent.getParent != "function") {
+						throw new TypeError("phase-use card check requires an event parent");
+					}
+					currentEvent = currentEvent.getParent();
+					if (currentEvent == null) {
 						return false;
 					}
 				}
 				if (player !== get.player()) {
 					return true;
 				}
-				const phaseUseEvent = event.getParent();
+				if (typeof currentEvent.getParent != "function") {
+					throw new TypeError("phase-use card check requires an event parent");
+				}
+				const phaseUseEvent = currentEvent.getParent();
 				if (phaseUseEvent == null) {
 					return false;
 				}
@@ -11483,43 +11837,49 @@ export class Library {
 					return true;
 				}
 			}
-			player ??= get.player();
-			if (!player) {
+			const currentPlayer = player ?? get.player();
+			if (!currentPlayer) {
 				return false;
 			}
 			let num = info.usable;
 			if (typeof num === "function") {
-				num = num(card2, player);
+				num = num(card2, currentPlayer);
 			}
-			num = game.checkMod(card2, player, num, "cardUsable", player);
+			num = game.checkMod(card2, currentPlayer, num, "cardUsable", currentPlayer);
 			if (typeof num !== "number") {
 				return true;
 			}
-			return player.countUsed(card2) < num;
+			return currentPlayer.countUsed(card2) < num;
 		},
 		/**
 		 * 判断一张牌对某角色在指定事件中是否可使用。
 		 *
 		 * @param { Card | VCard | CardBaseUIData } card - 需要判断的牌
 		 * @param { Player } player - 使用/发动此牌的角色。
-		 * @param { GameEvent } [event] - 当前事件上下文。
+		 * @param { GameEvent | import("./element/gameEvent.js").GameEventParentFallback } [event] - 当前事件上下文。
 		 * @returns { boolean }
 		 */
 		cardUsable(card, player, event) {
 			const card2 = get.autoViewAs(card);
 			const info = get.info(card2);
-			event ??= _status.event;
-			if (event.type === "chooseToUse_button") {
-				event = event.getParent();
-				if (event == null) {
+			let currentEvent = event ?? _status.event;
+			if (currentEvent.type === "chooseToUse_button") {
+				if (typeof currentEvent.getParent != "function") {
+					throw new TypeError("phase-use card check requires an event parent");
+				}
+				currentEvent = currentEvent.getParent();
+				if (currentEvent == null) {
 					return false;
 				}
 			}
-			if (player !== event.player) {
+			if (player !== currentEvent.player) {
 				return true;
 			}
 			if (info.updateUsable === "phaseUse") {
-				const phaseUseEvent = event.getParent();
+				if (typeof currentEvent.getParent != "function") {
+					throw new TypeError("phase-use card check requires an event parent");
+				}
+				const phaseUseEvent = currentEvent.getParent();
 				if (phaseUseEvent == null) {
 					return false;
 				}
@@ -11530,7 +11890,7 @@ export class Library {
 					return true;
 				}
 			}
-			event.addCount_extra = true;
+			Object.assign(currentEvent, { addCount_extra: true });
 			let num = info.usable;
 			if (typeof num === "function") {
 				num = num(card2, player);
@@ -11553,11 +11913,9 @@ export class Library {
 		 * @returns { boolean }
 		 */
 		cardDiscardable(card, player, event) {
-			event ??= get.event();
-			if (event != null && typeof event !== "string") {
-				event = event.getParent()?.name;
-			}
-			const mod = game.checkMod(card, player, event, "unchanged", "cardDiscardable", player);
+			const currentEvent = event ?? get.event();
+			const eventName = typeof currentEvent === "string" ? currentEvent : currentEvent?.getParent()?.name;
+			const mod = game.checkMod(card, player, eventName, "unchanged", "cardDiscardable", player);
 			if (mod !== "unchanged") {
 				return Boolean(mod);
 			}
@@ -11573,14 +11931,12 @@ export class Library {
 		 * @returns { boolean }
 		 */
 		canBeDiscarded(card, player, target, event) {
-			event ??= _status.event;
-			if (typeof event !== "string") {
-				event = event.getParent()?.name;
-			}
-			if (player === target && !lib.filter.cardDiscardable(card, player, event)) {
+			const currentEvent = event ?? _status.event;
+			const eventName = typeof currentEvent === "string" ? currentEvent : currentEvent.getParent()?.name;
+			if (player === target && !lib.filter.cardDiscardable(card, player, eventName)) {
 				return false;
 			}
-			const mod = game.checkMod(card, player, target, event, "unchanged", "canBeDiscarded", target);
+			const mod = game.checkMod(card, player, target, eventName, "unchanged", "canBeDiscarded", target);
 			if (mod !== "unchanged") {
 				return Boolean(mod);
 			}
@@ -11596,11 +11952,9 @@ export class Library {
 		 * @returns { boolean }
 		 */
 		canBeGained(card, player, target, event) {
-			event ??= _status.event;
-			if (typeof event !== "string") {
-				event = event.getParent()?.name;
-			}
-			const mod = game.checkMod(card, player, target, event, "unchanged", "canBeGained", target);
+			const currentEvent = event ?? _status.event;
+			const eventName = typeof currentEvent === "string" ? currentEvent : currentEvent.getParent()?.name;
+			const mod = game.checkMod(card, player, target, eventName, "unchanged", "canBeGained", target);
 			if (mod !== "unchanged") {
 				return Boolean(mod);
 			}
@@ -11609,7 +11963,7 @@ export class Library {
 		/**
 		 * 判断一张牌是否应包含在当前事件的AI选择中。
 		 *
-		 * @param { string } card - 需要判断的牌
+		 * @param { Card } card - 需要判断的牌
 		 * @returns { boolean }
 		 */
 		cardAiIncluded(card) {
@@ -11629,8 +11983,11 @@ export class Library {
 		 */
 		filterCard(card, player, event) {
 			const info = get.info(card);
-			player ??= get.player();
-			if (!lib.filter.cardEnabled(card, player, event) || !lib.filter.cardUsable(card, player, event)) {
+			const currentPlayer = player ?? get.player();
+			if (!currentPlayer) {
+				return false;
+			}
+			if (!lib.filter.cardEnabled(card, currentPlayer, event) || !lib.filter.cardUsable(card, currentPlayer, event)) {
 				return false;
 			}
 			if (info.notarget) {
@@ -11648,17 +12005,17 @@ export class Library {
 			} else if (get.itemtype(select) === "select") {
 				range = select;
 			} else if (typeof select === "function") {
-				range = select(card, player);
+				range = select(card, currentPlayer);
 				if (typeof range === "number") {
 					range = [range, range];
 				}
 			}
-			game.checkMod(card, player, range, "selectTarget", player);
+			game.checkMod(card, currentPlayer, range, "selectTarget", currentPlayer);
 			if (!range || range[1] !== -1) {
 				return true;
 			}
 			const filterTarget = event?.filterTarget || lib.filter.filterTarget;
-			return game.hasPlayer2(current => filterTarget(card, player, current), true);
+			return game.hasPlayer2(current => filterTarget(card, currentPlayer, current), true);
 		},
 		/**
 		 * 判断一张牌在当前选择事件中是否可以指定目标。
@@ -11974,10 +12331,11 @@ export class Library {
 			if (!card) {
 				card = get.card();
 			}
-			if (!player) {
-				player = get.player();
-			}
+			const currentPlayer = player ?? get.player();
 			if (card == null) {
+				return;
+			}
+			if (!currentPlayer) {
 				return;
 			}
 			let range;
@@ -11993,12 +12351,12 @@ export class Library {
 			} else if (get.itemtype(select) === "select") {
 				range = select;
 			} else if (typeof select === "function") {
-				range = select(card, player);
+				range = select(card, currentPlayer);
 				if (typeof range === "number") {
 					range = [range, range];
 				}
 			}
-			game.checkMod(card, player, range, "selectTarget", player);
+			game.checkMod(card, currentPlayer, range, "selectTarget", currentPlayer);
 			if (info.singleCard && info.filterAddedTarget) {
 				return [range[0] * 2, range[1] * 2];
 			}
@@ -12061,7 +12419,11 @@ export class Library {
 			if (ui.tempnowuxie?.classList.contains("glow") && event.state > 0) {
 				const triggerEvent = event.getTrigger();
 				if (triggerEvent) {
-					if (ui.tempnowuxie._origin === triggerEvent.parent.id) {
+					const parent = triggerEvent.parent;
+					if (!parent) {
+						throw new TypeError("wuxie trigger requires a parent event");
+					}
+					if (ui.tempnowuxie._origin === parent.id) {
 						return true;
 					}
 				} else if (ui.tempnowuxie._origin === _status.event.id2) {
@@ -12199,7 +12561,7 @@ export class Library {
 				if (type == "equip") {
 					var type2 = get.subtype(name, false);
 					if (type2 && type2.slice) {
-						return 1 + parseInt(type2.slice(5) || 7);
+						return 1 + parseInt(String(type2.slice(5) || 7));
 					}
 					return 8.5;
 				}
@@ -12243,7 +12605,7 @@ export class Library {
 				return delta;
 			}
 			delta = parseInt(a.dataset.position) - parseInt(b.dataset.position);
-			if (player.side == game.me.side) {
+			if (player.side == game.getMe().side) {
 				return delta;
 			}
 			return -delta;
@@ -12277,10 +12639,12 @@ export class Library {
 			return i2.priority - i1.priority;
 		},
 		number: function (a, b) {
-			return get.number(a) - get.number(b);
+			const normalize = value => (value === null ? 0 : typeof value == "number" ? value : Number(value));
+			return normalize(get.number(a)) - normalize(get.number(b));
 		},
 		number2: function (a, b) {
-			return get.number(b) - get.number(a);
+			const normalize = value => (value === null ? 0 : typeof value == "number" ? value : Number(value));
+			return normalize(get.number(b)) - normalize(get.number(a));
 		},
 		capt: function (a, b) {
 			var aa = a,
@@ -12317,27 +12681,18 @@ export class Library {
 			return 0;
 		},
 	};
-	/**
-	 * @type {{
-	 * 	global: string[];
-	 * 	globalmap: Record<string, Player[]>;
-	 * 	storage: Record<string, any>;
-	 * 	undist: Record<string, any>;
-	 * 	thers: Record<string, any>;
-	 * 	zhu: Record<string, any>;
-	 * 	zhuSkill: Record<string, any>;
-	 * 	land_used: Record<string, any>;
-	 * 	[key: string]: Skill;
-	 * }}
-	 */
-	skill = new Proxy(skills, {
+	/** @type {import("./skillRegistry.js").SkillRegistry} */
+	skill = (() => {
+		const target = skills;
+		return new Proxy(target, {
 		set(target, prop, newValue) {
 			if (typeof prop === "string" && typeof newValue === "object") {
 				newValue.skill_id ??= prop;
 			}
 			return Reflect.set(target, prop, newValue);
 		},
-	});
+		});
+	})();
 	/** @type {Object<string, import("./element/character.js").Character>} */
 	character = new Proxy(
 		{},
@@ -12370,8 +12725,12 @@ export class Library {
 			},
 			/**
 			 * @this {import("./element/client.js").Client}
+			 * @param {number} version
+			 * @param {ClientInitConfig} config
+			 * @param {string | undefined} banned_info
 			 */
 			init(version, config, banned_info) {
+				const node = lib.requireNodeServer();
 				/*var show_deckMonitor = false;
 				if (lib.config.show_deckMonitor) {
 					// && lib.config.show_deckMonitor_online
@@ -12386,7 +12745,7 @@ export class Library {
 				}, show_deckMonitor);*/
 				this.onlineKey = config.onlineKey;
 				var banBlacklist = lib.config.banBlacklist === undefined ? [] : lib.config.banBlacklist;
-				if (lib.node.banned.includes(banned_info) || banBlacklist.includes(config.onlineKey)) {
+				if ((typeof banned_info == "string" && node.banned.includes(banned_info)) || (typeof config.onlineKey == "string" && banBlacklist.includes(config.onlineKey))) {
 					this.send("denied", "banned");
 				} else if (config.id && lib.playerOL && lib.playerOL[config.id]) {
 					var player = lib.playerOL[config.id];
@@ -12397,6 +12756,7 @@ export class Library {
 					game.broadcast(function (player) {
 						player.setNickname();
 					}, player);
+					const onreconnect = "onreconnect" in _status && Array.isArray(_status.onreconnect) ? _status.onreconnect : undefined;
 					this.send(
 						"reinit",
 						lib.configOL,
@@ -12404,27 +12764,27 @@ export class Library {
 						game.getState ? game.getState() : {},
 						game.ip,
 						null,
-						_status.onreconnect,
+						onreconnect,
 						_status.cardtag,
 						_status.postReconnect
 					);
 				} else if (version != lib.versionOL) {
 					this.send("denied", "version");
-					lib.node.clients.remove(this);
+					node.clients.remove(this);
 					this.closed = true;
 				} else if (get.config("check_versionLocal", "connect") && config.versionLocal != lib.version) {
 					this.send("denied", "version");
-					lib.node.clients.remove(this);
+					node.clients.remove(this);
 					this.closed = true;
 				} else if (get.config("check_extension", "connect") && config.extension) {
 					this.send("denied", "extension");
 				} else if (!_status.waitingForPlayer) {
 					if (!config.nickname) {
 						this.send("denied", "banned");
-						lib.node.clients.remove(this);
+						node.clients.remove(this);
 						this.closed = true;
 					} else if (game.phaseNumber && lib.configOL.observe) {
-						lib.node.observing.push(this);
+						node.observing.push(this);
 						this.send(
 							"reinit",
 							lib.configOL,
@@ -12438,19 +12798,23 @@ export class Library {
 						);
 						// 没有系统提示的接口喵？
 						game.log("玩家 ", `#y${get.plainText(config.nickname)}`, " 进入房间观战");
-						game.me.chat(
+						game.getMe().chat(
 							`玩家 <span style="font-weight: bold; color: rgb(126, 180, 255)">${get.plainText(config.nickname)}</span> 进入房间观战`
 						);
 						if (!ui.removeObserve) {
-							ui.removeObserve = ui.create.system(
-								"移除旁观",
-								function () {
+								ui.removeObserve = ui.create.system(
+									"移除旁观",
+									/** @this {HTMLElement} */ function () {
 									lib.configOL.observe = false;
 									if (game.onlineroom) {
 										game.send("server", "config", lib.configOL);
 									}
-									while (lib.node.observing.length) {
-										lib.node.observing.shift().ws.close();
+									const server = lib.requireNodeServer();
+									while (server.observing.length) {
+										const observer = server.observing.shift();
+										if (observer) {
+											observer.ws.close();
+										}
 									}
 									this.remove();
 									delete ui.removeObserve;
@@ -12461,26 +12825,27 @@ export class Library {
 						}
 					} else {
 						this.send("denied", "gaming");
-						lib.node.clients.remove(this);
+						node.clients.remove(this);
 						this.closed = true;
 					}
-				} else if (lib.node.clients.length >= parseInt(lib.configOL.number)) {
+				} else if (node.clients.length >= parseInt(lib.configOL.number)) {
 					this.send("denied", "number");
-					lib.node.clients.remove(this);
+					node.clients.remove(this);
 					this.closed = true;
 				} else {
 					if (config) {
 						this.avatar = config.avatar;
 						this.nickname = config.nickname;
 					}
-					for (var i = 0; i < game.connectPlayers.length; i++) {
-						if (game.connectPlayers[i].classList.contains("unselectable2")) {
+					const connectPlayers = requireConnectPlayers();
+					for (var i = 0; i < connectPlayers.length; i++) {
+						if (connectPlayers[i].classList.contains("unselectable2")) {
 							continue;
 						}
-						if (game.connectPlayers[i] != game.me && !game.connectPlayers[i].playerid) {
-							game.connectPlayers[i].playerid = this.id;
-							game.connectPlayers[i].initOL(this.nickname, this.avatar);
-							game.connectPlayers[i].ws = this;
+						if (connectPlayers[i] != game.me && !connectPlayers[i].playerid) {
+							connectPlayers[i].playerid = this.id;
+							connectPlayers[i].initOL(this.nickname, this.avatar);
+							connectPlayers[i].ws = this;
 							break;
 						}
 					}
@@ -12506,7 +12871,7 @@ export class Library {
 			 * @this {import("./element/client.js").Client}
 			 */
 			result(result) {
-				if (lib.node.observing.includes(this)) {
+				if (lib.requireNodeServer().observing.includes(this)) {
 					return;
 				}
 				var player = lib.playerOL[this.id];
@@ -12518,7 +12883,7 @@ export class Library {
 			 * @this {import("./element/client.js").Client}
 			 */
 			tempResult(result) {
-				if (lib.node.observing.includes(this)) {
+				if (lib.requireNodeServer().observing.includes(this)) {
 					return;
 				}
 				var player = lib.playerOL[this.id];
@@ -12544,7 +12909,11 @@ export class Library {
 							lib.configOL[i] = config[i];
 						}
 						if (ui.connectStartBar) {
-							ui.connectStartBar.firstChild.innerHTML = get.modetrans(lib.configOL, true);
+							const roomLabel = ui.connectStartBar.firstChild;
+							if (!(roomLabel instanceof HTMLElement)) {
+								throw new TypeError("The connection start bar requires its room label");
+							}
+							roomLabel.innerHTML = get.modetrans(lib.configOL, true);
 						}
 					}, config);
 					if (lib.configOL.mode == "identity" && lib.configOL.identity_mode == "zhong" && game.connectPlayers) {
@@ -12557,9 +12926,10 @@ export class Library {
 					if (game.onlineroom) {
 						game.send("server", "config", lib.configOL);
 					}
-					for (var i = 0; i < game.connectPlayers.length; i++) {
-						if (game.connectPlayers[i].playerid == this.id) {
-							game.connectPlayers[i].chat("房间设置已更改");
+					const connectPlayers = requireConnectPlayers();
+					for (var i = 0; i < connectPlayers.length; i++) {
+						if (connectPlayers[i].playerid == this.id) {
+							connectPlayers[i].chat("房间设置已更改");
 						}
 					}
 				}
@@ -12585,7 +12955,7 @@ export class Library {
 			 * @this {import("./element/client.js").Client}
 			 */
 			throwEmotion(target, emotion, rotate) {
-				if (lib.node.observing.includes(this)) {
+				if (lib.requireNodeServer().observing.includes(this)) {
 					return;
 				}
 				var player = lib.playerOL[this.id];
@@ -12597,7 +12967,7 @@ export class Library {
 			 * @this {import("./element/client.js").Client}
 			 */
 			emotion(id, pack, emotion) {
-				if (lib.node.observing.includes(this)) {
+				if (lib.requireNodeServer().observing.includes(this)) {
 					return;
 				}
 				var that = this;
@@ -12635,7 +13005,7 @@ export class Library {
 			 * @this {import("./element/client.js").Client}
 			 */
 			chat(id, str) {
-				if (lib.node.observing.includes(this)) {
+				if (lib.requireNodeServer().observing.includes(this)) {
 					return;
 				}
 				var that = this;
@@ -12678,7 +13048,7 @@ export class Library {
 			 * @param {Player} player
 			 */
 			giveup(player) {
-				if (lib.node.observing.includes(this) || !player || !player._giveUp) {
+				if (lib.requireNodeServer().observing.includes(this) || !player || !player._giveUp) {
 					return;
 				}
 				var self = lib.playerOL[this.id];
@@ -12699,7 +13069,7 @@ export class Library {
 			 * @this {import("./element/client.js").Client}
 			 */
 			auto() {
-				if (lib.node.observing.includes(this)) {
+				if (lib.requireNodeServer().observing.includes(this)) {
 					return;
 				}
 				var player = lib.playerOL[this.id];
@@ -12715,7 +13085,7 @@ export class Library {
 			 * @this {import("./element/client.js").Client}
 			 */
 			unauto() {
-				if (lib.node.observing.includes(this)) {
+				if (lib.requireNodeServer().observing.includes(this)) {
 					return;
 				}
 				var player = lib.playerOL[this.id];
@@ -12742,7 +13112,7 @@ export class Library {
 			 * @param {string|null} id 本次请求id，如果给出了请求id代表服务器应该进行响应喵
 			 */
 			dataSync(subject, id) {
-				if (lib.node.observing.includes(this)) {
+				if (lib.requireNodeServer().observing.includes(this)) {
 					return;
 				}
 
@@ -12786,8 +13156,13 @@ export class Library {
 			log() {
 				var items = [];
 				try {
+					const sandbox = this.sandbox;
+					if (!sandbox) {
+						this.send("log", ["err"]);
+						return;
+					}
 					for (var i = 0; i < arguments.length; i++) {
-						items.push(this.sandbox.exec(`return ${arguments[i]}`));
+						items.push(sandbox.exec(`return ${arguments[i]}`));
 					}
 				} catch (e) {
 					this.send("log", ["err"]);
@@ -12802,7 +13177,7 @@ export class Library {
 			 * @param {string[]} cardid_list 要同步的手牌id序列
 			 */
 			syncHandcard(cardid_list) {
-				if (lib.node.observing.includes(this)) {
+				if (lib.requireNodeServer().observing.includes(this)) {
 					return;
 				}
 
@@ -12836,18 +13211,23 @@ export class Library {
 					lib.config.banned_info
 				);
 				if (ui.connecting && !ui.connecting.splashtimeout) {
-					ui.connecting.firstChild.innerHTML = "重连成功";
+					const firstChild = ui.connecting.firstElementChild;
+					if (firstChild instanceof HTMLElement) {
+						firstChild.innerHTML = "重连成功";
+					}
 				}
 			},
 			onconnection: id => lib.init.connection((lib.wsOL[id] = new lib.element.NodeWS(id))),
 			onmessage: function (id, message) {
-				if (lib.wsOL[id]) {
-					lib.wsOL[id].onmessage(message);
+				const socket = lib.wsOL[id];
+				if (socket && "onmessage" in socket && typeof socket.onmessage == "function") {
+					socket.onmessage(message);
 				}
 			},
 			onclose: function (id) {
-				if (lib.wsOL[id]) {
-					lib.wsOL[id].onclose();
+				const socket = lib.wsOL[id];
+				if (socket && "onclose" in socket && typeof socket.onclose == "function") {
+					socket.onclose();
 				}
 			},
 			selfclose: function () {
@@ -12858,7 +13238,10 @@ export class Library {
 						game.saveConfig("tmp_user_roomId");
 					}
 				}
-				game.ws.close();
+				const ws = game.ws;
+				if (ws) {
+					ws.close();
+				}
 			},
 			reloadroom: function (forced) {
 				// if (window.isNonameServer && (forced || !_status.protectingroom)) {
@@ -12924,7 +13307,7 @@ export class Library {
 							function () {
 								if (!_status.creatingroom) {
 									_status.creatingroom = true;
-									ui.click.connectMenu();
+									ui.click.connectMenu?.();
 								}
 							}
 						);
@@ -12956,8 +13339,12 @@ export class Library {
 						true
 					);
 
+					if (!Array.isArray(ui.rooms)) {
+						return;
+					}
+					const rooms = ui.rooms;
 					var findRoom = function (id) {
-						for (var room of ui.rooms) {
+						for (var room of rooms) {
 							if (room.key == id) {
 								return room;
 							}
@@ -13026,49 +13413,98 @@ export class Library {
 				}
 			},
 			updaterooms: function (list, clients) {
-				if (ui.rooms) {
+				/**
+				 * @param {string | HTMLDivElement | Player[] | Card[]} node
+				 * @returns {node is HTMLDivElement & {
+				 * 	roomindex: number,
+				 * 	initRoom: Player["initRoom"],
+				 * 	key?: string,
+				 * 	serving?: boolean,
+				 * 	version?: number | null,
+				 * }}
+				 */
+				function isConnectRoomNode(node) {
+					return node instanceof HTMLDivElement;
+				}
+				/**
+				 * @param {HTMLDivElement} node
+				 * @returns {node is HTMLDivElement & {
+				 * 	key: string,
+				 * 	roomfull: boolean,
+				 * 	roomgaming: boolean,
+				 * 	roomempty: boolean,
+				 * 	version: number | string | null,
+				 * 	serving: boolean,
+				 * 	config?: {observe?: boolean},
+				 * }}
+				 */
+				function isConnectRoomTarget(node) {
+					return (
+						"key" in node &&
+						"roomfull" in node &&
+						"roomgaming" in node &&
+						"roomempty" in node &&
+						"version" in node &&
+						"serving" in node &&
+						typeof node.key == "string" &&
+						typeof node.roomfull == "boolean" &&
+						typeof node.roomgaming == "boolean" &&
+						typeof node.roomempty == "boolean" &&
+						(typeof node.version == "number" || typeof node.version == "string" || node.version === null) &&
+						typeof node.serving == "boolean"
+					);
+				}
+				if (Array.isArray(ui.rooms)) {
+					const rooms = ui.rooms;
+					const roombase = ui.roombase;
+					if (!roombase) {
+						return;
+					}
 					var map = {},
 						map2 = {};
-					for (var i of ui.rooms) {
+					for (var i of rooms) {
 						map2[i.key] = true;
 					}
-					for (var i of list) {
+					for (let i of list) {
 						if (!i) {
 							continue;
 						}
 						map[i[4]] = i;
 					}
 					ui.window.classList.add("more_room");
-					for (var i = 0; i < ui.rooms.length; i++) {
-						if (!map[ui.rooms[i].key]) {
-							ui.rooms[i].remove();
-							ui.rooms.splice(i--, 1);
+					for (let i = 0; i < rooms.length; i++) {
+						if (!map[rooms[i].key]) {
+							rooms[i].remove();
+							rooms.splice(i--, 1);
 						} else {
-							ui.rooms[i].initRoom(list[i]);
+							rooms[i].initRoom(list[i]);
 						}
 					}
-					for (var i of list) {
+					for (let i of list) {
 						if (!i) {
 							continue;
 						}
 						map[i[4]] = i;
 						if (!map2[i[4]]) {
-							var player = ui.roombase.add(
+							var player = roombase.add(
 								'<div class="popup text pointerdiv" style="width:calc(100% - 10px);display:inline-block;white-space:nowrap">空房间</div>'
 							);
+							if (!isConnectRoomNode(player)) {
+								continue;
+							}
 							player.roomindex = i;
 							player.initRoom = lib.element.Player.prototype.initRoom;
 							player.addEventListener(lib.config.touchscreen ? "touchend" : "click", ui.click.connectroom);
 							player.initRoom(i);
-							ui.rooms.push(player);
+							rooms.push(player);
 						}
 					}
 					if (!_status.requestReadClipboard && get.config("read_clipboard", "connect")) {
 						const read = text => {
 							try {
 								var roomId = text.split("\n")[1].match(/\d+/);
-								var caption = ui.rooms.find(caption => caption.key == roomId);
-								if (caption && (_status.read_clipboard_text || confirm(`是否通过复制的内容加入${roomId}房间？`))) {
+								var caption = rooms.find(caption => caption.key == roomId);
+								if (caption && isConnectRoomTarget(caption) && (_status.read_clipboard_text || confirm(`是否通过复制的内容加入${roomId}房间？`))) {
 									ui.click.connectroom.call(caption);
 									delete _status.read_clipboard_text;
 								}
@@ -13110,8 +13546,12 @@ export class Library {
 			},
 			updateclients: function (clients, bool) {
 				if (clients && ui.connectClients) {
-					ui.connectClients.info = clients;
-					ui.connectClientsCount.innerHTML = clients.length;
+					if ("info" in ui.connectClients) {
+						ui.connectClients.info = clients;
+					}
+					if (ui.connectClientsCount) {
+						ui.connectClientsCount.innerHTML = clients.length;
+					}
 				}
 				if (_status.connectClientsCallback) {
 					_status.connectClientsCallback();
@@ -13123,11 +13563,14 @@ export class Library {
 					var num = events.filter(function (evt) {
 						return typeof evt.creator == "string" && (evt.creator == game.onlineKey || !get.is.banWords(evt.content));
 					}).length;
-					if (num) {
-						ui.connectEventsCount.innerHTML = num;
-						ui.connectEventsCount.show();
-					} else {
-						ui.connectEventsCount.hide();
+					const connectEventsCount = ui.connectEventsCount;
+					if (connectEventsCount) {
+						if (num) {
+							connectEventsCount.innerHTML = num;
+							connectEventsCount.show();
+						} else {
+							connectEventsCount.hide();
+						}
 					}
 					if (_status.connectEventsCallback) {
 						_status.connectEventsCallback();
@@ -13250,11 +13693,11 @@ export class Library {
 				for (var i in lib.characterPack) {
 					for (var j in lib.characterPack[i]) {
 						lib.character[j] = lib.character[j] || lib.characterPack[i][j];
-					}
-				}
-			},
+						}
+									}
+										},
 			reinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect) {
-				ui.auto.show();
+						ui.auto.show();
 				ui.pause.show();
 				game.clearConnect();
 				clearTimeout(_status.createNodeTimeout);
@@ -13284,7 +13727,7 @@ export class Library {
 				lib.cardOL = {};
 				lib.vcardOL = {};
 
-				game.loadModeAsync(config.mode, function (mode) {
+				game.loadModeAsync(config.mode, /** @this {void} */ function (mode) {
 					for (var i in mode.ai) {
 						if (typeof mode.ai[i] == "object") {
 							if (ai[i] == undefined) {
@@ -13373,8 +13816,8 @@ export class Library {
 					}
 					postReconnect = get.parsedResult(postReconnect);
 					for (var i in postReconnect) {
-						if (Array.isArray(postReconnect[i])) {
-							postReconnect[i].shift().apply(this, postReconnect[i]);
+							if (Array.isArray(postReconnect[i])) {
+								postReconnect[i].shift().apply(this, postReconnect[i]);
 						}
 					}
 					state = get.parsedResult(state);
@@ -13389,7 +13832,7 @@ export class Library {
 					for (var i in state.players) {
 						var info = state.players[i];
 						var player = ui.create.player(ui.arena).addTempClass("start");
-						player.dataset.position = info.position < pos ? info.position - pos + parseInt(state.number) : info.position - pos;
+						player.dataset.position = String(info.position < pos ? info.position - pos + parseInt(state.number) : info.position - pos);
 						if (i == observe || i == game.onlineID) {
 							game.me = player;
 						}
@@ -13466,7 +13909,7 @@ export class Library {
 								player.addVirtualJudge(info.vcardsMap.judges[i], info.vcardsMap.judges[i].cards);
 							}
 						}*/
-						for (var i = 0; i < info.equips.length; i++) {
+						for (let i = 0; i < info.equips.length; i++) {
 							let card = info.equips[i],
 								id = card.cardid,
 								map = info.equips_map[id];
@@ -13522,7 +13965,7 @@ export class Library {
 								player.node.equips.appendChild(card);
 							}
 						}
-						for (var i = 0; i < info.judges.length; i++) {
+						for (let i = 0; i < info.judges.length; i++) {
 							let card = info.judges[i],
 								id = card.cardid,
 								map = info.judges_map[id];
@@ -13566,24 +14009,24 @@ export class Library {
 							player.node.judges.insertBefore(card, player.node.judges.firstChild);
 						}
 
-						for (var i = 0; i < info.handcards.length; i++) {
+						for (let i = 0; i < info.handcards.length; i++) {
 							info.handcards[i].addGaintag(info.gaintag[i]);
 						}
-						for (var i = 0; i < info.specials.length; i++) {
+						for (let i = 0; i < info.specials.length; i++) {
 							info.specials[i].classList.add("glows");
 						}
 						if (info.expansions.length) {
 							var expansion_gaintag = [];
 							player.$addToExpansion(info.expansions);
-							for (var i = 0; i < info.expansions.length; i++) {
+							for (let i = 0; i < info.expansions.length; i++) {
 								info.expansions[i].addGaintag(info.expansion_gaintag[i]);
 								expansion_gaintag.addArray(info.expansion_gaintag[i]);
 							}
-							for (var i of expansion_gaintag) {
+							for (let i of expansion_gaintag) {
 								player.markSkill[i];
 							}
 						}
-						for (var i = 0; i < info.judges.length; i++) {
+						for (let i = 0; i < info.judges.length; i++) {
 							if (info.views[i] && info.views[i] != info.judges[i]) {
 								info.judges[i].classList.add("fakejudge");
 								info.judges[i].viewAs = info.views[i];
@@ -13629,19 +14072,29 @@ export class Library {
 								return;
 							}
 							if (player.isAlive()) {
-								if (!game.me.identityShown && lib.configOL.mode == "guozhan") {
-									game.me.node.identity.firstChild.innerHTML = "猜";
-									game.me.node.identity.dataset.color = "unknown";
+								const me = game.getMe();
+								if (!me.identityShown && lib.configOL.mode == "guozhan") {
+									const identityLabel = me.node.identity.firstChild;
+									if (!(identityLabel instanceof HTMLElement)) {
+										throw new TypeError("The player identity node requires its label");
+									}
+									identityLabel.innerHTML = "猜";
+									me.node.identity.dataset.color = "unknown";
 								}
 								game.swapPlayer(player);
-								if (!game.me.identityShown && lib.configOL.mode == "guozhan") {
-									game.me.node.identity.firstChild.innerHTML = "";
+								const currentMe = game.getMe();
+								if (!currentMe.identityShown && lib.configOL.mode == "guozhan") {
+									const identityLabel = currentMe.node.identity.firstChild;
+									if (!(identityLabel instanceof HTMLElement)) {
+										throw new TypeError("The player identity node requires its label");
+									}
+									identityLabel.innerHTML = "";
 								}
 							}
 						};
 					} else {
 						if (Array.isArray(onreconnect)) {
-							onreconnect.shift().apply(this, onreconnect);
+								onreconnect.shift().apply(this, onreconnect);
 						}
 					}
 					game.loop();
@@ -13652,7 +14105,9 @@ export class Library {
 						ui.cardPileButton.style.display = "";
 					}
 					if (lib.config.show_commonCardpile) {
-						ui.commonCardPileButton.style.display = "";
+						if (ui.commonCardPileButton) {
+							ui.commonCardPileButton.style.display = "";
+						}
 					}
 					if (!observe && game.me && (game.me.isDead() || _status.over)) {
 						ui.create.exit();
@@ -13662,7 +14117,6 @@ export class Library {
 				});
 			},
 			exec: function (func) {
-				const key = game.onlineKey;
 				if (typeof func == "function") {
 					const isMarshalled = security.isSandboxRequired() && security.importSandbox().Domain.current.isFrom(func);
 					// 被封送的函数额外间隔了四层调用栈
@@ -13676,9 +14130,10 @@ export class Library {
 						level
 					);
 				}
+				const key = game.onlineKey;
 				if (key) {
 					game.onlineKey = key;
-					localStorage.setItem(lib.configprefix + "key", game.onlineKey);
+					localStorage.setItem(lib.configprefix + "key", key);
 				}
 			},
 			denied: function (reason) {
@@ -13720,6 +14175,9 @@ export class Library {
 					default:
 						alert(reason); //其它原因直接弹窗显示
 				}
+				if (!game.ws) {
+					throw new TypeError("Connection denial requires the active WebSocket");
+				}
 				game.ws.close();
 				if (_status.connectDenied) {
 					_status.connectDenied();
@@ -13741,11 +14199,16 @@ export class Library {
 					}
 				}
 			},
+			/** @param {string} id */
 			cancel: function (id) {
 				if (_status.event._parent_id == id) {
 					ui.click.cancel();
 					if (_status.event.getParent().name == "chooseToUse" && _status.event.getParent().id == id) {
-						_status.event.getParent().cancel(null, null, false);
+						const parent = _status.event.getParent();
+						if (typeof parent.cancel != "function") {
+							throw new TypeError("choose-to-use parent requires cancel");
+						}
+						parent.cancel(null, null, false);
 						if (ui.confirm) {
 							ui.confirm.close();
 						}
@@ -13759,11 +14222,13 @@ export class Library {
 					if (ui.confirm) {
 						ui.confirm.close();
 					}
-					if (_status.event.result) {
-						_status.event.result.id = id;
+					const result = _status.event.result;
+					if (typeof result === "object" && result !== null && !Array.isArray(result)) {
+						result.id = id;
 					}
 				}
 			},
+			/** @param {number} id */
 			closeDialog: function (id) {
 				var dialog = get.idDialog(id);
 				if (dialog) {
@@ -13776,8 +14241,9 @@ export class Library {
 				ui.create.dialog.apply(this, args).videoId = id;
 			},
 			gameStart: function () {
-				for (var i = 0; i < game.connectPlayers.length; i++) {
-					game.connectPlayers[i].delete();
+				const connectPlayers = requireConnectPlayers();
+				for (var i = 0; i < connectPlayers.length; i++) {
+					connectPlayers[i].delete();
 				}
 				delete game.connectPlayers;
 				if (ui.connectStartButton) {
@@ -13806,7 +14272,9 @@ export class Library {
 					ui.cardPileButton.style.display = "";
 				}
 				if (lib.config.show_commonCardpile) {
-					ui.commonCardPileButton.style.display = "";
+					if (ui.commonCardPileButton) {
+						ui.commonCardPileButton.style.display = "";
+					}
 				}
 				_status.gameStarted = true;
 				game.showHistory();
@@ -13840,7 +14308,11 @@ export class Library {
 									}
 								}
 							} else {
-								game.connectPlayers[i].node.identity.firstChild.innerHTML = "";
+								const identityLabel = game.connectPlayers[i].node.identity.firstChild;
+								if (!(identityLabel instanceof HTMLElement)) {
+									throw new TypeError("The player identity node requires its label");
+								}
+								identityLabel.innerHTML = "";
 							}
 						} else {
 							game.connectPlayers[i].uninitOL();
@@ -14212,7 +14684,8 @@ export class Library {
 				getSpan: () => {
 					const span = document.createElement("span"),
 						style = span.style;
-					style.writingMode = style.webkitWritingMode = "horizontal-tb";
+					style.setProperty("writing-mode", "horizontal-tb");
+					style.setProperty("-webkit-writing-mode", "horizontal-tb");
 					style.fontFamily = "MotoyaLMaru";
 					style.transform = "scaleY(0.85)";
 					span.textContent = "SP";
@@ -14226,7 +14699,8 @@ export class Library {
 				getSpan: () => {
 					const span = document.createElement("span"),
 						style = span.style;
-					style.writingMode = style.webkitWritingMode = "horizontal-tb";
+					style.setProperty("writing-mode", "horizontal-tb");
+					style.setProperty("-webkit-writing-mode", "horizontal-tb");
 					style.fontFamily = "MotoyaLMaru";
 					style.transform = "scaleY(0.85)";
 					span.textContent = "OL";
@@ -14240,7 +14714,8 @@ export class Library {
 				getSpan: () => {
 					const span = document.createElement("span"),
 						style = span.style;
-					style.writingMode = style.webkitWritingMode = "horizontal-tb";
+					style.setProperty("writing-mode", "horizontal-tb");
+					style.setProperty("-webkit-writing-mode", "horizontal-tb");
 					style.fontFamily = "MotoyaLMaru";
 					style.transform = "scaleY(0.85)";
 					span.textContent = "RE";
@@ -14255,7 +14730,11 @@ export class Library {
 					const simple = lib.config.buttoncharacter_prefix == "simple",
 						span = document.createElement("span");
 					if (lib.characterPack.shiji && name in lib.characterPack.shiji) {
-						for (const entry of Object.entries(lib.characterSort.shiji)) {
+						const shijiSort = lib.characterSort.shiji;
+						if (!shijiSort) {
+							throw new TypeError("shiji character sorting is not initialized");
+						}
+						for (const entry of Object.entries(shijiSort)) {
 							if (!entry[1].includes(name)) {
 								continue;
 							}
@@ -14326,7 +14805,8 @@ export class Library {
 				getSpan: () => {
 					const span = document.createElement("span"),
 						style = span.style;
-					style.writingMode = style.webkitWritingMode = "horizontal-tb";
+					style.setProperty("writing-mode", "horizontal-tb");
+					style.setProperty("-webkit-writing-mode", "horizontal-tb");
 					style.fontFamily = "MotoyaLMaru";
 					style.transform = "scaleY(0.85)";
 					span.textContent = "TW";
@@ -14815,7 +15295,8 @@ export class Library {
 				getSpan: () => {
 					const span = document.createElement("span"),
 						style = span.style;
-					style.writingMode = style.webkitWritingMode = "horizontal-tb";
+					style.setProperty("writing-mode", "horizontal-tb");
+					style.setProperty("-webkit-writing-mode", "horizontal-tb");
 					style.fontFamily = "MotoyaLMaru";
 					style.transform = "scaleY(0.85)";
 					span.textContent = "EU";
@@ -14829,7 +15310,8 @@ export class Library {
 				getSpan: () => {
 					const span = document.createElement("span"),
 						style = span.style;
-					style.writingMode = style.webkitWritingMode = "horizontal-tb";
+					style.setProperty("writing-mode", "horizontal-tb");
+					style.setProperty("-webkit-writing-mode", "horizontal-tb");
 					style.fontFamily = "MotoyaLMaru";
 					style.transform = "scaleY(0.85)";
 					span.textContent = "PE";
@@ -14902,7 +15384,8 @@ export class Library {
 				getSpan: () => {
 					const span = document.createElement("span"),
 						style = span.style;
-					style.writingMode = style.webkitWritingMode = "horizontal-tb";
+					style.setProperty("writing-mode", "horizontal-tb");
+					style.setProperty("-webkit-writing-mode", "horizontal-tb");
 					style.fontFamily = "MotoyaLMaru";
 					style.transform = "scaleY(0.85)";
 					span.textContent = "26";
@@ -15026,6 +15509,9 @@ const setAllPropertiesEnumerable = object => {
 			return;
 		}
 		const propertyDescriptor = Object.getOwnPropertyDescriptor(object, propertyKey);
+		if (!propertyDescriptor) {
+			throw new TypeError(`Missing own property descriptor: ${propertyKey}`);
+		}
 		if (!propertyDescriptor.enumerable) {
 			propertyDescriptor.enumerable = true;
 		}
@@ -15037,7 +15523,11 @@ setAllPropertiesEnumerable(lib.element.Player.prototype);
 const cardPrototype = setAllPropertiesEnumerable(lib.element.Card.prototype),
 	vCardPrototype = setAllPropertiesEnumerable(lib.element.VCard.prototype);
 Object.keys(vCardPrototype).forEach(key => {
-	Object.defineProperty(cardPrototype, key, Object.getOwnPropertyDescriptor(vCardPrototype, key));
+	const descriptor = Object.getOwnPropertyDescriptor(vCardPrototype, key);
+	if (!descriptor) {
+		throw new TypeError(`Missing virtual card property descriptor: ${key}`);
+	}
+	Object.defineProperty(cardPrototype, key, descriptor);
 });
 setAllPropertiesEnumerable(lib.element.Button.prototype);
 setAllPropertiesEnumerable(lib.element.GameEvent.prototype);
