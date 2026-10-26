@@ -2009,7 +2009,8 @@ export default {
 				audio: "duanbing",
 				trigger: { player: "useCardToPlayered" },
 				filter(event, player) {
-					return event.card.name == "sha" && !event.getParent().directHit.includes(event.target) && event.targets.length == 1;
+					const directHit = event.getParent().directHit;
+					return event.card.name == "sha" && directHit !== true && !directHit.includes(event.target) && event.targets.length == 1;
 				},
 				forced: true,
 				logTarget: "target",

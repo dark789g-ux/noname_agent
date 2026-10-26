@@ -1622,7 +1622,6 @@ export const transCharacter = async (event, _trigger, player) => {
 			map1.set(skill, cards);
 			await player.lose(cards, ui.special).set("getlx", false);
 		};
-		// @ts-expect-error 祖宗之法就是这么做的
 		await game.doAsyncInOrder(skills1, func, () => 1);
 	}
 	const map2 = new Map();
@@ -1636,7 +1635,6 @@ export const transCharacter = async (event, _trigger, player) => {
 			map2.set(skill, cards);
 			await target.lose(cards, ui.special).set("getlx", false);
 		};
-		// @ts-expect-error 祖宗之法就是这么做的
 		await game.doAsyncInOrder(skills2, func, () => 1);
 	}
 	for (const skill of skills1) {

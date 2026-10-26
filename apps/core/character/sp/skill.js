@@ -27244,7 +27244,8 @@ const skills = {
 				trigger: { player: "useCardToPlayered" },
 				forced: true,
 				filter(event, player) {
-					return event.card.name == "sha" && !event.getParent().directHit.includes(event.target) && get.distance(player, event.target) <= 1;
+					const directHit = event.getParent().directHit;
+					return event.card.name == "sha" && directHit !== true && !directHit.includes(event.target) && get.distance(player, event.target) <= 1;
 				},
 				logTarget: "target",
 				content() {
@@ -38899,7 +38900,8 @@ const skills = {
 		trigger: { player: "useCardToPlayered" },
 		forced: true,
 		filter(event, player) {
-			return event.card.name == "sha" && !event.getParent().directHit.includes(event.target);
+			const directHit = event.getParent().directHit;
+			return event.card.name == "sha" && directHit !== true && !directHit.includes(event.target);
 		},
 		//priority:-1,
 		logTarget: "target",

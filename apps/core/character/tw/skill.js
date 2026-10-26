@@ -22039,8 +22039,9 @@ const skills = {
 					}
 					key.push("caochuan");
 					var bool1 = get.recoverEffect(target, player, player) > 0 ? 1 : -1;
+					const directHit = trigger.getParent()?.directHit;
 					var bool2 =
-						(att > 0 && !hit) || (target.countCards("hs", { name: key }) && !trigger.getParent().directHit.includes(target)) ? 1 : -1;
+						(att > 0 && !hit) || (target.countCards("hs", { name: key }) && !(directHit === true || (Array.isArray(directHit) && directHit.includes(target)))) ? 1 : -1;
 					if (att <= 0 && target.hp - damageNum > 0) {
 						return false;
 					}
@@ -22135,8 +22136,9 @@ const skills = {
 							}
 							key.push("caochuan");
 							var bool1 = get.recoverEffect(target, player, player) > 0 ? 1 : -1;
+							const directHit = trigger.getParent()?.directHit;
 							var bool2 =
-								(att > 0 && !hit) || (target.countCards("hs", { name: key }) && !trigger.getParent().directHit.includes(target))
+								(att > 0 && !hit) || (target.countCards("hs", { name: key }) && !(directHit === true || (Array.isArray(directHit) && directHit.includes(target))))
 									? 1
 									: -1;
 							if (att <= 0 && target.hp - damageNum > 0) {

@@ -3478,7 +3478,8 @@ export default {
 					if (!player.countCards("e")) {
 						return false;
 					}
-					return event.card.name == "sha" && !event.getParent().directHit.includes(event.target);
+					const directHit = event.getParent().directHit;
+					return event.card.name == "sha" && directHit !== true && !directHit.includes(event.target);
 				},
 				logTarget: "target",
 				async content(event, trigger, player) {

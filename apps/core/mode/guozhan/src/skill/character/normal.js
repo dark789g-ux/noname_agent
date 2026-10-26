@@ -2605,7 +2605,11 @@ export default {
 				audio: "duanbing",
 				trigger: { player: "useCardToPlayered" },
 				filter(event, player) {
-					return event.card.name == "sha" && !event.getParent().directHit.includes(event.target) && event.targets.length == 1;
+					if (event.card.name != "sha") {
+						return false;
+					}
+					const directHit = event.getParent()?.directHit;
+					return !(directHit === true || (Array.isArray(directHit) && directHit.includes(event.target))) && event.targets.length == 1;
 				},
 				forced: true,
 				logTarget: "target",

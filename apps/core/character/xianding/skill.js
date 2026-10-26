@@ -16844,10 +16844,11 @@ const skills = {
 			if (choices.length == 1) {
 				result = { index: 1 };
 			} else {
+				const directHit = trigger.getParent().directHit;
 				result = await player
 					.chooseControl()
 					.set("choiceList", choices)
-					.set("choice", !player.hasShan("use") || trigger.getParent().directHit?.includes(player) ? 0 : 1)
+					.set("choice", !player.hasShan("use") || directHit === true || (Array.isArray(directHit) && directHit.includes(player)) ? 0 : 1)
 					.forResult();
 			}
 			if (result?.index == 0) {
@@ -22996,7 +22997,11 @@ const skills = {
 			if (!event.target.inRange(player)) {
 				return false;
 			}
-			return event.card.name == "sha" && !event.getParent().directHit.includes(event.target);
+			if (event.card.name != "sha") {
+				return false;
+			}
+			const directHit = event.getParent().directHit;
+			return Array.isArray(directHit) && !directHit.includes(event.target);
 		},
 		logTarget: "target",
 		async content(event, trigger, player) {

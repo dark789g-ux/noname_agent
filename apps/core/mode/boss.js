@@ -168,39 +168,42 @@ export default () => {
 				event.noslide = true;
 				lib.init.onfree();
 			} else {
-				game.chooseCharacter(function (target) {
-					if (event.current) {
-						event.current.classList.remove("highlight");
-					}
-					event.current = target;
-					game.save("current", target.name);
-					target.classList.add("highlight");
-					if (_status.bosschoice) {
-						var name = target.name;
-						if (lib.boss[target.name] && lib.boss[target.name].controlid) {
-							name = lib.boss[target.name].controlid;
+				game.chooseCharacter(
+					/** @param {Player} target */
+					function (target) {
+						if (event.current) {
+							event.current.classList.remove("highlight");
 						}
-						if (_status.bosschoice.link != name) {
-							lib.boss[_status.bosschoice.name].control("cancel", _status.bosschoice);
-							_status.bosschoice.classList.remove("disabled");
-							_status.bosschoice.close();
-							delete _status.bosschoice;
-						} else {
-							return;
+						event.current = target;
+						game.save("current", target.name);
+						target.classList.add("highlight");
+						if (_status.bosschoice) {
+							var name = target.name;
+							if (lib.boss[target.name] && lib.boss[target.name].controlid) {
+								name = lib.boss[target.name].controlid;
+							}
+							if (_status.bosschoice.link != name) {
+								lib.boss[_status.bosschoice.name].control("cancel", _status.bosschoice);
+								_status.bosschoice.classList.remove("disabled");
+								_status.bosschoice.close();
+								delete _status.bosschoice;
+							} else {
+								return;
+							}
 						}
-					}
-					if (lib.boss[target.name] && lib.boss[target.name].control) {
-						_status.createControl = ui.control.firstChild;
-						_status.bosschoice = lib.boss[target.name].control();
-						_status.bosschoice.name = target.name;
-						_status.bosschoice.link = lib.boss[target.name].controlid || target.name;
-						if (ui.cheat2 && ui.cheat2.dialog == _status.event.dialog) {
-							_status.bosschoice.classList.add("disabled");
+						if (lib.boss[target.name] && lib.boss[target.name].control) {
+							_status.createControl = ui.control.firstChild;
+							_status.bosschoice = lib.boss[target.name].control();
+							_status.bosschoice.name = target.name;
+							_status.bosschoice.link = lib.boss[target.name].controlid || target.name;
+							if (ui.cheat2 && ui.cheat2.dialog == _status.event.dialog) {
+								_status.bosschoice.classList.add("disabled");
+							}
+							delete _status.createControl;
 						}
-						delete _status.createControl;
+						game.Check.button(_status.event);
 					}
-					game.Check.button(_status.event);
-				});
+				);
 			}
 			if (lib.config.test_game) {
 				event.current.classList.remove("highlight");
@@ -1887,6 +1890,7 @@ export default () => {
 					}
 				}
 			},
+			/** @param {(player: Player, event?: MouseEvent | TouchEvent) => void} func */
 			chooseCharacter(func) {
 				var next = game.createEvent("chooseCharacter");
 				next.showConfig = true;

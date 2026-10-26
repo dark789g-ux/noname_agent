@@ -445,7 +445,7 @@ const skills = {
 			if (get.distance(player, event.target) > 2) {
 				return false;
 			}
-			return event.card.name == "sha" && !event.directHit.includes(event.target);
+			return event.card.name == "sha" && Array.isArray(event.directHit) && !event.directHit.includes(event.target);
 		},
 		forced: true,
 		logTarget: "target",

@@ -11314,7 +11314,8 @@ const skills = {
 					return !event.targets.includes(current) && get.distance(player, current) <= 1 && lib.filter.targetEnabled2(event.card, event.player, current);
 				});
 			}
-			return !event.getParent().directHit.includes(event.target) && get.distance(player, event.target) <= 1;
+			const directHit = event.getParent().directHit;
+			return Array.isArray(directHit) && !directHit.includes(event.target) && get.distance(player, event.target) <= 1;
 		},
 		async cost(event, trigger, player) {
 			if (trigger.name == "useCard") {
