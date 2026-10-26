@@ -1,5 +1,34 @@
 import { _status, game, get, lib, ui } from "noname";
 import { Pagination } from "@/util/pagination.js";
+/**
+ * @typedef {import("@/library/element/dialog.js").RuntimeDialogAddItem} DialogAddItem
+ * @typedef {import("@/library/element/dialog.js").RuntimeDialogHandleItem} DialogHandleItem
+ * @typedef {import("@/library/element/dialog.js").RuntimeDialogRowItem} DialogRowItem
+ */
+
+/**
+ * @param {DialogAddItem} item
+ * @returns {item is DialogAddItem[]}
+ */
+function hasNestedDialogAddItems(item) {
+	return Array.isArray(item) && item.every(itemx => Array.isArray(itemx));
+}
+
+/**
+ * @param {DialogAddItem} item
+ * @returns {item is DialogRowItem}
+ */
+function isDialogRowItem(item) {
+	return Array.isArray(item) && item[1] == "addNewRow";
+}
+
+/**
+ * @param {DialogAddItem} item
+ * @returns {item is DialogHandleItem}
+ */
+function isDialogHandleItem(item) {
+	return Array.isArray(item) && item[1] == "handle";
+}
 
 export class Dialog extends HTMLDivElement {
 	/** @type { HTMLDivElement } */
@@ -28,7 +57,7 @@ export class Dialog extends HTMLDivElement {
 	supportsPagination;
 	/**
 	 * dialog中储存的分页元素(用来兼容一个dialog中多个分页的情况)
-	 * @type { Map<HTMLElement, InstanceType<typeof import("../../util/pagination.js").Pagination>> }
+	 * @type { Map<PaginationState["insertAfter"], InstanceType<typeof import("../../util/pagination.js").Pagination>> }
 	 */
 	paginationMap;
 	/**
@@ -83,11 +112,17 @@ export class Dialog extends HTMLDivElement {
 			dialog.contentContainer.onscroll = ui.update;
 		}
 		if (!noTouchScroll) {
-			dialog.contentContainer.ontouchstart = ui.click.dialogtouchStart;
-			dialog.contentContainer.ontouchmove = ui.click.touchScroll;
+			dialog.contentContainer.addEventListener("touchstart", e => {
+				ui.click.dialogtouchStart.call(dialog.contentContainer, e);
+			});
+			dialog.contentContainer.addEventListener("touchmove", e => {
+				ui.click.touchScroll.call(dialog.contentContainer, e);
+			});
 			// @ts-expect-error ignore
 			dialog.contentContainer.style.webkitOverflowScrolling = "touch";
-			dialog.ontouchstart = ui.click.dragtouchdialog;
+			dialog.addEventListener("touchstart", e => {
+				ui.click.dragtouchdialog.call(dialog, e);
+			});
 		}
 		if (noForceButton) {
 			dialog.noforcebutton = true;
@@ -104,7 +139,7 @@ export class Dialog extends HTMLDivElement {
 	}
 	/**
 	 * 添加分页组件到页面
-	 * @param {Pagination} state - 分页组件的配置对象
+	 * @param {Partial<PaginationState>} state - 分页组件的配置对象
 	 */
 	addPagination(state = {}) {
 		// 传入初始配置
@@ -161,9 +196,11 @@ export class Dialog extends HTMLDivElement {
 			itemContainer.Observer.observe(itemContainer, { childList: true });
 		}
 		function createItemContainer(itemOption) {
-			let itemContainer = ui.create.div(".item-container", rowContainer);
+			let itemContainer = Object.assign(ui.create.div(".item-container", rowContainer), {
+				originWidth: 0,
+				links: itemOption.item,
+			});
 			itemContainer.originWidth = itemContainer.getBoundingClientRect().width;
-			itemContainer.links = itemOption.item;
 			if (itemOption.itemContainerCss) {
 				itemContainer.css(itemOption.itemContainerCss);
 			}
@@ -194,6 +231,9 @@ export class Dialog extends HTMLDivElement {
 				game.callHook("checkOverflow", [itemOption, itemContainer, addedItems, game]);
 			}
 		}
+		/**
+		 * @returns {Row_Item_Option<RowItem>[]}
+		 */
 		function parameterNormolize() {
 			let itemOptions = [];
 			if (args.length == 0) {
@@ -221,11 +261,18 @@ export class Dialog extends HTMLDivElement {
 			}
 			return itemOptions;
 		}
+		/**
+		 * @param {RowItem} obj
+		 * @returns {obj is Row_Item_Option<Row_Item>}
+		 */
 		function isOption(obj) {
-			if (["card", "player", "cards", "players"].includes(get.itemtype(obj))) {
+			if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
 				return false;
 			}
-			return typeof obj == "object" && "item" in obj;
+			if (obj instanceof lib.element.Card || obj instanceof lib.element.Player) {
+				return false;
+			}
+			return "item" in obj;
 		}
 		function createRowContainer(dialog) {
 			let rowContainer = ui.create.div(".row-container", dialog.content);
@@ -238,7 +285,7 @@ export class Dialog extends HTMLDivElement {
 		function addItemToItemContainer(item, itemContainer, itemOption) {
 			if (!item || (Array.isArray(item) && !item.length)) {
 				itemContainer.classList.add("popup");
-				return;
+				return [];
 			}
 			/**@type {HTMLDivElement[]} */
 			let items = [];
@@ -272,13 +319,21 @@ export class Dialog extends HTMLDivElement {
 		}
 	}
 	/**
-	 *
-	 * @param { string | HTMLDivElement | Card[] | Player[] } item
-	 * @param {*} [noclick]
+	 * @template {DialogAddItem} T
+	 * @overload
+	 * @param {T} item
+	 * @param {boolean} [noclick]
+	 * @param {boolean} [zoom]
+	 * @returns {import("@/library/element/dialog.js").RuntimeDialogAddResult<T>}
+	 */
+	/**
+	 * @param {DialogAddItem} item
+	 * @param {boolean} [noclick]
 	 * @param { boolean } [zoom]
+	 * @returns {DialogAddItem}
 	 */
 	add(item, noclick, zoom) {
-		if (Array.isArray(item) && item.every(itemx => Array.isArray(itemx))) {
+		if (hasNestedDialogAddItems(item)) {
 			// 允许曹髦/陆郁生这种createDialog中使用多个数组情况使用递归
 			item.forEach(itemx => {
 				this.add(itemx, noclick, zoom);
@@ -287,7 +342,7 @@ export class Dialog extends HTMLDivElement {
 			if (item.startsWith("###")) {
 				const items = item.slice(3).split("###");
 				this.add(items[0], noclick, zoom);
-				this.addText(items[1], items[1].length <= 20, zoom);
+				this.addText(items[1], items[1].length <= 20);
 			} else if (noclick) {
 				const strstr = item;
 				item = ui.create.div("", this.content);
@@ -296,12 +351,9 @@ export class Dialog extends HTMLDivElement {
 				item = ui.create.caption(item, this.content);
 			}
 		}
-		// @ts-expect-error ignore
-		else if (["div", "fragment"].includes(get.objtype(item))) {
-			// @ts-expect-error ignore
+		else if (item instanceof HTMLDivElement || item instanceof DocumentFragment) {
 			this.content.appendChild(item);
 		}
-		// @ts-expect-error ignore
 		else if (get.itemtype(item) == "cards") {
 			const buttons = ui.create.div(".buttons", this.content);
 			if (zoom) {
@@ -310,7 +362,6 @@ export class Dialog extends HTMLDivElement {
 			// @ts-expect-error ignore
 			this.buttons = this.buttons.concat(ui.create.buttons(item, "card", buttons, noclick));
 		}
-		// @ts-expect-error ignore
 		else if (get.itemtype(item) == "players") {
 			var buttons = ui.create.div(".buttons", this.content);
 			if (zoom) {
@@ -327,9 +378,9 @@ export class Dialog extends HTMLDivElement {
 			}
 			// @ts-expect-error ignore
 			this.buttons = this.buttons.concat(ui.create.buttons(item[0], "skill", buttons, noclick));
-		} else if (item[1] == "addNewRow") {
+		} else if (isDialogRowItem(item)) {
 			this.addNewRow(...item[0]);
-		} else if (item[1] == "handle") {
+		} else if (isDialogHandleItem(item)) {
 			item[0](this);
 		} else {
 			var buttons = ui.create.div(".buttons", this.content);
@@ -371,7 +422,6 @@ export class Dialog extends HTMLDivElement {
 		return this.add(item, noclick, true);
 	}
 	addAuto(content) {
-		// @ts-expect-error ignore
 		if (content && content.length > 4 && !this._hovercustomed) {
 			this.addSmall(content);
 		} else {

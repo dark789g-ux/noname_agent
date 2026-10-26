@@ -3,7 +3,7 @@ import { _status, get, lib, ai } from "noname";
 export class VCard {
 	/**
 	 * @param { any } [suitOrCard]
-	 * @param { number | Card[] } [numberOrCards]
+	 * @param { number | "unsure" | Card[] } [numberOrCards]
 	 * @param { string } [name]
 	 * @param { string } [nature]
 	 * @param { Player | false } [owner]
@@ -11,11 +11,11 @@ export class VCard {
 	constructor(suitOrCard, numberOrCards, name, nature, owner) {
 		if (Array.isArray(suitOrCard)) {
 			/**
-			 * @type {string}
+			 * @type {string | null | undefined}
 			 */
 			this.suit = suitOrCard[0];
 			/**
-			 * @type {number}
+			 * @type {number | "unsure" | null | undefined}
 			 */
 			this.number = suitOrCard[1];
 			/**
@@ -23,13 +23,15 @@ export class VCard {
 			 */
 			this.name = suitOrCard[2];
 			/**
-			 * @type {string}
+			 * @type {string | boolean | null | undefined}
 			 */
 			this.nature = suitOrCard[3];
 		}
-		// @ts-expect-error ignore
 		else if (get.itemtype(suitOrCard) == "card") {
-			this.name = get.name(suitOrCard, owner);
+			const resolvedName = get.name(suitOrCard, owner);
+			if (resolvedName !== undefined) {
+				this.name = resolvedName;
+			}
 			this.suit = get.suit(suitOrCard, owner);
 			this.color = get.color(suitOrCard, owner);
 			this.number = get.number(suitOrCard, owner);
@@ -81,10 +83,11 @@ export class VCard {
 				 */
 				this.cards = numberOrCards.slice();
 				if (noCards) {
-					if (!lib.suits.includes(this.suit)) {
-						this.suit = get.suit(this, owner);
+					const suit = this.suit;
+					if (typeof suit != "string" || !lib.suits.includes(suit)) {
+					this.suit = get.suit(this, owner);
 					}
-					if (!Object.keys(lib.color).includes(this.color)) {
+					if (typeof this.color != "string" || !Object.keys(lib.color).includes(this.color)) {
 						this.color = get.color(this, owner);
 					}
 					if (typeof this.number != "number") {
@@ -193,8 +196,11 @@ export class VCard {
 			"]]]"
 		);
 	}
+	/**
+	 * @param {string} tag
+	 */
 	hasGaintag(tag) {
-		return this.gaintag && this.gaintag.includes(tag);
+		return "gaintag" in this && Array.isArray(this.gaintag) && this.gaintag.includes(tag);
 	}
 	initID() {
 		if (!this.vcardID) {

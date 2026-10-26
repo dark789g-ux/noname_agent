@@ -17,7 +17,7 @@ export class Control extends HTMLDivElement {
 		// @ts-expect-error ignore
 		const control = ui.create.div(".control");
 		Object.setPrototypeOf(control, (lib.element.Control || Control).prototype);
-		ui.control.insertBefore(control, _status.createControl || ui.confirm);
+		ui.control.insertBefore(control, _status.createControl || ui.confirm || null);
 		controls.forEach(argument => {
 			if (argument == "nozoom") {
 				return;
@@ -42,7 +42,7 @@ export class Control extends HTMLDivElement {
 			if (!control.stayleft) {
 				control.style.transform = `translateX(-${control.offsetWidth / 2}px)`;
 			}
-			control.style.opacity = 1;
+			control.style.opacity = "1";
 			ui.refresh(control);
 			control.style.transition = "";
 		}
@@ -55,14 +55,14 @@ export class Control extends HTMLDivElement {
 					return;
 				}
 				this.classList.add("controlpressdown");
-				if (typeof this._offset == "number") {
-					this.style.transform = `translateX(${this._offset}px) scale(0.97)`;
+				if (typeof control._offset == "number") {
+					this.style.transform = `translateX(${control._offset}px) scale(0.97)`;
 				}
 			});
 			control.addEventListener(lib.config.touchscreen ? "touchend" : "mouseup", function () {
 				this.classList.remove("controlpressdown");
-				if (typeof this._offset == "number") {
-					this.style.transform = `translateX(${this._offset}px)`;
+				if (typeof control._offset == "number") {
+					this.style.transform = `translateX(${control._offset}px)`;
 				}
 			});
 		}
@@ -73,13 +73,13 @@ export class Control extends HTMLDivElement {
 		return control;
 	}
 	open() {
-		ui.control.insertBefore(this, _status.createControl || ui.confirm);
+		ui.control.insertBefore(this, _status.createControl || ui.confirm || null);
 		ui.controls.unshift(this);
 		if (this.childNodes.length) {
 			this.style.transition = "opacity 0.5s";
 			ui.refresh(this);
 			this.style.transform = "translateX(-" + this.offsetWidth / 2 + "px)";
-			this.style.opacity = 1;
+				this.style.opacity = "1";
 			ui.refresh(this);
 			this.style.transition = "";
 		} else {
@@ -89,9 +89,8 @@ export class Control extends HTMLDivElement {
 		return this;
 	}
 	add(item) {
-		var node = document.createElement("div");
+		var node = Object.assign(document.createElement("div"), { link: item });
 		this.appendChild(node);
-		node.link = item;
 		node.innerHTML = get.translation(item);
 		node.addEventListener(lib.config.touchscreen ? "touchend" : "click", ui.click.control);
 	}
@@ -123,7 +122,7 @@ export class Control extends HTMLDivElement {
 			ui.refresh(this);
 		}
 
-		while (this.childNodes.length) {
+		while (this.firstChild) {
 			this.firstChild.remove();
 		}
 		var i, controls;
@@ -143,7 +142,10 @@ export class Control extends HTMLDivElement {
 		if (this.childNodes.length) {
 			var width = 0;
 			for (i = 0; i < this.childNodes.length; i++) {
-				width += this.childNodes[i].offsetWidth;
+				const child = this.childNodes[i];
+				if (child instanceof HTMLElement) {
+					width += child.offsetWidth;
+				}
 			}
 			ui.refresh(this);
 			this.style.width = width + "px";

@@ -72,18 +72,23 @@ export class Client {
 	 */
 	inited;
 	close() {
-		lib.node.clients.remove(this);
-		lib.node.observing.remove(this);
-		if (ui.removeObserve && !lib.node.observing.length) {
+		const node = lib.requireNodeServer();
+		node.clients.remove(this);
+		node.observing.remove(this);
+		if (ui.removeObserve && !node.observing.length) {
 			ui.removeObserve.remove();
 			delete ui.removeObserve;
 		}
 		this.closed = true;
 		if (_status.waitingForPlayer) {
-			for (var i = 0; i < game.connectPlayers.length; i++) {
-				if (game.connectPlayers[i].playerid == this.id) {
-					game.connectPlayers[i].uninitOL();
-					delete game.connectPlayers[i].playerid;
+			const connectPlayers = game.connectPlayers;
+			if (!connectPlayers) {
+				throw new Error("联机大厅生命周期错误：game.connectPlayers 未初始化");
+			}
+			for (var i = 0; i < connectPlayers.length; i++) {
+				if (connectPlayers[i].playerid == this.id) {
+					connectPlayers[i].uninitOL();
+					delete connectPlayers[i].playerid;
 				}
 			}
 			if (game.onlinezhu == this.id) {
@@ -93,7 +98,6 @@ export class Client {
 		} else if (lib.playerOL[this.id]) {
 			var player = lib.playerOL[this.id];
 			player.setNickname(player.nickname + " - 离线");
-			// @ts-expect-error ignore
 			game.broadcast(function (player) {
 				player.setNickname(player.nickname + " - 离线");
 			}, player);

@@ -1,5 +1,45 @@
 import { _status, game, get, lib, ui } from "noname";
 
+/**
+ * @typedef {[suit: string | null | undefined, number: number | string | null | undefined, name: string, nature?: string | boolean | null, tags?: string[] | null]} CardInitTuple
+ */
+
+/**
+ * @typedef {CardInitTuple & { _replaced?: boolean }} CardPileEntry
+ * @export
+ */
+
+/**
+ * @typedef {[suit: string | null | undefined, number: number | null | undefined, name: string, nature: string | boolean | null | undefined, cardid: string | undefined]} CardInfoTuple
+ * @export
+ */
+
+/**
+ * @typedef {{
+ * 	name: string;
+ * 	suit?: string | null;
+ * 	number?: number | string | null;
+ * 	nature?: string | boolean | null;
+ * 	tags?: string[];
+ * }} CardInitData
+ */
+
+/**
+ * @typedef {{
+ * 	image: HTMLDivElement;
+ * 	info: HTMLDivElement;
+ * 	name: HTMLDivElement;
+ * 	name2: HTMLDivElement;
+ * 	background: HTMLDivElement;
+ * 	intro: HTMLDivElement;
+ * 	range: HTMLDivElement;
+ * 	gaintag: HTMLDivElement;
+ * 	avatar?: HTMLDivElement;
+ * 	framebg?: HTMLDivElement;
+ * 	addinfo?: HTMLDivElement;
+ * }} CardNodeMap
+ */
+
 export class Card extends HTMLDivElement {
 	/**
 	 * @param {HTMLDivElement|DocumentFragment} [position]
@@ -44,8 +84,15 @@ export class Card extends HTMLDivElement {
 				card.addEventListener("mouseenter", ui.click.cardmouseenter);
 				card.addEventListener("mouseleave", ui.click.cardmouseleave);
 			}
-			if (lib.cardSelectObserver) {
-				lib.cardSelectObserver.observe(card, {
+			if ("cardSelectObserver" in lib && lib.cardSelectObserver) {
+				const observer = lib.cardSelectObserver;
+				if ((typeof observer !== "object" || observer === null) && typeof observer !== "function") {
+					throw new TypeError("The card selection observer must provide observe()");
+				}
+				if (!("observe" in observer) || typeof observer.observe !== "function") {
+					throw new TypeError("The card selection observer must provide observe()");
+				}
+				observer.observe(card, {
 					attributes: true,
 				});
 			}
@@ -76,7 +123,7 @@ export class Card extends HTMLDivElement {
 			lib.setIntro(this);
 		}
 	}
-	/** @type { Record<string, HTMLDivElement> } */
+	/** @type {CardNodeMap} */
 	// eslint-disable-next-line no-unreachable
 	node;
 	/**
@@ -92,7 +139,7 @@ export class Card extends HTMLDivElement {
 	 */
 	vanishtag;
 	/**
-	 * @type { any[] }
+	 * @type { string[] }
 	 */
 	gaintag;
 	/**
@@ -104,7 +151,7 @@ export class Card extends HTMLDivElement {
 	 */
 	isCard;
 	/**
-	 * @type { string | undefined }
+	 * @type { string | null | undefined }
 	 */
 	original;
 	/**
@@ -154,9 +201,12 @@ export class Card extends HTMLDivElement {
 		return game.hasNature(this, nature, player);
 	}
 	//只针对【杀】起效果
+	/**
+	 * @param {string} nature
+	 */
 	addNature(nature) {
 		let natures = [];
-		if (!this.nature) {
+		if (typeof this.nature != "string" || !this.nature) {
 			this.nature = "";
 		} else {
 			natures.addArray(get.natureList(this.nature));
@@ -176,7 +226,10 @@ export class Card extends HTMLDivElement {
 					}
 				}
 				if (_bg) {
-					this.node.image.setBackgroundImage(lib.natureBg.get(_bg));
+					const natureBackground = lib.natureBg.get(_bg);
+					if (typeof natureBackground == "string") {
+						this.node.image.setBackgroundImage(natureBackground);
+					}
 					break;
 				}
 			}
@@ -184,8 +237,11 @@ export class Card extends HTMLDivElement {
 		} while (0);
 		return this.nature;
 	}
+	/**
+	 * @param {string} nature
+	 */
 	removeNature(nature) {
-		if (!this.nature) {
+		if (typeof this.nature != "string" || !this.nature) {
 			return;
 		}
 		let natures = get.natureList(this.nature);
@@ -208,7 +264,10 @@ export class Card extends HTMLDivElement {
 					}
 				}
 				if (_bg) {
-					this.node.image.setBackgroundImage(lib.natureBg.get(_bg));
+					const natureBackground = lib.natureBg.get(_bg);
+					if (typeof natureBackground == "string") {
+						this.node.image.setBackgroundImage(natureBackground);
+					}
 					break;
 				}
 			}
@@ -216,6 +275,9 @@ export class Card extends HTMLDivElement {
 		} while (0);
 		return this.nature;
 	}
+	/**
+	 * @param {string | string[]} gaintag
+	 */
 	addGaintag(gaintag) {
 		//目前无名杀支持永久标记，只要加上前缀“eternal_”（即eternal，永恒的）均视为永久标记
 		//然后就是永久标记的翻译问题，前缀是eternal_可以选择只看后面的子字符串的对应翻译
@@ -240,6 +302,9 @@ export class Card extends HTMLDivElement {
 		}
 		this.node.gaintag.innerHTML = str;
 	}
+	/**
+	 * @param {string | true} tag
+	 */
 	removeGaintag(tag) {
 		if (tag === true) {
 			if ((this.gaintag && this.gaintag.length) || this.node.gaintag.innerHTML.length) {
@@ -250,56 +315,61 @@ export class Card extends HTMLDivElement {
 			this.addGaintag(this.gaintag);
 		}
 	}
+	/**
+	 * @param {string} tag
+	 * @returns {boolean}
+	 */
 	hasGaintag(tag) {
 		return this.gaintag && this.gaintag.includes(tag);
 	}
 	/**
-	 * @param {[string, number, string, string] | {
-	 * suit: string;
-	 * number: number;
-	 * name: string;
-	 * nature: string;
-	 * }} card
+	 * @param {CardInitTuple | CardInfoTuple | CardInitData} card
 	 */
 	init(card) {
+		/** @type {CardInitTuple | CardInfoTuple} */
+		let initData;
 		if (Array.isArray(card)) {
-			if (card[2] == "huosha") {
-				card[2] = "sha";
-				card[3] = "fire";
-			} else if (card[2] == "leisha") {
-				card[2] = "sha";
-				card[3] = "thunder";
-			} else if (card[2] == "cisha") {
-				card[2] = "sha";
-				card[3] = "stab";
-			} else if (card[2].length > 3) {
-				let prefix = card[2].slice(0, card[2].lastIndexOf("sha"));
+			initData = card;
+			if (initData[2] == "huosha") {
+				initData[2] = "sha";
+				initData[3] = "fire";
+			} else if (initData[2] == "leisha") {
+				initData[2] = "sha";
+				initData[3] = "thunder";
+			} else if (initData[2] == "cisha") {
+				initData[2] = "sha";
+				initData[3] = "stab";
+			} else if (initData[2].length > 3) {
+				let prefix = initData[2].slice(0, initData[2].lastIndexOf("sha"));
 				if (lib.nature.has(prefix)) {
-					if (prefix.length + 3 == card[2].length) {
-						card[2] = "sha";
-						card[3] = prefix;
+					if (prefix.length + 3 == initData[2].length) {
+						initData[2] = "sha";
+						initData[3] = prefix;
 					}
 				}
-				if (card[2].startsWith("sha_")) {
-					let suffix = card[2].slice(4);
+				if (initData[2].startsWith("sha_")) {
+					let suffix = initData[2].slice(4);
 					let natureList = suffix.split("_");
-					card[2] = "sha";
-					card[3] = get.nature(natureList);
+					initData[2] = "sha";
+					initData[3] = get.nature(natureList);
 				}
 			}
-		} else if (typeof card == "object") {
-			card = [card.suit, card.number, card.name, card.nature];
+		} else {
+			initData = [card.suit, card.number, card.name, card.nature];
 		}
-		var cardnum = card[1] || "";
-		if (parseInt(cardnum) == cardnum) {
-			cardnum = parseInt(cardnum);
+		let cardnum = initData[1] || "";
+		if (typeof cardnum == "string") {
+			const parsedCardNumber = parseInt(cardnum);
+			if (parsedCardNumber == Number(cardnum)) {
+				cardnum = parsedCardNumber;
+			}
 		}
 		let vanish = false;
-		if (!lib.card[card[2]]) {
+		if (!lib.card[initData[2]]) {
 			vanish = true;
-			lib.card[card[2]] = {};
+			lib.card[initData[2]] = {};
 		}
-		var info = lib.card[card[2]];
+		var info = lib.card[initData[2]];
 		if (info.global && !this.classList.contains("button")) {
 			if (Array.isArray(info.global)) {
 				while (info.global.length) {
@@ -310,9 +380,16 @@ export class Card extends HTMLDivElement {
 			}
 			delete info.global;
 		}
-		this.suit = card[0];
-		this.number = parseInt(card[1]) || 0;
-		this.name = card[2];
+		this.suit = initData[0];
+		let number = 0;
+		const rawNumber = initData[1];
+		if (typeof rawNumber == "number") {
+			number = parseInt(String(rawNumber)) || 0;
+		} else if (typeof rawNumber == "string") {
+			number = parseInt(rawNumber) || 0;
+		}
+		this.number = number;
+		this.name = initData[2];
 
 		if (info.destroy && typeof info.destroy != "boolean" && !lib.skill[info.destroy]) {
 			this.destroyed = info.destroy;
@@ -326,7 +403,7 @@ export class Card extends HTMLDivElement {
 			this.cardid = get.id();
 		}
 
-		this.$init(card);
+		this.$init(initData);
 
 		if (this.inits) {
 			for (var i = 0; i < this.inits.length; i++) {
@@ -337,20 +414,25 @@ export class Card extends HTMLDivElement {
 			info.init();
 		}
 		if (vanish) {
-			delete lib.card[card[2]];
+			delete lib.card[initData[2]];
 		}
 		return this;
 	}
 	/**
-	 * @param {[string, number, string, string]} card
+	 * @param {CardInitTuple | CardInfoTuple} card
 	 */
 	$init(card) {
 		var info = lib.card[card[2]];
-		var cardnum = card[1] || "";
-		if (parseInt(cardnum) == cardnum) {
-			cardnum = parseInt(cardnum);
+		let cardnum = card[1] || "";
+		if (typeof cardnum == "string") {
+			const parsedCardNumber = parseInt(cardnum);
+			if (parsedCardNumber == Number(cardnum)) {
+				cardnum = parsedCardNumber;
+			}
 		}
-		cardnum = get.strNumber(cardnum, true) || cardnum;
+		if (typeof cardnum == "number") {
+			cardnum = get.strNumber(cardnum, true) || cardnum;
+		}
 		if (typeof cardnum != "string") {
 			cardnum = "";
 		}
@@ -427,7 +509,10 @@ export class Card extends HTMLDivElement {
 								}
 							}
 							if (_bg) {
-								this.node.image.setBackgroundImage(lib.natureBg.get(_bg));
+								const natureBackground = lib.natureBg.get(_bg);
+								if (typeof natureBackground == "string") {
+									this.node.image.setBackgroundImage(natureBackground);
+								}
 								break;
 							}
 						}
@@ -436,7 +521,7 @@ export class Card extends HTMLDivElement {
 				}
 			}
 		} else if (get.dynamicVariable(lib.card[bg].image, this) == "background") {
-			if (card[3]) {
+			if (typeof card[3] == "string" && card[3]) {
 				this.node.background.setBackground(bg + "_" + get.natureList(card[3])[0], "card");
 			} else {
 				this.node.background.setBackground(bg, "card");
@@ -514,7 +599,7 @@ export class Card extends HTMLDivElement {
 				}
 			}
 		} else if (get.dynamicVariable(lib.card[bg].image, this) == "card") {
-			if (card[3]) {
+			if (typeof card[3] == "string" && card[3]) {
 				this.setBackground(bg + "_" + get.natureList(card[3])[0], "card");
 			} else {
 				this.setBackground(bg, "card");
@@ -578,7 +663,7 @@ export class Card extends HTMLDivElement {
 			this.node.addinfo.remove();
 			delete this.node.addinfo;
 		}
-		if (lib.color.red.includes(card[0])) {
+		if (typeof card[0] == "string" && lib.color.red.includes(card[0])) {
 			this.node.info.classList.add("red");
 		}
 		this.node.image.className = "image";
@@ -586,7 +671,7 @@ export class Card extends HTMLDivElement {
 		if (card[2] == "sha") {
 			name = "";
 			let nature = card[3];
-			if (nature) {
+			if (typeof nature == "string" && nature) {
 				let natures = get.natureList(nature);
 				natures.sort(lib.sort.nature);
 				for (let nature of natures) {
@@ -607,7 +692,7 @@ export class Card extends HTMLDivElement {
 		}
 		this.node.name2.innerHTML = get.translation(card[0]) + cardnum + " " + name;
 		this.classList.add("card");
-		if (card[3]) {
+		if (typeof card[3] == "string" && card[3]) {
 			let natures = get.natureList(card[3]);
 			natures.forEach(n => {
 				if (n) {
@@ -618,7 +703,7 @@ export class Card extends HTMLDivElement {
 				.filter(n => lib.nature.has(n))
 				.sort(lib.sort.nature)
 				.join(lib.natureSeparator);
-		} else if (this.nature) {
+		} else if (typeof this.nature == "string" && this.nature) {
 			this.classList.remove(this.nature);
 			delete this.nature;
 		}
@@ -661,20 +746,20 @@ export class Card extends HTMLDivElement {
 			if (!_status.cardtag) {
 				_status.cardtag = {};
 			}
-			for (var i in _status.cardtag) {
-				if (_status.cardtag[i].includes(this.cardid)) {
-					tags.add(i);
+			for (const tagName in _status.cardtag) {
+				if (_status.cardtag[tagName].includes(this.cardid)) {
+					tags.add(tagName);
 				}
 			}
 			if (tags.length) {
 				var tagstr = ' <span class="cardtag">';
-				for (var i = 0; i < tags.length; i++) {
-					var tag = tags[i];
-					if (!_status.cardtag[tag]) {
-						_status.cardtag[tag] = [];
+				for (let index = 0; index < tags.length; index++) {
+					const tagName = tags[index];
+					if (!_status.cardtag[tagName]) {
+						_status.cardtag[tagName] = [];
 					}
-					_status.cardtag[tag].add(this.cardid);
-					tagstr += lib.translate[tag + "_tag"];
+					_status.cardtag[tagName].add(this.cardid);
+					tagstr += lib.translate[tagName + "_tag"];
 					//if(i<tags.length-1) tagstr+=' ';
 				}
 				tagstr += "</span>";
@@ -697,7 +782,10 @@ export class Card extends HTMLDivElement {
 				if (!_status.cardtag[tag]) {
 					_status.cardtag[tag] = [];
 				}
-				_status.cardtag[tag].add(card.cardid);
+				const cardId = card.cardid;
+				if (typeof cardId == "string") {
+					_status.cardtag[tag].add(cardId);
+				}
 				card.$init([card.suit, card.number, card.name, card.nature]);
 			},
 			card,
@@ -718,7 +806,10 @@ export class Card extends HTMLDivElement {
 				if (!_status.cardtag[tag]) {
 					_status.cardtag[tag] = [];
 				}
-				_status.cardtag[tag].remove(card.cardid);
+				const cardId = card.cardid;
+				if (typeof cardId == "string") {
+					_status.cardtag[tag].remove(cardId);
+				}
 				card.$init([card.suit, card.number, card.name, card.nature]);
 			},
 			card,
@@ -735,10 +826,11 @@ export class Card extends HTMLDivElement {
 			if (_status.event.player != game.me) {
 				return;
 			}
-			if (this.parentNode && this.parentNode.parentNode && this.parentNode.parentNode.parentNode == ui.me) {
+			const handcards = this.parentElement?.parentElement;
+			if (handcards instanceof HTMLElement && handcards.parentElement == ui.me) {
 				ui.updatehl();
 			}
-			if (this._transform && this.parentNode && this.parentNode.parentNode && this.parentNode.parentNode.parentNode == ui.me && (!_status.mousedown || _status.mouseleft) && (!this.parentNode.parentNode.classList.contains("scrollh") || game.layout == "long2" || game.layout == "nova")) {
+			if (this._transform && handcards instanceof HTMLElement && handcards.parentElement == ui.me && (!_status.mousedown || _status.mouseleft) && (!handcards.classList.contains("scrollh") || game.layout == "long2" || game.layout == "nova")) {
 				if (bool) {
 					this.style.transform = this._transform + " translateY(-20px)";
 				} else {
@@ -755,29 +847,31 @@ export class Card extends HTMLDivElement {
 		if (!this._knowers) {
 			this._knowers = [];
 		}
+		const knowers = this._knowers;
 		if (typeof player == "string") {
-			this._knowers.add(player);
+			knowers.add(player);
 		} else {
 			let type = get.itemtype(player);
 			if (type == "player") {
-				this._knowers.add(player.playerid);
+				knowers.add(player.playerid);
 			} else if (type == "players") {
-				player.forEach(p => this._knowers.add(p.playerid));
+				player.forEach(p => knowers.add(p.playerid));
 			}
 		}
 	}
 	removeKnower(player) {
-		if (!this._knowers) {
+		const knowers = this._knowers;
+		if (!knowers) {
 			return;
 		}
 		if (typeof player == "string") {
-			this._knowers.remove(player);
+			knowers.remove(player);
 		} else {
 			let type = get.itemtype(player);
 			if (type == "player") {
-				this._knowers.remove(player.playerid);
+				knowers.remove(player.playerid);
 			} else if (type == "players") {
-				player.forEach(p => this._knowers.remove(p.playerid));
+				player.forEach(p => knowers.remove(p.playerid));
 			}
 		}
 	}
@@ -838,12 +932,14 @@ export class Card extends HTMLDivElement {
 		this.fixed = true;
 		var dx, dy;
 		if (this.classList.contains("center")) {
+			/** @type {[percentage: number, offset: number]} */
 			var nx = [50, -52];
+			/** @type {[percentage: number, offset: number]} */
 			var ny = [50, -52];
-			nx = (nx[0] * ui.arena.offsetWidth) / 100 + nx[1];
-			ny = (ny[0] * ui.arena.offsetHeight) / 100 + ny[1];
-			dx = player.getLeft() + player.offsetWidth / 2 - 52 - nx;
-			dy = player.getTop() + player.offsetHeight / 2 - 52 - ny;
+			const targetX = (nx[0] * ui.arena.offsetWidth) / 100 + nx[1];
+			const targetY = (ny[0] * ui.arena.offsetHeight) / 100 + ny[1];
+			dx = player.getLeft() + player.offsetWidth / 2 - 52 - targetX;
+			dy = player.getTop() + player.offsetHeight / 2 - 52 - targetY;
 		} else {
 			this.style.left = this.offsetLeft + "px";
 			this.style.top = this.offsetTop + "px";
@@ -866,10 +962,21 @@ export class Card extends HTMLDivElement {
 		return this;
 	}
 	copy() {
+		const node = this.cloneNode(true);
+		Object.setPrototypeOf(node, lib.element.Card.prototype);
+		if (!(node instanceof lib.element.Card)) {
+			throw new TypeError("Failed to clone card element");
+		}
 		/**
-		 * @type {Card}
+		 * @param {string} selector
 		 */
-		var node = this.cloneNode(true);
+		const requireDiv = selector => {
+			const element = node.querySelector(selector);
+			if (!(element instanceof HTMLDivElement)) {
+				throw new TypeError(`Missing card node: ${selector}`);
+			}
+			return element;
+		};
 		node.style.transform = "";
 		node.name = this.name;
 		node.suit = this.suit;
@@ -884,14 +991,33 @@ export class Card extends HTMLDivElement {
 		node.classList.remove("removing");
 		node.classList.remove("drawinghidden");
 		node.classList.remove("glows");
-		node.node = {
-			name: node.querySelector(".name"),
-			info: node.querySelector(".info"),
-			intro: node.querySelector(".intro"),
-			background: node.querySelector(".background"),
-			image: node.querySelector(".image"),
-			gaintag: node.querySelector(".gaintag"),
+		/** @type {CardNodeMap} */
+		const cardNodeMap = {
+			name: requireDiv(".name"),
+			name2: requireDiv(".name2"),
+			info: requireDiv(".info"),
+			intro: requireDiv(".intro"),
+			background: requireDiv(".background"),
+			image: requireDiv(".image"),
+			range: requireDiv(".range"),
+			gaintag: requireDiv(".gaintag"),
 		};
+		const avatar = node.querySelector(".cardavatar");
+		if (avatar instanceof HTMLDivElement) {
+			cardNodeMap.avatar = avatar;
+		}
+		const framebg = node.querySelector(".cardframebg");
+		if (framebg instanceof HTMLDivElement) {
+			cardNodeMap.framebg = framebg;
+		}
+		if (this.node.addinfo) {
+			const ranges = node.querySelectorAll(".range");
+			const addinfo = ranges.item(ranges.length - 1);
+			if (addinfo instanceof HTMLDivElement && addinfo != cardNodeMap.range) {
+				cardNodeMap.addinfo = addinfo;
+			}
+		}
+		node.node = cardNodeMap;
 		node.node.gaintag.innerHTML = "";
 		var clone = true;
 		var position;
@@ -943,7 +1069,7 @@ export class Card extends HTMLDivElement {
 	/**
 	 * 判断此牌是否包含class样式，参数有多个时，需全部满足。
 	 *
-	 * @param {string} className
+	 * @param {...string} classNames
 	 *
 	 * @returns {boolean} 是否包含class
 	 */
