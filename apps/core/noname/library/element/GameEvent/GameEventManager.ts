@@ -1,15 +1,15 @@
 import { lib } from "noname";
-import { GameEvent } from "../gameEvent.js";
+import { ActiveEventExecution, EventExecution, GameEvent } from "../gameEvent.js";
 
-export type NonameGameEventChangedArgs = [newEvent: GameEvent, oldEvent: GameEvent];
+export type NonameGameEventChangedArgs = [newEvent: EventExecution | undefined, oldEvent: EventExecution | undefined];
 
 export default class GameEventManager {
 	get [Symbol.toStringTag]() {
 		return "GameEventManager";
 	}
-	eventStack: GameEvent[] = [];
-	rootEvent?: GameEvent;
-	tempEvent?: GameEvent;
+	eventStack: ActiveEventExecution[] = [];
+	rootEvent?: ActiveEventExecution;
+	tempEvent?: ActiveEventExecution;
 	get event() {
 		return this.getStatusEvent();
 	}
@@ -19,7 +19,7 @@ export default class GameEventManager {
 	getStatusEvent() {
 		return this.tempEvent || this.eventStack.at(-1) || this.rootEvent;
 	}
-	setStatusEvent(event: GameEvent, internal: boolean = false) {
+	setStatusEvent(event: ActiveEventExecution, internal: boolean = false) {
 		if (!(event instanceof GameEvent)) {
 			return;
 		}
@@ -39,14 +39,14 @@ export default class GameEventManager {
 		}
 
 		if (oldEvent == null || event !== oldEvent) {
-			lib.announce.publish<NonameGameEventChangedArgs>("Noname.Game.Event.Changed", [event, oldEvent!]);
+			lib.announce.publish<NonameGameEventChangedArgs>("Noname.Game.Event.Changed", [event, oldEvent]);
 		}
 	}
 	popStatusEvent() {
 		const lastEvent = this.eventStack.pop();
 		const now = this.getStatusEvent();
 		if (lastEvent == null || lastEvent !== now) {
-			lib.announce.publish<NonameGameEventChangedArgs>("Noname.Game.Event.Changed", [now!, lastEvent!]);
+			lib.announce.publish<NonameGameEventChangedArgs>("Noname.Game.Event.Changed", [now, lastEvent]);
 		}
 	}
 }

@@ -1,5 +1,6 @@
 import { game, _status } from "noname";
-import { IContentCompiler, EventContent } from "./IContentCompiler.js";
+import type { ActiveEventExecution } from "../../gameEvent.js";
+import { CompilerEventContent, IContentCompiler } from "./IContentCompiler.js";
 
 type HandlerOption = { state?: "begin" | "end" };
 
@@ -8,8 +9,8 @@ type HandlerOption = { state?: "begin" | "end" };
  */
 export default abstract class ContentCompilerBase implements IContentCompiler {
 	abstract type: string;
-	abstract filter(content: EventContent): boolean;
-	abstract compile(content: EventContent): (e: GameEvent) => Promise<void>;
+	abstract filter(content: CompilerEventContent): boolean;
+	abstract compile(content: CompilerEventContent): (e: ActiveEventExecution) => Promise<void>;
 
 	/**
 	 * ```plain
@@ -18,8 +19,8 @@ export default abstract class ContentCompilerBase implements IContentCompiler {
 	 *
 	 * @param event 事件
 	 */
-	beforeExecute(event: GameEvent) {
-		const handlerType = event.getDefaultHandlerType() as `on${Capitalize<string>}`;
+	beforeExecute(event: ActiveEventExecution) {
+		const handlerType = event.getDefaultHandlerType();
 		const option: HandlerOption = { state: "begin" };
 		event.callHandler(handlerType, event, option);
 		event.updateStep();
@@ -33,7 +34,7 @@ export default abstract class ContentCompilerBase implements IContentCompiler {
 	 * @param event 事件
 	 * @returns 当返回true时，代表event.finish()已经被调用
 	 */
-	isPrevented(event: GameEvent): boolean {
+	isPrevented(event: ActiveEventExecution): boolean {
 		const { player } = event;
 
 		if (event.name === "phaseLoop") {
@@ -71,10 +72,10 @@ export default abstract class ContentCompilerBase implements IContentCompiler {
 	 *
 	 * @param event 事件
 	 */
-	afterExecute(event: GameEvent) {
+	afterExecute(event: ActiveEventExecution) {
 		event.clearStepCache(null);
 
-		const handlerType = event.getDefaultHandlerType() as `on${Capitalize<string>}`;
+		const handlerType = event.getDefaultHandlerType();
 		const option: HandlerOption = { state: "end" };
 		event.callHandler(handlerType, event, option);
 		event.updateStep();

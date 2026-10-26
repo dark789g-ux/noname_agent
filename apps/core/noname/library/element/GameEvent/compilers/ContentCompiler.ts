@@ -1,5 +1,6 @@
 import { lib } from "noname";
-import { IContentCompiler, EventCompileable, EventCompiledContent, EventContent } from "./IContentCompiler.ts";
+import type { GameEvent, GameEventNumberValue } from "../../gameEvent.js";
+import { IContentCompiler, CompilerEventContent, EventCompileable, EventCompiledContent, EventContentBinding, PublicEventContentCallback } from "./IContentCompiler.ts";
 
 import StepCompiler from "./StepCompiler.ts";
 import AsyncCompiler from "./AsyncCompiler.ts";
@@ -11,7 +12,7 @@ class ContentCompiler {
 	#compilerTypes = new Set<Class<IContentCompiler>>();
 	#compilers = new Set<IContentCompiler>();
 
-	#compiledContent = new WeakMap<EventContent, EventCompiledContent>();
+	#compiledContent = new WeakMap<CompilerEventContent, EventCompiledContent>();
 
 	/**
 	 * ```plain
@@ -46,7 +47,7 @@ class ContentCompiler {
 	 * @param content
 	 * @returns
 	 */
-	private regularize(content: EventCompileable): EventContent {
+	private regularize(content: EventCompileable): CompilerEventContent {
 		// 无法直接编译的数据做处理
 		if (typeof content === "string") {
 			return lib.element.content[content] ?? lib.element.contents[content];
@@ -64,7 +65,10 @@ class ContentCompiler {
 	 *
 	 * @param content
 	 */
-	compile(content: EventCompileable): EventCompiledContent {
+	compile(content: PublicEventContentCallback): EventCompiledContent;
+	compile<E>(content: EventContentBinding<E>, event: E): EventCompiledContent;
+	compile(content: EventCompileable): EventCompiledContent;
+	compile(content: EventCompileable, _event?: GameEvent<GameEventNumberValue>): EventCompiledContent {
 		// @ts-expect-error ignore
 		if (content.compiled) {
 			// @ts-expect-error ignore

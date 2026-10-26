@@ -1,21 +1,21 @@
-import { GameEvent } from "../../gameEvent.js";
-import { EventContent } from "./IContentCompiler.ts";
+import { GameEvent, type ActiveEventExecution } from "../../gameEvent.js";
+import { CompilerEventContent } from "./IContentCompiler.ts";
 import ContentCompilerBase from "./ContentCompilerBase.ts";
 
 export default class ArrayCompiler extends ContentCompilerBase {
 	type = "array";
 
-	filter(content: EventContent): boolean {
+	filter(content: CompilerEventContent): boolean {
 		return Array.isArray(content) && content.every(item => typeof item === "function");
 	}
 
-	compile(content: EventContent) {
+	compile(content: CompilerEventContent) {
 		if (!Array.isArray(content)) {
 			throw new ReferenceError("content必须是一个数组");
 		}
 
 		const compiler = this;
-		return async function (this: GameEvent, event: GameEvent) {
+		return async function (this: GameEvent, event: ActiveEventExecution) {
 			if (!Number.isInteger(event.step)) {
 				event.step = 0;
 			}

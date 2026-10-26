@@ -13,6 +13,10 @@ event.setContent(content: EventCompileable): this
 event.content: EventCompiledContent        // 编译后的 content
 ```
 
+公共动态回调不能假定 `trigger` 或 `player` 已存在。必须在实际使用其能力的位置处理缺失状态。队列使用独立的 `EventExecution` 契约；它不承诺卡牌或发牌数量等业务字段。
+
+类型化 `.set()` 只接受已声明字段及对应值类型；扩展字段需先扩充字段映射。已知的 `gameDraw` 内容绑定要求创建方先实际写入 `player`、`targets` 和 `num`。运行时动态字符串入口不因此获得“业务字段已经初始化”的类型保证。
+
 ## 架构
 
 ContentCompiler 通过**责任链模式**匹配编译器：

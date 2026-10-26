@@ -2,20 +2,21 @@
 import { _status, ai, game, get, lib, ui } from "noname";
 import { AsyncFunction, GeneratorFunction, AsyncGeneratorFunction } from "@/util/index.js";
 import { security, CodeSnippet, ErrorManager } from "@/util/sandbox.js"
-import { EventContent } from "./IContentCompiler.ts";
+import { CompilerEventContent } from "./IContentCompiler.ts";
 import ContentCompilerBase from "./ContentCompilerBase.ts";
 import ContentCompiler from "./ContentCompiler.ts";
+import type { ActiveEventExecution } from "../../gameEvent.js";
 
 type GeneralFunction = (...args: any[]) => any;
 
 export default class StepCompiler extends ContentCompilerBase {
 	type = "step";
 
-	filter(content: EventContent) {
+	filter(content: CompilerEventContent) {
 		return typeof content === "function" && ![AsyncFunction, GeneratorFunction, AsyncGeneratorFunction].some(parent => content instanceof parent);
 	}
 
-	compile(content: EventContent) {
+	compile(content: CompilerEventContent) {
 		if (typeof content != "function") {
 			throw new Error("StepCompiler只能接受函数");
 		}
@@ -54,7 +55,7 @@ class StepParser {
 		this.str = this.formatFunction(func);
 	}
 
-	getResult(): (e: GameEvent) => Promise<void> {
+	getResult(): (e: ActiveEventExecution) => Promise<void> {
 		this.parseStep();
 		const result = ContentCompiler.compile(this.contents);
 		result.originals = this.originals;

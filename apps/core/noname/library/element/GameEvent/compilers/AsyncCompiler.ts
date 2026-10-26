@@ -2,18 +2,18 @@
 import { AsyncFunction } from "@/util/index.js";
 import ContentCompiler from "./ContentCompiler.ts";
 import ContentCompilerBase from "./ContentCompilerBase.ts";
-import { EventContent } from "./IContentCompiler.ts";
+import { CompilerEventContent } from "./IContentCompiler.ts";
 
 type AsyncFunction<R> = (...args: any[]) => Promise<R>;
 
 export default class AsyncCompiler extends ContentCompilerBase {
 	type = "async";
 
-	filter(content: EventContent): boolean {
+	filter(content: CompilerEventContent): boolean {
 		return typeof content === "function" && content instanceof AsyncFunction;
 	}
 
-	compile(content: EventContent) {
+	compile(content: CompilerEventContent) {
 		return ContentCompiler.compile([content as AsyncFunction<void>]);
 	}
 }

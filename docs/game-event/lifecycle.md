@@ -50,6 +50,10 @@ new GameEvent(name, trigger, manager)
 - `trigger`：是否触发技能时机。默认 `true`。联机模式下 `_triggered` 设为 `null`
 - `manager`：默认取 `_status.eventManager`
 
+构造和复制都不初始化业务字段。复制构造只提取名称、管理器及触发状态，不复制 `player`、`card`、`cards`、`num` 等业务数据。
+
+`GameEvent<N>` 的泛型仅描述 `num` 额外允许的值类型，不表示字段已经赋值。默认事件的 `num` 可缺省且只支持数字；开局发牌事件另外支持玩家回调。只有创建方实际写入的字段，才能在返回类型中成为必填字段。事件仍是原来的类实例，具有相同原型和私有状态。
+
 静态方法 `GameEvent.initialGameEvent()` 创建已 finish 的空事件，用作根事件的占位。
 
 ## start() 与 resolve()
