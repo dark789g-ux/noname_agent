@@ -8,24 +8,24 @@ declare interface Array<T> {
     containsAll(...item: T[]): boolean;
     /**
      * 将任意元素添加进数组中，若元素已经存在则不添加
-     * @param args 
-     * @returns 
+     * @param args
+     * @returns
      */
     add(...item: T[]): this;
     /**
      * 将一个数组的所有元素添加进数组中(循环执行this.add)，此时参数arr中若有一个数组元素可能会出现bug
-     * @param arr 
+     * @param arr
      */
     addArray(...arr: T[][]): this;
     /**
      * 将任意元素移出数组(该元素不能是数组)
-     * @param item 
-     * @returns 
+     * @param item
+     * @returns
      */
-    remove(...item: T[]): this;
+    remove(...item: (T | undefined)[]): this;
     /**
      * 将一个数组的所有元素移出数组(循环执行this.remove)，此时参数arr中若有一个数组元素可能会出现bug
-     * @param arr 
+     * @param arr
      */
     removeArray(...arr: T[][]): this;
     /**
@@ -45,7 +45,7 @@ declare interface Array<T> {
     /**
      * 随机移除数组的多个元素，返回被移除元素组成的数组
      * @param num 移除元素的个数
-     * @returns 
+     * @returns
      */
     randomRemove(num: number): T[];
     /**
@@ -54,20 +54,20 @@ declare interface Array<T> {
     randomSort(): this;
     /**
      * 以目标玩家为起点，将数组按座位排序，改变原数组
-     * 
+     *
      * *只适用于玩家数组（使用lib.sort.seat方法）
-     * 
+     *
      * @param target 目标玩家（默认为一号位）
      */
     sortBySeat(target?: Player): this;
     /**
      * 将一个Array中所有位于处理区的卡牌过滤出来（只适用于卡牌数组）
-     * 
+     *
      * 例：设一list为[c1,c2,c3,c4]，其中c1和c3是位于处理区的卡牌
      * 那么list.filterInD()得到的结果即为[c1,c3]
-     * 
-     * 在1.9.97.8.1或更高的版本中: 
-     * 可通过直接在括号中填写一个区域 来判断处于特定区域的卡牌 
+     *
+     * 在1.9.97.8.1或更高的版本中:
+     * 可通过直接在括号中填写一个区域 来判断处于特定区域的卡牌
      * 例：list.filterInD('h') 即判断数组中所有位于手牌区的卡牌
      * @param position 指定的区域，默认是 'o'
      */

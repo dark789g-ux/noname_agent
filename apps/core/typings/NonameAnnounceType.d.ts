@@ -48,6 +48,7 @@ declare interface NonameAnnounceType {
 }
 
 declare type AnnounceFunction<T> = (values: T) => void;
+declare type AnnounceHandler = (...args: never[]) => unknown;
 
 declare interface IAnnounceSubscriber {
 	subscribe(name: string): void;
@@ -65,7 +66,7 @@ declare class Announce {
 	constructor(
 		eventTarget: EventTarget,
 		records: WeakMap<(arg0: any) => void, IAnnounceSubscriber>,
-		SubscriberType: AnnounceSubscriberType<any> = AnnounceSubscriber
+		SubscriberType?: AnnounceSubscriberType<unknown>
 	);
 
 	/**
@@ -78,8 +79,8 @@ declare class Announce {
 	 */
 	publish<Type extends NonameAnnounceType, Name extends keyof Type>(
 		name: Name,
-		values: Parameters<Type[Name]>[0]
-	): Parameters<Type[Name]>[0];
+		values: Parameters<Extract<Type[Name], AnnounceHandler>>[0]
+	): Parameters<Extract<Type[Name], AnnounceHandler>>[0];
 
 	/**
 	 * 订阅给定名字的事件，并返回给定的函数
@@ -112,4 +113,8 @@ declare class Announce {
 
 declare class AnnounceSubscriber<T> implements IAnnounceSubscriber {
 	constructor(content: (value: T, name: string) => void, target: EventTarget);
+
+	get isEmpty(): boolean;
+	subscribe(name: string): void;
+	unsubscribe(name: string): void;
 }

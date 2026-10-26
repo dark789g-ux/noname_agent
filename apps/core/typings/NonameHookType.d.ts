@@ -27,7 +27,7 @@ declare interface NonameHookType {
 	 * @param event - 当前检查的事件
 	 * @param config - 一些配置
 	 */
-	checkEnd(event: GameEvent, config: { ok: boolean; auto: boolean; autoConfirm: boolean }): any;
+	checkEnd(event: GameEvent, config: { ok: boolean; auto: boolean; autoConfirm: boolean; auto_confirm: boolean }): any;
 
 	/**
 	 *
@@ -137,9 +137,11 @@ declare interface NonameHookType {
 	/**
 	 *
 	 * @param name - 切换的原画
-	 * @param skin - 切换的皮肤
+	 * @param skin - 切换后的皮肤
+	 * @param source - 触发皮肤切换的角色节点
+	 * @param avatar - 被同步更新的头像节点
 	 */
-	refreshSkin(name: string, skin: Player): any;
+	refreshSkin(name: string, skin: string, source: HTMLDivElement | null | undefined, avatar: HTMLDivElement | null | undefined): any;
 
 	[key: string]: (...args: any[]) => any;
 }

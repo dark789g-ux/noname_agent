@@ -1,6 +1,11 @@
 //noname内扩展的一些HTMLDivElement方法：
+interface CardNodeList extends Array<HTMLDivElement> {
+    _discardtime?: number;
+}
 interface HTMLDivElement {
     _link: any;
+	_chatempty?: true;
+	_skinName?: string;
     timeout?: number;
     destiny?: HTMLDivElement;
     _listeningEnd?: boolean;
@@ -9,7 +14,7 @@ interface HTMLDivElement {
     _selfDestroyed?: boolean;
     /**
      * 增加一个动画（增加className动画标记）
-     * 
+     *
      * @param name className
      * @param time 该动画多长时间自动销毁
      */
@@ -29,9 +34,9 @@ interface HTMLDivElement {
     delete(time?: number, callback?: () => void): this;
     /**
      * 将该节点div移除，并添加到目标处
-     * 
+     *
      * 会为card设置将position到destiny，在get.position中，获得得位置为将要设置得position目标处；
-     * @param position 目标处 
+     * @param position 目标处
      * @param time 延迟执行的时间
      */
     goto(position: HTMLDivElement, time?: number): this;
@@ -46,31 +51,31 @@ interface HTMLDivElement {
      * @param ext 文件类型后缀名（例:.jpg）,填noskin，或者不填，默认为".jpg"
      * @param subfolder 子文件夹路径（基本都是按规定文件夹放置，命名）,不填走默认路径
      */
-    setBackground(name: string, type?: string, ext?: string, subfolder?: string): this;
+    setBackground(name?: string | null, type?: string, ext?: string, subfolder?: string): this;
     /**
      * 设置游戏背景，并且缓存该设置
-     * @param img 
+     * @param img
      */
     setBackgroundDB(img: string): Promise<this>;
     /**
      * 设置背景
-     * @param img 
+     * @param img
      */
     setBackgroundImage(img: string | string[]): this;
     /**
      * 设置触摸/点击监听
-     * @param func 
+     * @param func
      */
-    listen(func: (this: HTMLDivElement, event: Event) => void): this;
+    listen<T extends HTMLDivElement>(this: T, func: (this: T, event: Event) => void): T;
     /**
      * 设置转换结束（webkitTransitionEnd）监听
-     * @param func 
-     * @param time 
+     * @param func
+     * @param time
      */
-    listenTransition(func: () => void, time: number): number;
+    listenTransition(func: () => void, time?: number): number;
     /**
      * 设置位置
-     * @param args 
+     * @param args
      */
     setPosition(...args: number[]): this;
 
@@ -84,7 +89,7 @@ interface HTMLElement {
     setNodeIntro(title: string, content: string): this
     /**
      * 添加css样式
-     * @param style 
+     * @param style
      */
     css<T extends keyof CSSStyleDeclaration>(style: {
         [key in T]?: string;

@@ -1,5 +1,11 @@
 //一些附加到window的对象的提示
 declare interface Window {
+    StatusBar?: {
+        overlaysWebView(value: boolean): void;
+        backgroundColorByName(name: string): void;
+        show(): void;
+        hide(): void;
+    };
     /** 初始界面的暂时配置？ */
     tempSetNoname?: string;
     /** 游戏更新信息配置 */
@@ -11,7 +17,6 @@ declare interface Window {
         players?: string[],
         cards?: string[],
     }
-
     // /** 游戏配置 */
     // config: Record<string, any>,
 
@@ -27,7 +32,7 @@ declare interface Window {
     /** codeMirror,一个代码编辑器库 */
     // CodeMirror: typeof import('codemirror/index');
 
-    resetGameTimeout: number;
+    resetGameTimeout?: number;
 
     // cordovaLoadTimeout?: number;
 
@@ -42,18 +47,28 @@ declare interface Window {
     // /** 错误对象 */
     // eo?: Error;
 
-    game: Game;
-    lib: Library;
-    _status: Status;
-    ui: UI;
-    get: Get;
+	game?: Game;
+	play?: Record<string, { video?: (content: Video["content"]) => void }>;
+	lib?: Library;
+    _status?: Status;
+    ui?: UI;
+    get?: Get;
     ai: AI;
+    plugins?: {
+        insomnia?: {
+            keepAwake(): void;
+            allowSleepAgain(): void;
+        };
+    };
+    noSleep?: import("nosleep.js").default;
+    cheat?: Library["cheat"];
+    nonameAI?: AI;
 
     saveNonameInput?: Function;
     /** 是否处于启动页 */
     inSplash: boolean;
     /** 游戏是否正常启动？ */
-    resetExtension: Function;
+    resetExtension?: () => void;
 
     /** 【应用配置扩展】从该路径获取无名杀的变量信息 */
     newExtApiUrl: string;
@@ -69,7 +84,7 @@ declare interface Window {
     // /** 为其他自定义平台提供文件读写函数赋值的一种方式 */
     // initReadWriteFunction?(game: Game): Promise<void>;
 
-    // bannedKeyWords: string[];
+    bannedKeyWords?: string[];
 
     device: Device;
 

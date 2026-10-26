@@ -7,8 +7,7 @@
     "noEmitOnError": false,
     "outDir": "dist-types",
     "stripInternal": true,
-    "skipLibCheck": true,
     "preserveSymlinks": false
   },
-  "files": ["noname.js"]
+  "include": ["noname.js", "typings/*.d.ts"]
 }
