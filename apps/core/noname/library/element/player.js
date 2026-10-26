@@ -5,11 +5,302 @@ import { security } from "@/util/sandbox.js";
 import { ContentCompiler } from "./gameEvent.js";
 import { AsyncFunction } from "@/util/index.js";
 import { derive as deriveLLMLogButtonState } from "@/llm/player-button-state.js";
+import { forwardEventLogSkill } from "./GameEvent/logSkill.js";
+import { getRegisteredSkill, requireRegisteredSkill } from "../skillRegistry.js";
 import dedent from "dedent";
+
+/**
+ * @param {GameEvent | import("./gameEvent.js").GameEventParentFallback | undefined} event
+ * @returns {GameEvent}
+ */
+function requireParentEvent(event) {
+	if (!(event instanceof lib.element.GameEvent)) {
+		throw new TypeError("This operation requires an existing parent event");
+	}
+	return event;
+}
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	_childNodesWatcher?: ChildNodesWatcher
+ * }} WatchedCardContainer
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	_avatarqueue?: string[],
+ * 	_avatarqueueinterval?: ReturnType<typeof setInterval>
+ * }} AvatarQueueNode
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	markcount?: HTMLDivElement,
+ * 	name?: string,
+ * 	markidentifer?: string,
+ * 	info?: { fixed?: boolean }
+ * }} MarkNode
+ */
+
+/**
+ * @param {MarkNode} node
+ * @returns {node is MarkNode & { parentNode: HTMLDivElement }}
+ */
+function hasHtmlDivParent(node) {
+	return node.parentNode instanceof HTMLDivElement;
+}
+
+/**
+ * @callback DiceRoll
+ * @this {DiceNode}
+ * @param {number | number[]} degrees
+ * @returns {void}
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	current: number[],
+ * 	roll: DiceRoll,
+ * 	over?: boolean,
+ * 	resumed?: boolean
+ * }} DiceNode
+ */
+
+/**
+ * @typedef {{
+ * 	cardsetion?: HTMLDivElement,
+ * 	throw_id?: number | string,
+ * 	name2?: object,
+ * 	range?: object
+ * }} ThrownNodeMap
+ */
+
+/**
+ * @typedef {[string | null | undefined, number | string | null | undefined, string, string | boolean | null | undefined]} ThrowInitData
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	_cardid?: number | string,
+ * 	selectedt?: boolean,
+ * 	node?: ThrownNodeMap,
+ * 	init?: (data: ThrowInitData) => void,
+ * 	_customintro?: (intro: Dialog, evt?: Event | Touch) => false | void
+ * }} ThrownNode
+ */
+
+/**
+ * 动画节点可以是普通 div；这些扩展字段来自运行时 DOM，不在这里假定其完整形状。
+ * @typedef {HTMLDivElement & {
+ * 	_cardid?: unknown,
+ * 	selectedt?: unknown,
+ * 	node?: unknown,
+ * 	init?: unknown,
+ * 	_customintro?: unknown
+ * }} ThrownDomNode
+ */
+
+/**
+ * @param {Node | null | undefined} node
+ * @returns {node is ThrownDomNode}
+ */
+function isThrownNode(node) {
+	return node instanceof HTMLDivElement;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is { cardsetion?: unknown, name2?: unknown, range?: unknown, throw_id?: unknown }}
+ */
+function isThrownNodeMap(value) {
+	return value !== null && (typeof value === "object" || typeof value === "function");
+}
+
+/**
+ * @param {ThrownDomNode} node
+ * @returns {unknown}
+ */
+function getThrownCardId(node) {
+	return node._cardid;
+}
+
+/**
+ * @param {ThrownDomNode} node
+ * @returns {boolean}
+ */
+function isThrownCardSelected(node) {
+	return Boolean(node.selectedt);
+}
+
+/**
+ * @param {ThrownDomNode} node
+ * @param {unknown} id
+ * @returns {boolean}
+ */
+function selectThrownCard(node, id) {
+	if (getThrownCardId(node) != id || isThrownCardSelected(node)) return false;
+	node.selectedt = true;
+	return true;
+}
+
+/**
+ * @param {ThrownDomNode} node
+ * @returns {{ cardsetion?: unknown, name2?: unknown, range?: unknown, throw_id?: unknown } | undefined}
+ */
+function getThrownNodeMap(node) {
+	const nodeMap = node.node;
+	if (!nodeMap) return;
+	if (!isThrownNodeMap(nodeMap)) {
+		throw new TypeError("thrown node map must be an object");
+	}
+	return nodeMap;
+}
+
+/**
+ * @param {ThrownDomNode} node
+ * @returns {Node | undefined}
+ */
+function getThrownCardsetion(node) {
+	const nodeMap = getThrownNodeMap(node);
+	const cardsetion = nodeMap?.cardsetion;
+	if (cardsetion === undefined) return;
+	if (!(cardsetion instanceof Node)) {
+		throw new TypeError("thrown card section must be a Node");
+	}
+	return cardsetion;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is { remove: () => void }}
+ */
+function isRemovableThrownCardsetion(value) {
+	return value !== null && (typeof value === "object" || typeof value === "function") && "remove" in value && typeof value.remove === "function";
+}
+
+/**
+ * @param {HTMLDivElement & { node?: unknown }} node
+ * @param {HTMLDivElement} cardsetion
+ */
+function replaceThrownCardsetion(node, cardsetion) {
+	const nodeMap = node.node;
+	if (!nodeMap) {
+		return;
+	}
+	if (!isThrownNodeMap(nodeMap)) {
+		throw new TypeError("thrown node map must be an object");
+	}
+	const previous = nodeMap.cardsetion;
+	if (previous) {
+		if (!isRemovableThrownCardsetion(previous)) {
+			throw new TypeError("thrown card section must be removable");
+		}
+		previous.remove();
+		delete nodeMap.cardsetion;
+	}
+	nodeMap.cardsetion = cardsetion;
+}
+
+/**
+ * 临时获得动画节点不是真实卡牌，只复用卡牌的两个移动方法。
+ * @typedef {HTMLDivElement & Pick<Card, "moveTo" | "moveDelete">} GainAnimationNode
+ */
+
+/**
+ * @returns {GainAnimationNode}
+ */
+function createGainAnimationNode() {
+	return Object.assign(ui.create.div(".card.thrown"), {
+		moveTo: lib.element.Card.prototype.moveTo,
+		moveDelete: lib.element.Card.prototype.moveDelete,
+	});
+}
+
+/**
+ * 运行时标记可以是普通 div；其自定义字段需要在各自消费者处验证。
+ * @typedef {HTMLDivElement & {
+ * 	name?: unknown,
+ * 	markidentifer?: unknown,
+ * 	info?: unknown,
+ * 	markcount?: unknown,
+ * 	delete?: unknown
+ * }} MarkDomNode
+ */
+
+/**
+ * @param {Node | null} node
+ * @returns {node is MarkDomNode}
+ */
+function isMarkNode(node) {
+	return node instanceof HTMLDivElement;
+}
+
+/**
+ * @param {MarkDomNode} node
+ * @param {unknown} name
+ * @returns {boolean}
+ */
+function hasMarkName(node, name) {
+	return node.name == name;
+}
+
+/**
+ * @param {MarkDomNode} node
+ * @param {unknown} identifier
+ * @returns {boolean}
+ */
+function hasMarkIdentifier(node, identifier) {
+	return node.markidentifer == identifier;
+}
+
+/**
+ * @param {MarkDomNode} node
+ * @returns {boolean}
+ */
+function hasFixedMarkInfo(node) {
+	const info = node.info;
+	return info !== null && (typeof info === "object" || typeof info === "function") && "fixed" in info && Boolean(info.fixed);
+}
+
+/**
+ * @param {MarkDomNode} node
+ * @returns {HTMLDivElement | undefined}
+ */
+function getMarkCount(node) {
+	const markcount = node.markcount;
+	if (!markcount) return;
+	if (!(markcount instanceof HTMLDivElement)) {
+		throw new TypeError("mark count must be an HTMLDivElement");
+	}
+	return markcount;
+}
+
+/**
+ * @param {MarkDomNode} node
+ */
+function deleteMarkNode(node) {
+	const deleteMark = node.delete;
+	if (typeof deleteMark !== "function") {
+		throw new TypeError("mark node delete method must be callable");
+	}
+	deleteMark.call(node);
+}
+
+/**
+ * @typedef {(event: RuntimeGameEvent, player: Player, triggername: string) => boolean} TempSkillExpireFilter
+ */
+
+/**
+ * @typedef {Signal | Signal[] | SkillTrigger | TempSkillExpireFilter} TempSkillExpire
+ */
+
+/**
+ * @typedef {SkillTrigger | TempSkillExpireFilter} StoredTempSkillExpire
+ */
 
 export class Player extends HTMLDivElement {
 	/**
-	 * @param {HTMLDivElement|DocumentFragment} [position]
+	 * @param {HTMLDivElement|DocumentFragment|null} [position]
 	 */
 	// @ts-expect-error ignore
 
@@ -24,7 +315,6 @@ export class Player extends HTMLDivElement {
 		// @ts-expect-error ignore
 		const player = ui.create.div(".player", position);
 		Object.setPrototypeOf(player, (lib.element.Player || Player).prototype);
-		// @ts-expect-error ignore
 		player._args = [position];
 		return player;
 	}
@@ -59,19 +349,18 @@ export class Player extends HTMLDivElement {
 			handcards2: ui.create.div(".handcards"),
 			expansions: ui.create.div(".expansions"),
 		});
-		player.node.handcards1._childNodesWatcher = new ChildNodesWatcher(player.node.handcards1);
-		player.node.handcards2._childNodesWatcher = new ChildNodesWatcher(player.node.handcards2);
+		/** @type {WatchedCardContainer} */
+		const handcards1 = player.node.handcards1;
+		/** @type {WatchedCardContainer} */
+		const handcards2 = player.node.handcards2;
+		handcards1._childNodesWatcher = new ChildNodesWatcher(handcards1);
+		handcards2._childNodesWatcher = new ChildNodesWatcher(handcards2);
 		let observer = new MutationObserver(mutationsList => {
 			for (let mutation of mutationsList) {
 				if (mutation.type === "childList") {
 					const addedNodes = Array.from(mutation.addedNodes);
 					const removedNodes = Array.from(mutation.removedNodes);
-					// @ts-expect-error ignore
-					if (
-						addedNodes.some(card => !card.classList.contains("emptyequip")) ||
-						// @ts-expect-error ignore
-						removedNodes.some(card => !card.classList.contains("emptyequip"))
-					) {
+					if (addedNodes.some(card => card instanceof lib.element.Card && !card.classList.contains("emptyequip")) || removedNodes.some(card => card instanceof lib.element.Card && !card.classList.contains("emptyequip"))) {
 						player.$handleEquipChange();
 					}
 				}
@@ -239,7 +528,7 @@ export class Player extends HTMLDivElement {
 	 */
 	skipList;
 	/**
-	 * @type { Array<[string,string,Function|undefined]> }
+	 * @type { Array<[string, string, ((player: Player) => boolean | import("../../game/index.js").CardData | undefined) | undefined]> }
 	 */
 	extraEquip;
 	/**
@@ -296,7 +585,7 @@ export class Player extends HTMLDivElement {
 	 */
 	actionHistory;
 	/**
-	 * @type { Record<string, string[]> }
+	 * @type { Record<string, StoredTempSkillExpire> }
 	 */
 	tempSkills;
 	/**
@@ -307,6 +596,10 @@ export class Player extends HTMLDivElement {
 	 * @type { Record<string, HTMLDivElement> }
 	 */
 	marks;
+	/**
+	 * @type {{ handcards: VCard[], equips: VCard[], judges: VCard[] }}
+	 */
+	vcardsMap;
 	/**
 	 * @type { Record<string, number> }
 	 */
@@ -321,6 +614,7 @@ export class Player extends HTMLDivElement {
 	 * 	enemy: [],
 	 * 	neutral: [],
 	 * 	shown?: number,
+	 * 	tempIgnore?: Player[],
 	 * 	handcards?: {
 	 * 		global: [],
 	 * 		source: [],
@@ -338,15 +632,15 @@ export class Player extends HTMLDivElement {
 	 */
 	outCount;
 	/**
-	 * @type { number }
+	 * @type { number | undefined }
 	 */
 	maxHp;
 	/**
-	 * @type { number }
+	 * @type { number | undefined }
 	 */
 	hp;
 	/**
-	 * @type { number }
+	 * @type { number | undefined }
 	 */
 	hujia;
 	/**
@@ -370,19 +664,19 @@ export class Player extends HTMLDivElement {
 	 */
 	previous;
 	/**
-	 * @type { string }
+	 * @type { string | undefined }
 	 */
 	name;
 	/**
-	 * @type { string }
+	 * @type { string | undefined }
 	 */
 	name1;
 	/**
-	 * @type { string }
+	 * @type { string | undefined }
 	 */
 	name2;
 	/**
-	 * @type { any[] }
+	 * @type { string[] | undefined }
 	 */
 	tempname;
 	/**
@@ -394,11 +688,11 @@ export class Player extends HTMLDivElement {
 	 */
 	skinPath;
 	/**
-	 * @type { string }
+	 * @type { string | undefined }
 	 */
 	sex;
 	/**
-	 * @type { string }
+	 * @type { string | undefined }
 	 */
 	group;
 	/**
@@ -422,7 +716,7 @@ export class Player extends HTMLDivElement {
 	 */
 	identityShown;
 	/**
-	 * @type { boolean }
+	 * @type { boolean | undefined }
 	 */
 	removed;
 	/**
@@ -444,13 +738,14 @@ export class Player extends HTMLDivElement {
 	 * @param {string} skill 视为装备的技能
 	 * @param {Array<string>|string} equip 视为装备的牌名
 	 * @param {boolean} replace 是否清除该skill原有视为装备
-	 * @param {Function} [preserve] 视为装备的条件,用于八阵类视为装备
+	 * @param {(player: Player) => boolean | import("../../game/index.js").CardData | undefined} [preserve] 视为装备的条件,用于八阵类视为装备
 	 */
 	addExtraEquip(skill, equip, replace = false, preserve) {
 		const player = this;
 		if (replace) {
 			player.removeExtraEquip(skill);
 		}
+		/** @type {Array<[string, string, ((player: Player) => boolean | import("../../game/index.js").CardData | undefined) | undefined]>} */
 		let list;
 		if (typeof equip == "string") {
 			list = [[skill, equip, preserve]];
@@ -497,7 +792,7 @@ export class Player extends HTMLDivElement {
 
 	/**
 	 * 整理手牌，要联机的不要单独用，主机不会同步状态的
-	 * @param {(a: Card, b: Card) => number|Card[]} [sort] 排序方法，如果传的牌数组，就按数组顺序排
+	 * @param {unknown} [sort] 扩展排序输入：函数使用原生比较协议，数组按索引排序，其余值走默认排序
 	 * @returns {boolean|undefined}
 	 */
 	sortHandcard(sort) {
@@ -509,16 +804,21 @@ export class Player extends HTMLDivElement {
 		if (!hs.length) {
 			return false;
 		}
+		/** @type {Card[]} */
 		const cards1 = [];
+		/** @type {Card[] | null} */
 		const cards2 = !get.is.singleHandcard() ? [] : null;
 
 		if (typeof sort == "function") {
-			hs.sort(sort);
-		} else if (get.itemtype(sort) == "cards") {
+			Reflect.apply(hs.sort, hs, [sort]);
+		} else if (Array.isArray(sort)) {
 			hs.sort((a, b) => sort.indexOf(a) - sort.indexOf(b));
 		} else if (this.hasSkillTag("sortCardByNum")) {
-			const getn = function (card) {
+			const getn = card => {
 				const num = get.number(card, this);
+				if (typeof num != "number") {
+					return NaN;
+				}
 				if (num < 3) {
 					return 13 + num;
 				}
@@ -530,9 +830,11 @@ export class Player extends HTMLDivElement {
 				if (a.name != b.name) {
 					return lib.sort.card(a.name, b.name);
 				} else if (a.suit != b.suit) {
-					return lib.suit.indexOf(a) - lib.suit.indexOf(b);
+					const suitA = typeof a.suit == "string" ? a.suit : "";
+					const suitB = typeof b.suit == "string" ? b.suit : "";
+					return lib.suit.indexOf(suitA) - lib.suit.indexOf(suitB);
 				} else {
-					return a.number - b.number;
+					return typeof a.number == "number" && typeof b.number == "number" ? a.number - b.number : NaN;
 				}
 			});
 		}
@@ -563,7 +865,7 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * 整理手牌然后如果是联机模式顺便同步
-	 * @param {(a: Card, b: Card) => number|Card[]} [sort] 排序方法，如果传的牌数组，就按数组顺序排
+	 * @param {unknown} [sort] 原样交给 sortHandcard 解析的扩展排序输入
 	 */
 	sortHandcardOL(sort) {
 		const bool = this.sortHandcard(sort);
@@ -572,12 +874,12 @@ export class Player extends HTMLDivElement {
 			if (game.online) {
 				game.send(
 					"syncHandcard",
-					this.getCards("h").map(i => i.cardid)
+					this.getCards("h").map(i => i.cardid).filter(id => typeof id == "string")
 				);
 			} else {
 				game.syncHandcard(
 					this,
-					this.getCards("h").map(i => i.cardid)
+					this.getCards("h").map(i => i.cardid).filter(id => typeof id == "string")
 				);
 			}
 		}
@@ -652,10 +954,9 @@ export class Player extends HTMLDivElement {
 		if (this._tempTranslate) {
 			playername = this._tempTranslate;
 			hasTempTranslate = true;
-		} else if (lib.translate[`${name}_ab`]) {
-			playername = lib.translate[`${name}_ab`];
 		} else {
-			playername = get.translation(name);
+			const abbreviation = lib.translate[`${name}_ab`];
+			playername = abbreviation || get.translation(name);
 		}
 		if (!forDialog) {
 			return playername;
@@ -670,7 +971,7 @@ export class Player extends HTMLDivElement {
 	 * 玩家（或某张牌）能否响应某个useCard事件的牌，目前仅支持本体部分常用的卡牌，需要添加新卡牌的可以到lib.respondMap按格式添加
 	 * 请注意，该函数只能粗略判断，有些情况是没法判断的
 	 * @param {GameEvent} event 需要判断能否响应的事件，目前只能为useCard或者它的下一级衍生事件，其他全部返回undefined
-	 * @param { Card | VCard | object | string } card 需要检测的牌
+	 * @param { Card | VCard | CardBaseUIData | string } [card] 需要检测的牌
 	 * @param { string | boolean } [type] 响应什么类型，默认使用。"use": 使用 / "respond": 打出 / "all": 全部，true
 	 * @returns { boolean | undefined }
 	 */
@@ -683,9 +984,7 @@ export class Player extends HTMLDivElement {
 		if (!evt || !evt.card) {
 			return;
 		}
-		if (card && typeof card == "string") {
-			card = { name: card };
-		}
+		const responseCard = typeof card == "string" ? { name: card } : card;
 		if (typeof type !== "string") {
 			type = type ? "all" : "use";
 		}
@@ -697,8 +996,8 @@ export class Player extends HTMLDivElement {
 			keys.addArray(get.canRespond("damage"));
 		}
 		keys.addArray(get.canRespond("all"));
-		if (card) {
-			return keys.some(key => (typeof key == "function" ? key(card, player) : key == get.name(card, player)));
+		if (responseCard) {
+			return keys.some(key => (typeof key == "function" ? key(responseCard, player) : key == get.name(responseCard, player)));
 		}
 		const evtx = get.event();
 		let evtNames = typeof type !== "string" || type === "all" ? ["chooseToUse", "chooseToRespond"] : ["chooseTo" + type.slice(0, 1).toUpperCase() + type.slice(1)];
@@ -717,7 +1016,10 @@ export class Player extends HTMLDivElement {
 				return lib.filter.cardEnabled(card, player, evty);
 			});
 		});
-		return keys.some(key => (typeof key == "function" ? cards.some(card => key(card, player)) : player.hasUsableCard(name, type))) && !evt.directHit.includes(player);
+		if (!keys.some(key => (typeof key == "function" ? cards.some(card => key(card, player)) : player.hasUsableCard(key, type))) || evt.directHit === true) return false;
+		const directHit = evt.directHit;
+		if (!Array.isArray(directHit)) throw new TypeError("A response event requires its direct-hit player list");
+		return !directHit.includes(player);
 	}
 	/**
 	 * 设置提示文字，有则更改，无则加之。
@@ -740,11 +1042,14 @@ export class Player extends HTMLDivElement {
 				if (!player.tips.has(index)) {
 					player.tips.set(index, ui.create.div(".tip", player.node.tipContainer));
 				}
-				player.tips.get(index).innerHTML = message
-					.replace(/ /g, "&nbsp;")
-					.replace(/(?:♥︎|♦︎)/g, '<span style="color: red; ">$&</span>')
-					.replace(/\n/g, "<br>");
-				player.tips.get(index).css(css);
+				const tip = player.tips.get(index);
+				if (tip) {
+					tip.innerHTML = message
+						.replace(/ /g, "&nbsp;")
+						.replace(/(?:♥︎|♦︎)/g, '<span style="color: red; ">$&</span>')
+						.replace(/\n/g, "<br>");
+					tip.css(css);
+				}
 
 				let double = player.classList.contains("fullskin2") && lib.config.layout !== "long2";
 
@@ -762,12 +1067,7 @@ export class Player extends HTMLDivElement {
 		);
 		if (isTemp && !player.storage[`temp_tip_${index}`]) {
 			player.storage[`temp_tip_${index}`] = true;
-			let expire;
-			if (isTemp === true) {
-				expire = { global: ["phaseAfter", "phaseBeforeStart"] };
-			} else if (typeof isTemp == "string" || Array.isArray(isTemp)) {
-				expire = { global: isTemp };
-			}
+			const expire = isTemp === true ? { global: ["phaseAfter", "phaseBeforeStart"] } : typeof isTemp == "string" || Array.isArray(isTemp) ? { global: isTemp } : isTemp;
 			player
 				.when(expire, false)
 				.assign({
@@ -793,7 +1093,7 @@ export class Player extends HTMLDivElement {
 					player.tips?.clear();
 				} else {
 					if (player.tips?.has(index)) {
-						player.tips.get(index).remove();
+						player.tips.get(index)?.remove();
 						player.tips.delete(index);
 					}
 				}
@@ -910,7 +1210,7 @@ export class Player extends HTMLDivElement {
 			/** @type { Required<Skill>['filter'][] } */
 			filterFuns: [
 				function (event, player) {
-					return !lib.skill[skillName].triggered;
+					return !lib.requireSkill(skillName).triggered;
 				},
 			],
 			/** @type { Required<Skill>['content'][] } */
@@ -1417,7 +1717,7 @@ export class Player extends HTMLDivElement {
 	 *
 	 * 该方法返回一个生成器，需要返回数组请使用`Player#getKnownCards`
 	 *
-	 * @param { Player } [other] - 作为观测者的玩家（即以该玩家为原点观察）
+	 * @param { Player | null } [other] - 作为观测者的玩家（即以该玩家为原点观察）；null 保留旧版回退及警告
 	 * @param { string | string[] | Record<string, any> | ((card: Card) => boolean) } [filter] - 过滤条件，可以是牌名、牌名数组、属性对象或过滤函数
 	 * @returns { Generator<Card> } 经过过滤后的牌的生成器
 	 */
@@ -1439,7 +1739,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 返回玩家手牌中被给定角色所知的牌，默认为当前事件的角色（不存在则改为自身）
 	 *
-	 * @param { Player } [other] - 作为观测者的玩家（即以该玩家为原点观察）
+	 * @param { Player | null } [other] - 作为观测者的玩家（即以该玩家为原点观察）；null 保留旧版回退及警告
 	 * @param { string | string[] | Record<string, any> | ((card: Card) => boolean) } [filter] - 过滤条件，可以是牌名、牌名数组、属性对象或过滤函数
 	 * @returns { Card[] } 经过过滤后的牌的数组
 	 */
@@ -1697,7 +1997,7 @@ export class Player extends HTMLDivElement {
 	 *
 	 * 检测角色是否能重铸此牌
 	 * @param { Card } card
-	 * @param { Player } [source]
+	 * @param { Player | null } [source]
 	 * @param { boolean } [strict]
 	 */
 	canRecast(card, source, strict) {
@@ -1894,8 +2194,11 @@ export class Player extends HTMLDivElement {
 	 * @returns { VCard[] }
 	 */
 	getVEquips(subtype) {
+		/** @type {string | undefined} */
+		let normalizedSubtype;
 		switch (typeof subtype) {
 			case "string":
+				normalizedSubtype = subtype;
 				if (subtype == "equip3_4") {
 					const cards = [];
 					cards.addArray(this.getVEquips(3));
@@ -1909,20 +2212,19 @@ export class Player extends HTMLDivElement {
 					return [];
 				}
 			case "number":
-				subtype = "equip" + subtype;
+				normalizedSubtype = "equip" + subtype;
 				break;
 			case "object":
-				subtype = get.subtype(subtype, false);
+				normalizedSubtype = get.subtype(subtype, false);
 				break;
 			default:
 				return [];
 		}
-		if (!subtype) {
+		if (!normalizedSubtype) {
 			return [];
 		}
 		return this.getVCards("e", card => {
-			// @ts-expect-error ignore
-			return get.subtypes(card, false).includes(subtype);
+			return get.subtypes(card, false).includes(normalizedSubtype);
 		});
 	}
 	/**
@@ -2191,7 +2493,7 @@ export class Player extends HTMLDivElement {
 		} else {
 			rangex.push(...new Set(ranges));
 		}
-		if (get.itemtype(name) == "card") {
+		if (name instanceof lib.element.Card) {
 			const owner = get.owner(name, "judge");
 			if (owner && !lib.filter.canBeGained(name, this, owner)) {
 				return false;
@@ -2306,7 +2608,7 @@ export class Player extends HTMLDivElement {
 		var storage = this.getStorage("cooperation");
 		for (var info of storage) {
 			if (info.target == target && info.reason == reason) {
-				var skill = lib.skill["cooperation_" + info.type];
+				var skill = getRegisteredSkill(lib.skill, "cooperation_" + info.type);
 				if (skill && skill.checkx && skill.checkx(info)) {
 					return true;
 				}
@@ -2345,7 +2647,7 @@ export class Player extends HTMLDivElement {
 	getClans(unseen) {
 		const clans = [];
 		if (unseen || !this.isUnseen(0)) {
-			let info = lib.character[this.name1];
+			let info = lib.character[String(this.name1)];
 			if (info && info.clans) {
 				clans.addArray(info.clans);
 			}
@@ -2387,7 +2689,7 @@ export class Player extends HTMLDivElement {
 			skill
 		);
 		let player = this;
-		let evt = _status.event;
+		const evt = _status.event;
 		//转换技转换后
 		let next = game.createEvent("changeZhuanhuanji", false);
 		next.player = player;
@@ -2395,11 +2697,9 @@ export class Player extends HTMLDivElement {
 		next.includeOut = true;
 		next.skill = skill;
 		evt.next.remove(next);
-		if (evt.logSkill || evt.name?.startsWith("pre_")) {
-			evt = evt.getParent();
-		}
-		next.log_event = evt;
-		evt.after.push(next);
+		const logEvent = evt.logSkill || evt.name?.startsWith("pre_") ? evt.getParent() : evt;
+		next.log_event = logEvent;
+		requireParentEvent(logEvent).after.push(next);
 		next.setContent("emptyEvent");
 		//转换技转换时
 		let next2 = game.createEvent("changeZhuanhuanjiBegin", false, get.event());
@@ -2407,7 +2707,7 @@ export class Player extends HTMLDivElement {
 		next2.forceDie = true;
 		next2.includeOut = true;
 		next2.skill = skill;
-		next2.log_event = evt;
+		next2.log_event = logEvent;
 		next2.setContent("emptyEvent");
 	}
 	/**
@@ -2416,8 +2716,9 @@ export class Player extends HTMLDivElement {
 	$changeZhuanhuanji(skill) {
 		var mark = this.marks[skill];
 		if (mark) {
-			if (lib.skill[skill].$zhuanhuanji) {
-				lib.skill[skill].$zhuanhuanji(skill, this);
+			const info = requireRegisteredSkill(lib.skill, skill);
+			if (info.$zhuanhuanji) {
+				info.$zhuanhuanji(skill, this);
 				return;
 			}
 			const zhuanhuanLimit = get.zhuanhuanItemNum(skill, this);
@@ -2550,11 +2851,14 @@ export class Player extends HTMLDivElement {
 	 * @param { string } tag
 	 */
 	addGaintag(cards, tag) {
-		if (get.itemtype(cards) == "card") {
-			cards = [cards];
-		}
-		game.addVideo("addGaintag", this, [get.cardsInfo(cards), tag]);
+		const cardArr = Array.isArray(cards) ? cards : [cards];
+		game.addVideo("addGaintag", this, [get.cardsInfo(cardArr), tag]);
 		game.broadcastAll(
+			/**
+			 * @param {Player} player
+			 * @param {Card[]} cards
+			 * @param {string} tag
+			 */
 			function (player, cards, tag) {
 				var hs = player.getCards("hejsx");
 				for (var i of cards) {
@@ -2564,7 +2868,7 @@ export class Player extends HTMLDivElement {
 				}
 			},
 			this,
-			cards,
+			cardArr,
 			tag
 		);
 	}
@@ -2574,12 +2878,21 @@ export class Player extends HTMLDivElement {
 	 * @param { Card | Card[] } [cards]
 	 */
 	removeGaintag(tag, cards) {
-		if (get.itemtype(cards) == "card") {
-			cards = [cards];
+		let cardArr;
+		if (Array.isArray(cards)) {
+			cardArr = cards;
+		} else if (cards) {
+			cardArr = [cards];
+		} else {
+			cardArr = this.getCards("h");
 		}
-		cards = cards || this.getCards("h");
-		game.addVideo("removeGaintag", this, [tag, get.cardsInfo(cards)]);
+		game.addVideo("removeGaintag", this, [tag, get.cardsInfo(cardArr)]);
 		game.broadcastAll(
+			/**
+			 * @param {Player} player
+			 * @param {string} tag
+			 * @param {Card[]} cards
+			 */
 			function (player, tag, cards) {
 				for (var i of cards) {
 					i.removeGaintag(tag);
@@ -2587,7 +2900,7 @@ export class Player extends HTMLDivElement {
 			},
 			this,
 			tag,
-			cards
+			cardArr
 		);
 	}
 	/**
@@ -2633,7 +2946,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * @param { String } from
 	 * @param { String } to
-	 * @returns { GameEvent }
+	 * @returns { GameEvent | undefined }
 	 */
 	reinitCharacter(from, to, log = true) {
 		const rawPairs = [this.name1];
@@ -2649,8 +2962,8 @@ export class Player extends HTMLDivElement {
 		return this.changeCharacter(rawPairs, log);
 	}
 	/**
-	 * @param { String[] } newPairs
-	 * @returns { GameEvent }
+	 * @param { (String | undefined)[] } newPairs
+	 * @returns { GameEvent | undefined }
 	 */
 	changeCharacter(newPairs, log = true) {
 		if (!Array.isArray(newPairs)) {
@@ -2658,7 +2971,7 @@ export class Player extends HTMLDivElement {
 			return;
 		}
 		for (let name of newPairs) {
-			if (!lib.character[name]) {
+			if (!lib.character[String(name)]) {
 				console.warn(`警告：Player[${this.name}]试图将武将牌变更为不存在的武将:`, name);
 				return;
 			}
@@ -2697,10 +3010,8 @@ export class Player extends HTMLDivElement {
 		var evt = _status.event;
 		if (!["useSkill", "trigger"].includes(evt.name)) {
 			evt.next.remove(next);
-			if (evt.logSkill) {
-				evt = evt.getParent();
-			}
-			evt.after.push(next);
+			const afterEvent = evt.logSkill ? evt.getParent() : evt;
+			requireParentEvent(afterEvent).after.push(next);
 		}
 		return next;
 	}
@@ -2721,33 +3032,40 @@ export class Player extends HTMLDivElement {
 		game.addVideo("showCharacter", this, num);
 		var skills;
 		switch (num) {
-			case 0:
+		case 0:
 				if (log !== false) {
 					game.log(this, "展示了主将", "#b" + this.name1);
 				}
 				this.name = this.name1;
-				skills = lib.character[this.name][3] || [];
-				this.sex = lib.character[this.name][0];
+				skills = lib.character[String(this.name)][3] || [];
+				this.sex = lib.character[String(this.name)][0];
 				if (this.group == "unknown") {
-					this.group = lib.character[this.name][1];
+					this.group = lib.character[String(this.name)][1];
 				}
 				this.classList.remove("unseen");
 				this.classList.remove("unseen_show");
 				break;
-			case 1:
+			case 1: {
+				const name2 = this.name2;
+				if (!name2) {
+					throw new Error("cannot show an absent vice character");
+				}
 				if (log !== false) {
-					game.log(this, "展示了副将", "#b" + this.name2);
+					game.log(this, "展示了副将", "#b" + name2);
 				}
-				skills = lib.character[this.name2][3] || [];
+				skills = lib.character[name2][3] || [];
 				if (this.sex == "unknown") {
-					this.sex = lib.character[this.name2][0];
+					this.sex = lib.character[name2][0];
 				}
-				if (this.name.startsWith("unknown")) {
-					this.name = this.name2;
+				const name = this.name;
+				if (name === undefined) throw new TypeError("Showing a character requires an initialized name");
+				if (name.startsWith("unknown")) {
+					this.name = name2;
 				}
 				this.classList.remove("unseen2");
 				this.classList.remove("unseen2_show");
 				break;
+			}
 			case 2:
 				if (log !== false) {
 					if (this.name2) {
@@ -2757,13 +3075,13 @@ export class Player extends HTMLDivElement {
 					}
 				}
 				this.name = this.name1;
-				var skills = lib.character[this.name][3] || [];
+				skills = lib.character[String(this.name)][3] || [];
 				if (this.name2) {
 					skills = skills.concat(lib.character[this.name2][3] || []);
 				}
-				this.sex = lib.character[this.name][0];
+				this.sex = lib.character[String(this.name)][0];
 				if (this.group == "unknown") {
-					this.group = lib.character[this.name][1];
+					this.group = lib.character[String(this.name)][1];
 				}
 				this.classList.remove("unseen");
 				this.classList.remove("unseen2");
@@ -2943,9 +3261,11 @@ export class Player extends HTMLDivElement {
 		}
 		emotion.style["z-index"] = 10;
 		emotion.style.transform = "translateY(" + (top2 - top) + "px) translateX(" + (left2 - left) + "px)";
-		// @ts-expect-error ignore
 		if (["egg", "flower", "shoe"].includes(name) || rotate) {
-			emotion.firstElementChild.style.transform = "rotate(1440deg)";
+			const firstElement = emotion.firstElementChild;
+			if (firstElement instanceof HTMLElement) {
+				firstElement.style.transform = "rotate(1440deg)";
+			}
 		}
 		if (lib.config.background_audio) {
 			game.playAudio("effect", "throw_" + name + get.rand(1, 2));
@@ -2981,26 +3301,28 @@ export class Player extends HTMLDivElement {
 	 */
 	trySkillAnimate(name, popname, checkShow) {
 		game.callHook("checkSkillAnimate", [this, name, popname]);
-		if (!game.online && lib.config.skill_animation_type != "off" && lib.skill[name] && lib.skill[name].skillAnimation) {
+		const info = getRegisteredSkill(lib.skill, name);
+		if (!game.online && lib.config.skill_animation_type != "off" && info?.skillAnimation) {
 			if (lib.config.skill_animation_type == "default") {
 				checkShow = checkShow || "main";
 			} else {
 				checkShow = false;
 			}
-			if (lib.skill[name].textAnimation) {
+			if (info.textAnimation) {
 				checkShow = false;
 			}
-			this.$skill(lib.skill[name].animationStr || lib.translate[name], lib.skill[name].skillAnimation, lib.skill[name].animationColor, checkShow);
+			this.$skill(info.animationStr || lib.translate[name], info.skillAnimation, info.animationColor, checkShow);
 			return;
 		}
 		var player = this;
 		game.broadcast(
-			function (player, name, popname) {
-				player.trySkillAnimate(name, popname);
+			function (player, name, popname, checkShow) {
+				player.trySkillAnimate(name, popname, checkShow);
 			},
 			player,
 			name,
-			popname
+			popname,
+			checkShow
 		);
 		if (lib.animate.skill[name]) {
 			lib.animate.skill[name].apply(this, arguments);
@@ -3013,10 +3335,10 @@ export class Player extends HTMLDivElement {
 		}
 	}
 	/**
-	 * @param { Card } card
+	 * @param { Card | VCard } card
 	 * @param { string } name
 	 * @param { string } [nature]
-	 * @param { string } [popname]
+	 * @param { string | boolean } [popname]
 	 */
 	tryCardAnimate(card, name, nature, popname) {
 		game.broadcast(
@@ -3050,8 +3372,8 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * @param { string } name
-	 * @param { string } type
-	 * @returns { boolean | undefined }
+	 * @param { string | boolean } [type]
+	 * @returns { boolean }
 	 */
 	hasUsableCard(name, type) {
 		const player = this;
@@ -3074,9 +3396,9 @@ export class Player extends HTMLDivElement {
 						evt = event;
 					}
 					if (type === "respond") {
-						return lib.filter.cardRespondable(i, player, evt);
+						return lib.filter.cardRespondable(i, player, requireParentEvent(evt));
 					}
-					return lib.filter.cardEnabled(i, player, type === "limit" ? evt : "forceEnable");
+					return lib.filter.cardEnabled(i, player, type === "limit" ? requireParentEvent(evt) : "forceEnable");
 				});
 			}, "hs")
 		) {
@@ -3102,11 +3424,15 @@ export class Player extends HTMLDivElement {
 		for (let i = 0; i < skills.length; i++) {
 			const skill = skills[i],
 				info = get.info(skill),
-				hiddenCard = info.hiddenCard;
-			if (info.usable !== undefined) {
-				let num = info.usable;
-				if (typeof num === "function") {
-					num = info.usable(skill, player);
+				hiddenCard = info.hiddenCard,
+				usable = info.usable,
+				viewAs = info.viewAs,
+				viewAsFilter = info.viewAsFilter,
+				filter = info.filter;
+			if (usable !== undefined) {
+				let num = usable;
+				if (typeof usable === "function") {
+					num = usable(skill, player);
 				}
 				if (typeof num === "number" && get.skillCount(skill, player) >= num) {
 					continue;
@@ -3118,11 +3444,11 @@ export class Player extends HTMLDivElement {
 			if (player.storage[`temp_ban_${skill}`]) {
 				continue;
 			}
-			if (info.viewAs && get.is.object(info.viewAs) && info.viewAs?.name === name) {
-				const goon = !info.viewAsFilter || info.viewAsFilter(player) !== false;
+			if (viewAs && typeof viewAs === "object" && !Array.isArray(viewAs) && viewAs.name === name) {
+				const goon = typeof viewAsFilter !== "function" || viewAsFilter(player) !== false;
 				const bool =
-					!info.filter ||
-					(typeof info.filter === "function" &&
+					!filter ||
+					(typeof filter === "function" &&
 						evtNames.some(evtName => {
 							let evt = event.getParent(evtName);
 							if (get.itemtype(evt) !== "event") {
@@ -3131,13 +3457,14 @@ export class Player extends HTMLDivElement {
 							if (!evt || !checkEnable(info.enable, evt, evtName)) {
 								return false;
 							}
-							if (evt.name === evtName && typeof evt.filterCard == "function" && !evt.filterCard(get.autoViewAs(info.viewAs, "unsure"), player, evt)) {
+							if (evt.name === evtName && typeof evt.filterCard == "function" && !evt.filterCard(new lib.element.VCard(viewAs, "unsure"), player, evt)) {
 								return false;
 							}
-							if (evt.name === evtName && info["on" + evtName.slice(0, 1).toUpperCase() + evtName.slice(1)]) {
-								info["on" + evtName.slice(0, 1).toUpperCase() + evtName.slice(1)](evt);
+							const onEvent = info["on" + evtName.slice(0, 1).toUpperCase() + evtName.slice(1)];
+							if (evt.name === evtName && typeof onEvent === "function") {
+								onEvent(evt);
 							}
-							return evt.name === evtName ? info.filter(evt, player, evt.triggername) : true;
+							return evt.name === evtName && typeof filter === "function" ? filter(requireParentEvent(evt), player, evt.triggername) : true;
 						}));
 				if (goon && bool) {
 					return true;
@@ -3145,9 +3472,9 @@ export class Player extends HTMLDivElement {
 			} else if (typeof hiddenCard == "function") {
 				const goon = hiddenCard(player, name);
 				const bool =
-					!info.filter ||
+					!filter ||
 					(info.enable &&
-						typeof info.filter === "function" &&
+						typeof filter === "function" &&
 						evtNames.some(evtName => {
 							let evt = event.getParent(evtName);
 							if (get.itemtype(evt) !== "event") {
@@ -3156,10 +3483,11 @@ export class Player extends HTMLDivElement {
 							if (!evt || !checkEnable(info.enable, evt, evtName)) {
 								return false;
 							}
-							if (evt.name === evtName && info["on" + evtName.slice(0, 1).toUpperCase() + evtName.slice(1)]) {
-								info["on" + evtName.slice(0, 1).toUpperCase() + evtName.slice(1)](evt);
+							const onEvent = info["on" + evtName.slice(0, 1).toUpperCase() + evtName.slice(1)];
+							if (evt.name === evtName && typeof onEvent === "function") {
+								onEvent(evt);
 							}
-							return evt.name === evtName ? info.filter(evt, player, evt.triggername) : true;
+							return evt.name === evtName && typeof filter === "function" ? filter(requireParentEvent(evt), player, evt.triggername) : true;
 						}));
 				if (goon && bool) {
 					return true;
@@ -3184,17 +3512,18 @@ export class Player extends HTMLDivElement {
 			return false;
 		}
 		const mod1 = game.checkMod(from, to, "unchanged", "inRange", from);
-		if (mod1 != "unchanged") {
+		if (typeof mod1 == "boolean") {
 			return mod1;
 		}
 		const mod2 = game.checkMod(from, to, "unchanged", "inRangeOf", to);
-		if (mod2 != "unchanged") {
+		if (typeof mod2 == "boolean") {
 			return mod2;
 		}
 		const range = from.getAttackRange();
 		if (range < 1) {
 			return false;
 		}
+		/** @type {Player} */
 		let player = from,
 			m,
 			n = 1;
@@ -3289,11 +3618,26 @@ export class Player extends HTMLDivElement {
 	 *
 	 * 获取角色的体力值。设置“raw”为true以获取角色的体力。
 	 *
-	 * @param { boolean } [raw]
-	 * @returns { number }
+	 * @overload
+	 * @param {true} raw
+	 * @returns {number | undefined}
+	 */
+	/**
+	 * @overload
+	 * @param {false} [raw]
+	 * @returns {number}
+	 */
+	/**
+	 * @overload
+	 * @param {boolean} [raw]
+	 * @returns {number | undefined}
+	 */
+	/**
+	 * @param {boolean} [raw]
+	 * @returns {number | undefined}
 	 */
 	getHp(raw) {
-		return raw ? this.hp : Math.max(0, this.hp);
+		return raw ? this.hp : Math.max(0, Number(this.hp));
 	}
 	/**
 	 * Set “raw” to true to get the player's raw damaged HP instead.
@@ -3307,7 +3651,7 @@ export class Player extends HTMLDivElement {
 		if (this.getHp(raw) == Infinity) {
 			return 0;
 		}
-		return this.maxHp - this.getHp(raw);
+		return Number(this.maxHp) - Number(this.getHp(raw));
 	}
 	/**
 	 * 将玩家切换至某个势力
@@ -3424,7 +3768,6 @@ export class Player extends HTMLDivElement {
 		if (!notmeisok && _status.currentPhase != this) {
 			return false;
 		}
-		// @ts-expect-error ignore
 		return _status.event.name == "phaseUse" || _status.event.getParent("phaseUse").name == "phaseUse";
 	}
 	/**
@@ -3459,7 +3802,7 @@ export class Player extends HTMLDivElement {
 	$disableJudge() {
 		this.storage._disableJudge = true;
 		for (let i = 0; i < this.node.judges.childNodes.length; i++) {
-			if (this.node.judges.childNodes[i].classList.contains("feichu")) {
+			if (/** @type {HTMLElement} */ (this.node.judges.childNodes[i]).classList.contains("feichu")) {
 				return;
 			}
 		}
@@ -3580,6 +3923,7 @@ export class Player extends HTMLDivElement {
 				case "pingjun": {
 					this.maxHp = Math.floor((maxHp1 + maxHp2) / 2);
 					this.hp = Math.floor((hp1 + hp2) / 2);
+					/** @type {boolean | undefined} */
 					this.singleHp = (maxHp1 + maxHp2) % 2 === 1;
 					break;
 				}
@@ -3741,6 +4085,8 @@ export class Player extends HTMLDivElement {
 		if (typeof map == "string") {
 			map = { skill: map };
 		}
+		const skin = this.skin;
+		if (!skin) return;
 		for (const i of ["name", "name1", "name2"]) {
 			if (i == "name" && get.mode() == "guozhan") {
 				continue;
@@ -3762,7 +4108,7 @@ export class Player extends HTMLDivElement {
 						if (typeof map.characterName == "string" && this[i] == map.characterName) {
 							return true;
 						}
-						if (typeof map.characterSkinName == "string" && this.skin[name] == map.characterSkinName) {
+						if (typeof map.characterSkinName == "string" && skin[name] == map.characterSkinName) {
 							return true;
 						}
 						if (typeof map.source == "string" && name == map.source) {
@@ -3771,13 +4117,17 @@ export class Player extends HTMLDivElement {
 						return false;
 					})()
 				) {
-					if (this.skin[name] != character) {
-						const origin = this.skin[name];
+					if (skin[name] != character) {
+						const origin = skin[name];
 						game.broadcastAll(
 							(player, name, character, list, origin) => {
-								player.tempname.remove(origin);
-								player.tempname.add(character);
-								player.skin[name] = character;
+								const skin = player.skin;
+								if (!skin) return;
+								const tempname = player.tempname;
+								if (!tempname) throw new TypeError("Skin changes require initialized temporary names");
+								tempname.remove(origin);
+								tempname.add(character);
+								skin[name] = character;
 								const goon = !lib.character[character];
 								if (goon) {
 									lib.character[character] = get.convertedCharacter(["", "", 0, [], (list.find(i => i[0] == character) || [character, []])[1]]);
@@ -3810,17 +4160,29 @@ export class Player extends HTMLDivElement {
 	}
 	changeSkinByName(character, index) {
 		const name = index == 2 ? "name2" : "name";
-		const list = lib.characterSubstitute[this[name]];
-		if (list && lib.characterSubstitute[this[name]]) {
-			const origin = this.skin[name];
+		const playerName = this[name];
+		if (!playerName) {
+			return;
+		}
+		const list = lib.characterSubstitute[playerName];
+		if (list && lib.characterSubstitute[playerName]) {
+			const skin = this.skin;
+			if (!skin) return;
+			const origin = skin[name];
 			game.broadcastAll(
 				(player, name, character, list, origin) => {
-					player.tempname.remove(origin);
-					player.tempname.add(character);
-					player.skin[name] = character;
+					const skin = player.skin;
+					if (!skin) return;
+					const tempname = player.tempname;
+					if (!tempname) throw new TypeError("Skin changes require initialized temporary names");
+					tempname.remove(origin);
+					tempname.add(character);
+					skin[name] = character;
 					const goon = !lib.character[character];
 					if (goon) {
-						lib.character[character] = ["", "", 0, [], (list.find(i => i[0] == character) || [character, []])[1]];
+						/** @type {import("./character.js").Character} */
+						const convertedCharacter = get.convertedCharacter(["", "", 0, [], (list.find(i => i[0] == character) || [character, []])[1]]);
+						lib.character[character] = convertedCharacter;
 					}
 					player.smoothAvatar(name == "name2");
 					player.node["avatar" + name.slice(4)].setBackground(character, "character");
@@ -3844,21 +4206,28 @@ export class Player extends HTMLDivElement {
 			});
 		}
 	}
+	/**
+	 * @param {string | null | undefined} name
+	 * @param {string | null | undefined} character
+	 */
 	initOL(name, character) {
 		this.node.avatar.setBackground(character, "character");
 		this.node.avatar.show();
 		this.node.name.innerHTML = get.verticalStr(name);
+		/** @type {string | null | undefined} */
 		this.nickname = name;
+		/** @type {string | null | undefined} */
 		this.avatar = character;
 		this.node.nameol.innerHTML = "";
-		if (lib.character[character]) {
-			this.sex = lib.character[character][0];
+		const characterKey = String(character);
+		if (lib.character[characterKey]) {
+			this.sex = lib.character[characterKey][0];
 		}
 	}
 	uninitOL() {
 		this.node.avatar.hide();
 		this.node.name.innerHTML = "";
-		this.node.identity.firstChild.innerHTML = "";
+		/** @type {HTMLElement} */ (this.node.identity.firstChild).innerHTML = "";
 		delete this.nickname;
 		delete this.avatar;
 		delete this.sex;
@@ -3937,8 +4306,8 @@ export class Player extends HTMLDivElement {
 				this.classList.add("exclude");
 			}
 		}
-		this.firstChild.innerHTML = str;
-		return this;
+/** @type {HTMLElement} */ (this.firstChild).innerHTML = str;
+			return this;
 	}
 	reinit2(newPairs) {
 		const player = this;
@@ -3958,7 +4327,7 @@ export class Player extends HTMLDivElement {
 			for (let i = 0; i < Math.min(2, rawPairs.length); i++) {
 				let rawName = rawPairs[i],
 					newName = newPairs[i];
-				if (rawName != newName && lib.character[rawName] && lib.character[newName]) {
+				if (rawName != newName && lib.character[String(rawName)] && lib.character[String(newName)]) {
 					player.reinit(rawName, newName, null, true);
 				}
 			}
@@ -3980,8 +4349,12 @@ export class Player extends HTMLDivElement {
 			player.name = player.name1;
 			player.sex = get.character(player.name1, 0);
 		} else if (!player.isUnseen(2)) {
-			player.name = player.name2;
-			player.sex = get.character(player.name2, 0);
+			const name2 = player.name2;
+			if (!name2) {
+				throw new Error("visible vice character is absent after reinitialization");
+			}
+			player.name = name2;
+			player.sex = get.character(name2, 0);
 		}
 	}
 	$reinit12(newPairs) {
@@ -4019,18 +4392,20 @@ export class Player extends HTMLDivElement {
 			smooth = false;
 			maxHp = null;
 		}
+		const skin = this.skin;
+		if (!skin) return this;
 		if (this.name2 == from) {
 			this.name2 = to;
-			this.skin.name2 = to;
+			skin.name2 = to;
 		} else if (this.name == from || this.name1 == from) {
 			if (this.name1 == from) {
 				this.name1 = to;
-				this.skin.name = to;
+				skin.name = to;
 			}
 			if (!this.isUnseen(1)) {
 				this.name = to;
-				if (this.skin.name != to) {
-					this.skin.name = to;
+				if (skin.name != to) {
+					skin.name = to;
 				}
 				this.sex = info2[0];
 			}
@@ -4067,20 +4442,20 @@ export class Player extends HTMLDivElement {
 				if (typeof this.singleHp == "boolean") {
 					if (num % 2 != 0) {
 						if (this.singleHp) {
-							this.maxHp += (num + 1) / 2;
+							this.maxHp = Number(this.maxHp) + (num + 1) / 2;
 							this.singleHp = false;
 						} else {
-							this.maxHp += (num - 1) / 2;
+							this.maxHp = Number(this.maxHp) + (num - 1) / 2;
 							this.singleHp = true;
 							if (!game.online) {
 								this.doubleDraw();
 							}
 						}
 					} else {
-						this.maxHp += num / 2;
+						this.maxHp = Number(this.maxHp) + num / 2;
 					}
 				} else {
-					this.maxHp += num;
+					this.maxHp = Number(this.maxHp) + num;
 				}
 			}
 			game.broadcast(
@@ -4177,8 +4552,9 @@ export class Player extends HTMLDivElement {
 		game.broadcastAll(function (player) {
 			delete player.storage._disableJudge;
 			for (var i = 0; i < player.node.judges.childNodes.length; i++) {
-				if (player.node.judges.childNodes[i].name == "disable_judge") {
-					player.node.judges.removeChild(player.node.judges.childNodes[i]);
+				const judge = player.node.judges.childNodes[i];
+				if (judge instanceof lib.element.Card && judge.name == "disable_judge") {
+					player.node.judges.removeChild(judge);
 					break;
 				}
 			}
@@ -4259,7 +4635,7 @@ export class Player extends HTMLDivElement {
 		var rect2 = player.getBoundingClientRect();
 		var dx = rect1.left - rect2.left;
 		var dy = rect1.top - rect2.top;
-		if ((game.chess || (player.dataset.position != 0 && position != 0)) && player.classList.contains("linked")) {
+		if ((game.chess || (Number(player.dataset.position) != 0 && position != 0)) && player.classList.contains("linked")) {
 			player.style.transform = "rotate(-90deg) translate(" + -dy + "px," + dx + "px)";
 		} else {
 			player.style.transform = "translate(" + dx + "px," + dy + "px)";
@@ -4307,6 +4683,7 @@ export class Player extends HTMLDivElement {
 		this.say(str);
 		game.broadcast(
 			function (id, str) {
+				if (typeof id !== "string") return;
 				if (lib.playerOL[id]) {
 					lib.playerOL[id].say(str);
 				} else if (game.connectPlayers) {
@@ -4333,6 +4710,7 @@ export class Player extends HTMLDivElement {
 		this.say(str);
 		game.broadcast(
 			function (id, str) {
+				if (typeof id !== "string") return;
 				if (lib.playerOL[id]) {
 					lib.playerOL[id].say(str);
 				} else if (game.connectPlayers) {
@@ -4362,11 +4740,13 @@ export class Player extends HTMLDivElement {
 		dialog.add('<div class="text" style="word-break:break-all;display:inline">' + str + "</div>");
 		dialog.classList.add("popped");
 		ui.window.appendChild(dialog);
-		var width = dialog.content.firstChild.firstChild.offsetWidth;
+		const content = dialog.content.firstElementChild;
+		const text = content?.firstElementChild;
+		var width = text instanceof HTMLElement ? text.offsetWidth : 190;
 		if (width < 190) {
 			dialog._mod_height = -16;
-		} else {
-			dialog.content.firstChild.style.textAlign = "left";
+		} else if (content instanceof HTMLElement) {
+			content.style.textAlign = "left";
 		}
 		dialog.style.width = width + 16 + "px";
 		var refnode;
@@ -4384,8 +4764,8 @@ export class Player extends HTMLDivElement {
 				clientY: (this.getTop() + this.offsetHeight / 4) * game.documentZoom,
 			});
 		}
-		if (dialog._mod_height) {
-			dialog.content.firstChild.style.padding = 0;
+		if (dialog._mod_height && content instanceof HTMLElement) {
+			content.style.padding = "0";
 		}
 		setTimeout(
 			function () {
@@ -4394,6 +4774,7 @@ export class Player extends HTMLDivElement {
 			lib.quickVoice.includes(str) ? 3800 : 2000
 		);
 		var name = get.translation(this.name);
+		/** @type {[string | null | undefined, string]} */
 		var info = [name ? name + "[" + this.nickname + "]" : this.nickname, str];
 		lib.chatHistory.push(info);
 		if (_status.addChatEntry) {
@@ -4448,11 +4829,12 @@ export class Player extends HTMLDivElement {
 			name1: this.name1,
 			name2: this.name2,
 			handcards: this.getCards("hs"),
-			gaintag: [],
+			gaintag: /** @type {string[][]} */ ([]),
 			equips: this.getCards("e"),
 			extraEquip: this.extraEquip,
 			equips_map: this.getCards("e").reduce((map, value) => {
-				let id = value.cardid;
+				const id = value.cardid;
+				if (typeof id !== "string") return map;
 				map[id] = {};
 				if (value.isViewAsCard) {
 					map[id].isViewAsCard = true;
@@ -4473,7 +4855,8 @@ export class Player extends HTMLDivElement {
 			}, {}),
 			judges: this.getCards("j"),
 			judges_map: this.getCards("j").reduce((map, value) => {
-				let id = value.cardid;
+				const id = value.cardid;
+				if (typeof id !== "string") return map;
 				map[id] = {};
 				if (value.isViewAsCard) {
 					map[id].isViewAsCard = true;
@@ -4495,12 +4878,12 @@ export class Player extends HTMLDivElement {
 			specials: this.getCards("s"),
 			expansions: this.getCards("x"),
 			vcardsMap: this.vcardsMap,
-			expansion_gaintag: [],
+			expansion_gaintag: /** @type {string[][]} */ ([]),
 			disableJudge: this.isDisabledJudge(),
 			disabledSlots: this.disabledSlots,
 			expandedSlots: this.expandedSlots,
-			views: [],
-			position: parseInt(this.dataset.position),
+			views: /** @type {(string | undefined)[]} */ ([]),
+			position: parseInt(String(this.dataset.position)),
 			hujia: this.hujia,
 			side: this.side,
 			identityShown: this.identityShown,
@@ -4570,29 +4953,31 @@ export class Player extends HTMLDivElement {
 		);
 	}
 	setAvatarQueue(name, list) {
-		var node;
 		var player = this;
-		if (player.name2 == name) {
-			node = player.node.avatar2;
-		} else {
-			node = player.node.avatar;
-		}
+		/** @type {AvatarQueueNode} */
+		const node = player.name2 == name ? player.node.avatar2 : player.node.avatar;
 		if (node._avatarqueue) {
 			for (var i = 0; i < list.length; i++) {
 				node._avatarqueue.push(list[i]);
 			}
 		} else {
+			const queue = list.slice(0);
 			var func = function () {
-				if (node._avatarqueue.length) {
-					player.setAvatar(name, node._avatarqueue.shift(), false, false);
+				if (queue.length) {
+					const nextAvatar = queue.shift();
+					if (typeof nextAvatar == "string") {
+						player.setAvatar(name, nextAvatar, false, false);
+					}
 				} else {
-					clearInterval(node._avatarqueueinterval);
+					if (node._avatarqueueinterval !== undefined) {
+						clearInterval(node._avatarqueueinterval);
+					}
 					delete node._avatarqueue;
 					delete node._avatarqueueinterval;
 					player.setAvatar(name, name, false, false);
 				}
 			};
-			node._avatarqueue = list.slice(0);
+			node._avatarqueue = queue;
 			node._avatarqueueinterval = setInterval(func, 1000);
 			func();
 		}
@@ -4605,9 +4990,10 @@ export class Player extends HTMLDivElement {
 			for (var i in lib.characterPack) {
 				list.add(i);
 			}
-			for (var i = 0; i < list.length; i++) {
+			for (let i = 0; i < list.length; i++) {
 				for (var j in lib.characterPack[list[i]]) {
-					if (lib.characterPack[list[i]][j].skills.includes(name)) {
+					const character = get.convertedCharacter(lib.characterPack[list[i]][j]);
+					if (character.skills.includes(name)) {
 						name = j;
 						stop = true;
 						break;
@@ -4618,8 +5004,9 @@ export class Player extends HTMLDivElement {
 				}
 			}
 		}
-		if (lib.character[this.name2] && lib.character[this.name2].skills.includes(skill)) {
-			this.setAvatarQueue(this.name2, [name]);
+		const name2 = this.name2;
+		if (name2 && lib.character[name2] && lib.character[name2].skills.includes(skill)) {
+			this.setAvatarQueue(name2, [name]);
 		} else {
 			this.setAvatarQueue(this.name, [name]);
 		}
@@ -4628,7 +5015,7 @@ export class Player extends HTMLDivElement {
 		if (_status.video && arguments.length == 0) {
 			return;
 		}
-		if (this.hp >= this.maxHp) {
+		if (Number(this.hp) >= Number(this.maxHp)) {
 			this.hp = this.maxHp;
 		}
 		game.broadcast(
@@ -4647,7 +5034,7 @@ export class Player extends HTMLDivElement {
 		this.$update(...arguments);
 	}
 	$update() {
-		if (this.hp >= this.maxHp) {
+		if (Number(this.hp) >= Number(this.maxHp)) {
 			this.hp = this.maxHp;
 		}
 		var hp = this.node.hp;
@@ -4670,10 +5057,13 @@ export class Player extends HTMLDivElement {
 				hp.classList.add("text");
 			} else if (get.is.newLayout() && (maxHp > 9 || (maxHp > 5 && this.classList.contains("minskin")) || ((game.layout == "mobile" || game.layout == "long") && this.dataset.position == 0 && maxHp > 7))) {
 			 */
-			} else if (maxHp > 5) {
+			} else if (Number(maxHp) > 5) {
 				hp.innerHTML = this.hp + "<br>/<br>" + maxHp + "<div></div>";
 				if (this.hp == 0) {
-					hp.lastChild.classList.add("lost");
+					const lastHpSegment = hp.lastElementChild;
+					if (lastHpSegment instanceof HTMLElement) {
+						lastHpSegment.classList.add("lost");
+					}
 				}
 				hp.classList.add("textstyle");
 				// hp.classList.remove('long');
@@ -4681,21 +5071,29 @@ export class Player extends HTMLDivElement {
 				hp.innerHTML = "";
 				hp.classList.remove("text");
 				hp.classList.remove("textstyle");
-				while (maxHp > hp.childNodes.length) {
+				while (Number(maxHp) > hp.children.length) {
 					ui.create.div(hp);
 				}
-				while (Math.max(0, maxHp) < hp.childNodes.length) {
-					hp.removeChild(hp.lastChild);
+				while (Math.max(0, Number(maxHp)) < hp.children.length) {
+					const lastHpSegment = hp.lastElementChild;
+					if (!lastHpSegment) {
+						break;
+					}
+					hp.removeChild(lastHpSegment);
 				}
-				for (var i = 0; i < maxHp; i++) {
+				for (var i = 0; i < Number(maxHp); i++) {
 					var index = i;
 					if (get.is.newLayout()) {
-						index = maxHp - i - 1;
+						index = Number(maxHp) - i - 1;
 					}
-					if (i < this.hp) {
-						hp.childNodes[index].classList.remove("lost");
+					const hpSegment = hp.children[index];
+					if (!(hpSegment instanceof HTMLElement)) {
+						continue;
+					}
+					if (i < Number(this.hp)) {
+						hpSegment.classList.remove("lost");
 					} else {
-						hp.childNodes[index].classList.add("lost");
+						hpSegment.classList.add("lost");
 					}
 				}
 				// if(maxHp==9){
@@ -4711,9 +5109,9 @@ export class Player extends HTMLDivElement {
 				hp.dataset.condition = "high";
 			} else if (this.hp == 0) {
 				hp.dataset.condition = "";
-			} else if (this.hp > Math.round(maxHp / 2) || this.hp === maxHp) {
+			} else if (Number(this.hp) > Math.round(Number(maxHp) / 2) || this.hp === maxHp) {
 				hp.dataset.condition = "high";
-			} else if (this.hp > Math.floor(maxHp / 3)) {
+			} else if (Number(this.hp) > Math.floor(Number(maxHp) / 3)) {
 				hp.dataset.condition = "mid";
 			} else {
 				hp.dataset.condition = "low";
@@ -4791,19 +5189,16 @@ export class Player extends HTMLDivElement {
 		}
 		this.storage[i] -= num;
 		if (log !== false) {
-			var str = false;
-			var info = get.info(i);
-			if (info && info.intro && (info.intro.name || info.intro.name2)) {
-				str = info.intro.name2 || info.intro.name;
-			} else {
-				str = lib.translate[i];
-			}
+			const info = get.info(i);
+			const markName = info?.intro && (info.intro.name2 || info.intro.name);
+			const str = markName ? String(markName) : lib.translate[i] || "";
 			if (str) {
 				game.log(this, "移去了", get.cnNumber(num), "个", "#g【" + str + "】");
 			}
 		}
 		this.syncStorage(i);
-		this[this.storage[i] || (lib.skill[i] && lib.skill[i].mark) ? "markSkill" : "unmarkSkill"](i);
+		const info = getRegisteredSkill(lib.skill, i);
+		this[this.storage[i] || info?.mark ? "markSkill" : "unmarkSkill"](i);
 		const next = game.createEvent("removeMark", false, get.event());
 		next.player = this;
 		next.num = num;
@@ -4828,13 +5223,9 @@ export class Player extends HTMLDivElement {
 		}
 		this.storage[i] += num;
 		if (log !== false) {
-			var str = false;
-			var info = get.info(i);
-			if (info && info.intro && (info.intro.name || info.intro.name2)) {
-				str = info.intro.name2 || info.intro.name;
-			} else {
-				str = lib.translate[i];
-			}
+			const info = get.info(i);
+			const markName = info?.intro && (info.intro.name2 || info.intro.name);
+			const str = markName ? String(markName) : lib.translate[i] || "";
 			if (str) {
 				game.log(this, "获得了", get.cnNumber(num), "个", "#g【" + str + "】");
 			}
@@ -4890,8 +5281,10 @@ export class Player extends HTMLDivElement {
 		return this.countMark(i) > 0;
 	}
 	updateMark(i, storage) {
+		const skill = lib.skill[i];
+		const intro = skill?.intro;
 		if (!this.marks[i]) {
-			if (lib.skill[i] && lib.skill[i].intro && (this.storage[i] || lib.skill[i].intro.markcount)) {
+			if (skill && intro && (this.storage[i] || intro.markcount)) {
 				this.markSkill(i);
 				if (!this.marks[i]) {
 					return this;
@@ -4903,12 +5296,20 @@ export class Player extends HTMLDivElement {
 		if (storage && this.storage[i]) {
 			this.syncStorage(i);
 		}
-		if (i == "ghujia" || ((!this.marks[i].querySelector(".image") || this.storage[i + "_markcount"]) && lib.skill[i] && lib.skill[i].intro && !lib.skill[i].intro.nocount && (this.storage[i] || this.storage[i + "_markcount"] || lib.skill[i].intro.markcount))) {
-			this.marks[i].classList.add("overflowmark");
-			var num = 0;
-			if (typeof lib.skill[i].intro.markcount == "function") {
-				num = lib.skill[i].intro.markcount(this.storage[i], this, i);
-			} else if (lib.skill[i].intro.markcount == "expansion") {
+		const mark = this.marks[i];
+		if (!isMarkNode(mark)) {
+			return this;
+		}
+		if (i == "ghujia" || ((!mark.querySelector(".image") || this.storage[i + "_markcount"]) && skill && intro && !intro.nocount && (this.storage[i] || this.storage[i + "_markcount"] || intro.markcount))) {
+			mark.classList.add("overflowmark");
+			/** @type {number | string | undefined} */
+			let num = 0;
+			const markcount = intro?.markcount;
+			if (typeof markcount == "function") {
+				/** @type {(storage: typeof this.storage[i], player: Player, skill?: string) => number | string} */
+				const markcountWithSkill = markcount;
+				num = markcountWithSkill(this.storage[i], this, i);
+			} else if (markcount == "expansion") {
 				num = this.countCards("x", card => card.hasGaintag(i));
 			} else if (typeof this.storage[i + "_markcount"] == "number") {
 				num = this.storage[i + "_markcount"];
@@ -4923,20 +5324,26 @@ export class Player extends HTMLDivElement {
 				if (num == Infinity) {
 					num = "∞";
 				}
-				if (!this.marks[i].markcount) {
-					this.marks[i].markcount = ui.create.div(".markcount.menubutton", this.marks[i]);
+				let markcountNode = getMarkCount(mark);
+				if (!markcountNode) {
+					markcountNode = ui.create.div(".markcount.menubutton", mark);
+					mark.markcount = markcountNode;
 				}
-				this.marks[i].markcount.innerHTML = num;
-			} else if (this.marks[i].markcount) {
-				this.marks[i].markcount.delete();
-				delete this.marks[i].markcount;
+				markcountNode.innerHTML = String(num);
+			} else {
+				const markcountNode = getMarkCount(mark);
+				if (markcountNode) {
+					deleteMarkNode(markcountNode);
+					delete mark.markcount;
+				}
 			}
 		} else {
-			if (this.marks[i].markcount) {
-				this.marks[i].markcount.delete();
-				delete this.marks[i].markcount;
+			const markcountNode = getMarkCount(mark);
+			if (markcountNode) {
+				deleteMarkNode(markcountNode);
+				delete mark.markcount;
 			}
-			if (lib.skill[i].mark == "auto") {
+			if (skill?.mark == "auto") {
 				this.unmarkSkill(i);
 			}
 		}
@@ -5065,6 +5472,7 @@ export class Player extends HTMLDivElement {
 		if (this.hasSkill("undist")) {
 			return null;
 		}
+		/** @type {Player} */
 		var target = this;
 		for (var i = 0; i < game.players.length - 1; i++) {
 			target = target.next;
@@ -5082,6 +5490,7 @@ export class Player extends HTMLDivElement {
 		if (this.hasSkill("undist")) {
 			return null;
 		}
+		/** @type {Player} */
 		var target = this;
 		for (var i = 0; i < game.players.length - 1; i++) {
 			target = target.previous;
@@ -5092,8 +5501,10 @@ export class Player extends HTMLDivElement {
 		return null;
 	}
 	countUsed(card, type) {
+		/** @type {number | undefined} */
+		let num;
 		if (type === true) {
-			var num = 0;
+			num = 0;
 			var history = this.getHistory("useCard");
 			for (var i = 0; i < history.length; i++) {
 				if (!card) {
@@ -5106,11 +5517,10 @@ export class Player extends HTMLDivElement {
 			}
 			return num;
 		}
-		var num;
 		var stat = this.getStat("card");
 		if (!card) {
 			num = 0;
-			for (var i in stat) {
+			for (let i in stat) {
 				if (typeof stat[i] == "number") {
 					num += stat[i];
 				}
@@ -5170,14 +5580,15 @@ export class Player extends HTMLDivElement {
 	 */
 	getStockSkills(unowned, unique, hidden) {
 		var list = [];
-		if (lib.character[this.name] && (hidden || !this.isUnseen(0))) {
-			list.addArray(lib.character[this.name][3]);
+		if (lib.character[String(this.name)] && (hidden || !this.isUnseen(0))) {
+			list.addArray(lib.character[String(this.name)][3]);
 		}
-		if (lib.character[this.name1] && (hidden || !this.isUnseen(0))) {
-			list.addArray(lib.character[this.name1][3]);
+		if (lib.character[String(this.name1)] && (hidden || !this.isUnseen(0))) {
+			list.addArray(lib.character[String(this.name1)][3]);
 		}
-		if (lib.character[this.name2] && (hidden || !this.isUnseen(1))) {
-			list.addArray(lib.character[this.name2][3]);
+		const name2 = this.name2;
+		if (name2 && lib.character[name2] && (hidden || !this.isUnseen(1))) {
+			list.addArray(lib.character[name2][3]);
 		}
 		if (!unowned) {
 			for (var i = 0; i < list.length; i++) {
@@ -5208,16 +5619,18 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * @param { string } [arg1='h']
-	 * @param { string | Record<string, any> | ((card: Card) => boolean) } [arg2]
-	 * @returns { Iterable<Card> }
+	 * @param { string | (string | undefined)[] | Record<string, string | number | boolean | (string | number | boolean)[]> | ((card: VCard) => boolean) } [arg2]
+	 * @returns { Iterable<VCard> }
 	 */
 	*iterableGetVCards(arg1, arg2) {
 		if (typeof arg1 != "string") {
 			arg1 = "h";
 		}
+		/** @param {VCard} card */
 		const getCardName = card => {
 			return get.name(card, false);
 		};
+		/** @type {(card: VCard) => boolean} */
 		let filter = card => true;
 		if (arg2) {
 			if (typeof arg2 == "string") {
@@ -5269,15 +5682,15 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * @param { string } [arg1='h']
-	 * @param { string | Record<string, any> | ((card: Card) => boolean) } [arg2]
-	 * @returns { Card[] }
+	 * @param { string | (string | undefined)[] | Record<string, string | number | boolean | (string | number | boolean)[]> | ((card: VCard) => boolean) } [arg2]
+	 * @returns { VCard[] }
 	 */
 	getVCards(arg1, arg2) {
 		return Array.from(this.iterableGetVCards(arg1, arg2));
 	}
 	/**
-	 * @param { Parameters<typeof this['iterableGetCards']>[0] } [arg1]
-	 * @param { Parameters<typeof this['iterableGetCards']>[1] } [arg2]
+	 * @param { Parameters<typeof this["iterableGetVCards"]>[0] } [arg1]
+	 * @param { Parameters<typeof this["iterableGetVCards"]>[1] } [arg2]
 	 */
 	countVCards(arg1, arg2) {
 		let count = 0;
@@ -5347,8 +5760,6 @@ export class Player extends HTMLDivElement {
 				filterCard = filter;
 			}
 		}
-		const useFilter = typeof filterCard === "function";
-
 		// 预遍历position，记录是否包含手牌区和特殊牌区，以决定是否需要在遍历时检查glows类
 		let hasH = false;
 		let hasS = false;
@@ -5382,22 +5793,28 @@ export class Player extends HTMLDivElement {
 					const hc2 = this.node.handcards2;
 					if (needGlowsCheck) {
 						for (const card of get.iterableChildNodes(hc1, hc2)) {
+							if (!(card instanceof lib.element.Card)) {
+								continue;
+							}
 							if (card.classList.contains("removing")) {
 								continue;
 							}
 							const glows = card.classList.contains("glows");
 							if ((hasH && !glows) || (hasS && glows)) {
-								if (!useFilter || filterCard(card)) {
+								if (!filterCard || filterCard(card)) {
 									yield card;
 								}
 							}
 						}
 					} else {
 						for (const card of get.iterableChildNodes(hc1, hc2)) {
+							if (!(card instanceof lib.element.Card)) {
+								continue;
+							}
 							if (card.classList.contains("removing")) {
 								continue;
 							}
-							if (!useFilter || filterCard(card)) {
+							if (!filterCard || filterCard(card)) {
 								yield card;
 							}
 						}
@@ -5411,10 +5828,13 @@ export class Player extends HTMLDivElement {
 					equipDone = true;
 					const equips = this.node.equips;
 					for (const card of get.iterableChildNodes(equips)) {
+						if (!(card instanceof lib.element.Card)) {
+							continue;
+						}
 						if (card.classList.contains("removing") || card.classList.contains("feichu") || card.classList.contains("emptyequip")) {
 							continue;
 						}
-						if (!useFilter || filterCard(card)) {
+						if (!filterCard || filterCard(card)) {
 							yield card;
 						}
 					}
@@ -5426,10 +5846,13 @@ export class Player extends HTMLDivElement {
 					}
 					judgeDone = true;
 					for (const card of get.iterableChildNodes(judgesNode)) {
+						if (!(card instanceof lib.element.Card)) {
+							continue;
+						}
 						if (card.classList.contains("removing") || card.classList.contains("feichu")) {
 							continue;
 						}
-						if (!useFilter || filterCard(card)) {
+						if (!filterCard || filterCard(card)) {
 							yield card;
 						}
 					}
@@ -5442,10 +5865,13 @@ export class Player extends HTMLDivElement {
 					expandDone = true;
 					const expansions = this.node.expansions;
 					for (const card of get.iterableChildNodes(expansions)) {
+						if (!(card instanceof lib.element.Card)) {
+							continue;
+						}
 						if (card.classList.contains("removing")) {
 							continue;
 						}
-						if (!useFilter || filterCard(card)) {
+						if (!filterCard || filterCard(card)) {
 							yield card;
 						}
 					}
@@ -5524,7 +5950,10 @@ export class Player extends HTMLDivElement {
 		var list = [];
 		var names = [this.name, this.name1, this.name2];
 		for (var i = 0; i < names.length; i++) {
-			list.addArray(get.gainableSkillsName(names[i], func));
+			const name = names[i];
+			if (name) {
+				list.addArray(get.gainableSkillsName(name, func));
+			}
 		}
 		return list;
 	}
@@ -5634,8 +6063,8 @@ export class Player extends HTMLDivElement {
 	 */
 	getOriginalSkills() {
 		var skills = [];
-		if (lib.character[this.name] && !this.isUnseen(0)) {
-			skills.addArray(lib.character[this.name][3]);
+		if (lib.character[String(this.name)] && !this.isUnseen(0)) {
+			skills.addArray(lib.character[String(this.name)][3]);
 		}
 		if (this.name2 && lib.character[this.name2] && !this.isUnseen(1)) {
 			skills.addArray(lib.character[this.name2][3]);
@@ -5756,29 +6185,30 @@ export class Player extends HTMLDivElement {
 			identity = this.identity;
 		}
 		if (get.is.jun(this)) {
-			this.node.identity.firstChild.innerHTML = "君";
-		} else {
-			this.node.identity.firstChild.innerHTML = get.translation(identity);
+/** @type {HTMLElement} */ (this.node.identity.firstChild).innerHTML = "君";
+			} else {
+				/** @type {HTMLElement} */ (this.node.identity.firstChild).innerHTML = get.translation(identity);
 		}
 		this.node.identity.dataset.color = nature || identity;
 		return this;
 	}
 	insertPhase(skill, insert) {
+		/** @type {GameEvent | import("./gameEvent.js").GameEventParentFallback | null} */
 		var evt = _status.event.getParent("phase");
 		var next;
 		if (evt && evt.parent && evt.parent.next) {
 			evt = evt.parent;
-			next = game.createEvent("phase", false, evt);
+			next = game.createEvent("phase", false, requireParentEvent(evt));
 		} else if (_status.event.parent && _status.event.parent.next) {
 			evt = _status.event.parent;
-			next = game.createEvent("phase", false, evt);
+			next = game.createEvent("phase", false, requireParentEvent(evt));
 		} else {
 			evt = null;
 			next = game.createEvent("phase", false);
 		}
-		if (evt && insert && evt.next.includes(next)) {
-			evt.next.remove(next);
-			evt.next.unshift(next);
+		if (evt && insert && requireParentEvent(evt).next.includes(next)) {
+			requireParentEvent(evt).next.remove(next);
+			requireParentEvent(evt).next.unshift(next);
 		}
 		next.player = this;
 		next.forceDie = true;
@@ -6134,13 +6564,13 @@ export class Player extends HTMLDivElement {
 			if (this.complexCard || this.complexSelect || this.filterOk) {
 				return false;
 			}
-			var cards = this.player.getCards(this.position);
+			var cards = this.getPlayer().getCards(this.position);
 			if (cards.some(card => !this.filterCard(card, this.player, this))) {
 				return false;
 			}
 			var num = cards.length;
 			for (var i = 0; i < cards.length; i++) {
-				if (!lib.filter.cardDiscardable(cards[i], this.player, this)) {
+				if (!lib.filter.cardDiscardable(cards[i], this.getPlayer(), this)) {
 					num--;
 				}
 			}
@@ -6165,9 +6595,10 @@ export class Player extends HTMLDivElement {
 				next.ai = check;
 			} else {
 				next.ai = function (card) {
-					if (typeof card == "string" && lib.skill[card]) {
+					const skillInfo = typeof card == "string" ? getRegisteredSkill(lib.skill, card) : undefined;
+					if (skillInfo) {
 						var ais =
-							lib.skill[card].check ||
+							skillInfo.check ||
 							function () {
 								return 0;
 							};
@@ -6177,17 +6608,22 @@ export class Player extends HTMLDivElement {
 					if (card.name == "du") {
 						addi -= 3;
 					}
-					var source = _status.event.source;
-					var player = _status.event.player;
-					var event = _status.event.getParent();
-					var getn = function (card) {
+						const currentEvent = _status.event;
+						const source = currentEvent?.source;
+						const player = currentEvent?.player;
+						const event = currentEvent?.getParent();
+						if (!player || !event) {
+							return NaN;
+						}
+						var getn = function (card) {
 						//会赢吗？会赢的！
 						if (player.hasSkillTag("forceWin", null, { card })) {
 							return 13 * (event.small ? -1 : 1);
 						}
-						return get.number(card) * (event.small ? -1 : 1);
+						const number = get.number(card);
+						return typeof number == "number" ? number * (event.small ? -1 : 1) : NaN;
 					};
-					if (source && source != player) {
+					if (source && source != player && player) {
 						if (get.attitude(player, source) > 1) {
 							if (event.small) {
 								return getn(card) - get.value(card) / 3 + addi;
@@ -6213,25 +6649,31 @@ export class Player extends HTMLDivElement {
 				next.ai = check;
 			} else {
 				next.ai = function (card) {
-					if (typeof card == "string" && lib.skill[card]) {
+					const skillInfo = typeof card == "string" ? getRegisteredSkill(lib.skill, card) : undefined;
+					if (skillInfo) {
 						var ais =
-							lib.skill[card].check ||
+							skillInfo.check ||
 							function () {
 								return 0;
 							};
 						return ais();
 					}
-					var player = get.owner(card);
+					const player = get.owner(card);
+					const currentEvent = _status.event;
+					const event = currentEvent?.getParent();
+					if (!event) {
+						return NaN;
+					}
 					var getn = function (card) {
-						if (player.hasSkillTag("forceWin", null, { card })) {
+						if (player && player.hasSkillTag("forceWin", null, { card })) {
 							return 13;
 						}
-						return get.number(card);
+						const number = get.number(card);
+						return typeof number == "number" ? number : NaN;
 					};
-					var event = _status.event.getParent();
 					var to = player == event.player ? event.target : event.player;
 					var addi = get.value(card) >= 8 && get.type(card) != "equip" ? -6 : 0;
-					var friend = get.attitude(player, to) > 0;
+					var friend = player ? get.attitude(player, to) > 0 : false;
 					if (card.name == "du") {
 						addi -= 5;
 					}
@@ -6432,9 +6874,9 @@ export class Player extends HTMLDivElement {
 		});
 	}
 	/**
-	 *
-	 * @param {import("./Player/type.d").EventChooseButtonParams} [params]
-	 * @returns
+	 * @overload
+	 * @param {import("./Player/type.d").EventChooseButtonParams} params
+	 * @returns {GameEvent}
 	 */
 	chooseButton(params) {
 		const next = game.createEvent("chooseButton");
@@ -6537,9 +6979,7 @@ export class Player extends HTMLDivElement {
 				next._args = params.args;
 				next._args.add("glow_result");
 			} else {
-				/** @type {import("./Player/type.d").EventChooseCardParams} */
-				const newArgs = { ...params };
-				Reflect.deleteProperty(newArgs, "list");
+				const { list, ...newArgs } = params;
 				if (newArgs.glow_result == null) {
 					newArgs.glow_result = true;
 				}
@@ -6626,11 +7066,11 @@ export class Player extends HTMLDivElement {
 			if (this.type === "compare") {
 				return false;
 			}
-			var cards = this.player.getCards(this.position);
+			var cards = this.getPlayer().getCards(this.position);
 			if (cards.some(card => !this.filterCard(card, this.player, this))) {
 				return false;
 			}
-			return get.select(this.selectCard)[0] >= this.player.countCards(this.position);
+			return get.select(this.selectCard)[0] >= this.getPlayer().countCards(this.position);
 		};
 		next.setContent("chooseCard");
 		next._args = args;
@@ -6718,8 +7158,9 @@ export class Player extends HTMLDivElement {
 		return next;
 	}
 	/**
-	 * @param {import("./Player/type.d").EventChooseTargetParams} [params]
-	 * @returns
+	 * @overload
+	 * @param {import("./Player/type.d").EventChooseTargetParams} params
+	 * @returns {GameEvent}
 	 */
 	chooseTarget(params) {
 		const next = game.createEvent("chooseTarget");
@@ -6895,9 +7336,9 @@ export class Player extends HTMLDivElement {
 		});
 	}
 	/**
-	 *
-	 * @param {import("./Player/type.d").EventChooseControlParams} [params]
-	 * @returns
+	 * @overload
+	 * @param {import("./Player/type.d").EventChooseControlParams} params
+	 * @returns {GameEvent}
 	 */
 	chooseControl(params) {
 		const next = game.createEvent("chooseControl");
@@ -7585,6 +8026,7 @@ export class Player extends HTMLDivElement {
 		next._args = args;
 		return next;
 	}
+	/** @param {GameEvent} [event] */
 	useResult(result, event) {
 		event = event || _status.event;
 		if (result._sendskill) {
@@ -7603,11 +8045,7 @@ export class Player extends HTMLDivElement {
 			// }
 		}
 		if (event.logSkill) {
-			if (typeof event.logSkill == "string") {
-				this.logSkill(event.logSkill);
-			} else if (Array.isArray(event.logSkill)) {
-				this.logSkill.call(this, ...event.logSkill);
-			}
+			forwardEventLogSkill(this, event.logSkill);
 		}
 		if (result.card || !result.skill) {
 			result.used = result.card || result.cards[0];
@@ -7706,19 +8144,29 @@ export class Player extends HTMLDivElement {
 				skills.sort((a, b) => get.priority(a) - get.priority(b));
 			}
 			for (const key of keys) {
+				if (key === "cardsuit") {
+					let suit = card.suit;
+					for (const stage of ["suit", "cardsuit"]) {
+						for (const skill of skills) {
+							const mods = get.info(skill).mod;
+							if (!mods) throw new TypeError(`Expected mod configuration for ${skill}`);
+							const result = stage === "suit" ? mods.suit?.call(game, card, suit) : mods.cardsuit?.call(game, card, this, suit);
+						if (result != undefined && typeof suit !== "object" && result !== suit) {
+								suit = result;
+								next.modSkill[key] = skill;
+							}
+						}
+					}
+					continue;
+				}
 				let preResult = "unchanged";
 				for (const skill of skills) {
-					const mod = get.info(skill).mod[key == "cardsuit" ? "suit" : key];
+					const mods = get.info(skill).mod;
+					if (!mods) throw new TypeError(`Expected mod configuration for ${skill}`);
+					const mod = mods[key];
 					if (mod) {
 						let arg = [card, this, get[key.slice(4)](card, false), preResult];
 						let result = mod.call(game, ...arg);
-						if (key == "cardsuit") {
-							const mod2 = get.info(skill).mod[key];
-							if (mod2) {
-								let arg2 = [card, this, get[key.slice(4)](card, false), result];
-								result = mod2.call(game, ...arg2);
-							}
-						}
 						if (result !== undefined && typeof arg[arg.length - 1] !== "object") {
 							arg[arg.length - 1] = result;
 						}
@@ -7762,7 +8210,7 @@ export class Player extends HTMLDivElement {
 			!next.noai &&
 			!get.info(next.card).noai &&
 			!this.hasSkillTag(
-				this,
+				"noai",
 				true,
 				{
 					card: next.card,
@@ -8053,10 +8501,12 @@ export class Player extends HTMLDivElement {
 		return next;
 	}
 	/**
+	 * @overload
+	 * @param {import("./Player/type.d").EventDiscardParams} params
+	 * @returns {GameEvent}
+	 */
+	/**
 	 * 强制令玩家弃置其区域内的一些牌
-	 *
-	 * @param {import("./Player/type.d").EventDiscardParams} [params]
-	 * @returns { GameEvent }
 	 */
 	discard(params) {
 		const next = game.createEvent("discard");
@@ -8137,10 +8587,8 @@ export class Player extends HTMLDivElement {
 		}
 		next.skills = [];
 		next.protected_cards = [];
-		let event = _status.event;
-		if (typeof event !== "string") {
-			event = event.getParent().name;
-		}
+		const currentEvent = _status.event;
+		const event = typeof currentEvent === "string" ? currentEvent : currentEvent.getParent().name;
 		let skills = [];
 		if (typeof this.getModableSkills === "function") {
 			skills = this.getModableSkills();
@@ -8154,11 +8602,16 @@ export class Player extends HTMLDivElement {
 			skills.sort((a, b) => get.priority(a) - get.priority(b));
 		}
 		for (let skill of skills) {
-			let mod = get.info(skill).mod.canBeDiscarded;
-			if (mod) {
+			const skillInfo = get.info(skill);
+			if (!skillInfo.mod) {
+				throw new TypeError(`Expected mod configuration for ${skill}`);
+			}
+			const canBeDiscarded = skillInfo.mod.canBeDiscarded;
+			if (canBeDiscarded) {
 				for (let i = 0; i < next.cards.length; i++) {
+					/** @type {Parameters<NonNullable<Mod["canBeDiscarded"]>>} */
 					let arg = [next.cards[i], next.discarder, this, event, "unchanged"],
-						result = mod.call(game, ...arg);
+						result = canBeDiscarded.call(game, ...arg);
 					if (result !== undefined && typeof arg[arg.length - 1] !== "object") {
 						arg[arg.length - 1] = result;
 					}
@@ -8168,11 +8621,16 @@ export class Player extends HTMLDivElement {
 					}
 				}
 			}
-			mod = get.info(skill).mod.cardDiscardable;
-			if (mod) {
+			const discardSkillInfo = get.info(skill);
+			if (!discardSkillInfo.mod) {
+				throw new TypeError(`Expected mod configuration for ${skill}`);
+			}
+			const cardDiscardable = discardSkillInfo.mod.cardDiscardable;
+			if (cardDiscardable) {
 				for (let i = 0; i < next.cards.length; i++) {
+					/** @type {Parameters<NonNullable<Mod["cardDiscardable"]>>} */
 					let arg = [next.cards[i], this, event, "unchanged"],
-						result = mod.call(game, ...arg);
+						result = cardDiscardable.call(game, ...arg);
 					if (result !== undefined && typeof arg[arg.length - 1] !== "object") {
 						arg[arg.length - 1] = result;
 					}
@@ -8214,7 +8672,12 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 令玩家将一些牌置入弃牌堆
 	 *
-	 * @param {import("./Player/type.d").EventLoseToDiscardpileParams} [params]
+	 * @overload
+	 * @param {import("./Player/eventParams").EventLoseToDiscardpileParams} params 配置对象
+	 * @returns { GameEvent }
+	 */
+	/**
+	 * @param {import("./Player/eventParams").EventLoseToDiscardpileParams | import("./Player/legacyParams").LegacyLoseToDiscardpileToken} [params] 配置对象或第一个位置参数
 	 * @returns { GameEvent }
 	 */
 	loseToDiscardpile(params) {
@@ -8322,19 +8785,29 @@ export class Player extends HTMLDivElement {
 				skills.sort((a, b) => get.priority(a) - get.priority(b));
 			}
 			for (const key of keys) {
+				if (key === "cardsuit") {
+					let suit = card.suit;
+					for (const stage of ["suit", "cardsuit"]) {
+						for (const skill of skills) {
+							const mods = get.info(skill).mod;
+							if (!mods) throw new TypeError(`Expected mod configuration for ${skill}`);
+							const result = stage === "suit" ? mods.suit?.call(game, card, suit) : mods.cardsuit?.call(game, card, this, suit);
+						if (result != undefined && typeof suit !== "object" && result !== suit) {
+								suit = result;
+								next.modSkill[key] = skill;
+							}
+						}
+					}
+					continue;
+				}
 				let preResult = "unchanged";
 				for (const skill of skills) {
-					const mod = get.info(skill).mod[key == "cardsuit" ? "suit" : key];
+					const mods = get.info(skill).mod;
+					if (!mods) throw new TypeError(`Expected mod configuration for ${skill}`);
+					const mod = mods[key];
 					if (mod) {
 						let arg = [card, this, get[key.slice(4)](card, false), preResult];
 						let result = mod.call(game, ...arg);
-						if (key == "cardsuit") {
-							const mod2 = get.info(skill).mod[key];
-							if (mod2) {
-								let arg2 = [card, this, get[key.slice(4)](card, false), result];
-								result = mod2.call(game, ...arg2);
-							}
-						}
 						if (result !== undefined && typeof arg[arg.length - 1] !== "object") {
 							arg[arg.length - 1] = result;
 						}
@@ -8543,10 +9016,12 @@ export class Player extends HTMLDivElement {
 		return next;
 	}
 	/**
+	 * @overload
+	 * @param {import("./Player/type.d").EventGainParams} params
+	 * @returns {GameEvent}
+	 */
+	/**
 	 * 令玩家获得一些牌
-	 *
-	 * @param { import("./Player/type.d").EventGainParams } [params]
-	 * @returns { GameEvent }
 	 */
 	gain(params) {
 		const next = game.createEvent("gain");
@@ -8797,7 +9272,9 @@ export class Player extends HTMLDivElement {
 		return next;
 	}
 	/**
-	 * @param { import("./Player/type.d").EventLoseParams } [params]
+	 * @overload
+	 * @param {import("./Player/type.d").EventLoseParams} params
+	 * @returns {GameEvent}
 	 */
 	lose(params) {
 		const next = game.createEvent("lose");
@@ -8996,9 +9473,9 @@ export class Player extends HTMLDivElement {
 				num += i;
 			}
 			if (num != this.num) {
-				this.change_history.push(this.num - num);
+				this.change_history.push(Number(this.num) - num);
 			}
-			if (this.num <= 0) {
+			if (Number(this.num) <= 0) {
 				delete this.filterStop;
 				this.trigger("damageZero");
 				this.finish();
@@ -9065,7 +9542,7 @@ export class Player extends HTMLDivElement {
 			next.num = (event.baseDamage || 1) + (event.extraDamage || 0);
 		}
 		next.filterStop = function () {
-			if (this.num <= 0 || this.player.isHealthy()) {
+			if (Number(this.num) <= 0 || this.getPlayer().isHealthy()) {
 				delete this.filterStop;
 				this.finish();
 				this._triggered = null;
@@ -9078,12 +9555,12 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 令玩家回复体力至指定值
 	 *
-	 * @param { number } num
+	 * @param { number | undefined } num
 	 * @param { import("./Player/type.d").EventRecoverToParams } [args]
 	 * @returns { GameEvent }
 	 */
 	recoverTo(num, args) {
-		const num2 = num - this.getHp(true);
+		const num2 = Number(num) - Number(this.getHp(true));
 
 		// 我打算创了
 		if (Array.isArray(args)) {
@@ -9116,7 +9593,7 @@ export class Player extends HTMLDivElement {
 		next.player = this;
 		next.setContent("loseHp");
 		next.filterStop = function () {
-			if (this.num <= 0) {
+			if (Number(this.num) <= 0) {
 				delete this.filterStop;
 				this.finish();
 				this._triggered = null;
@@ -9198,7 +9675,7 @@ export class Player extends HTMLDivElement {
 	 * 调整玩家的护甲值
 	 * @param { number } [num]
 	 * @param { "gain" | "lose" | "damage" | "null" } [type]
-	 * @param { number } [limit] 护甲上限
+	 * @param { number | true } [limit] 护甲上限
 	 * @returns { GameEvent }
 	 */
 	changeHujia(num, type, limit) {
@@ -9209,8 +9686,8 @@ export class Player extends HTMLDivElement {
 		if (limit === true) {
 			limit = 5;
 		}
-		if (typeof limit == "number" && this.hujia + num > parseInt(limit)) {
-			num = Math.max(0, parseInt(limit) - this.hujia);
+		if (typeof limit == "number" && Number(this.hujia) + num > parseInt(String(limit), 10)) {
+			num = Math.max(0, parseInt(String(limit), 10) - Number(this.hujia));
 		}
 		if (typeof type != "string") {
 			if (num > 0) {
@@ -9251,7 +9728,7 @@ export class Player extends HTMLDivElement {
 		}
 		switch (list.randomGet()) {
 			case 1:
-				this.draw(nodelay ? "nodelay" : 1);
+				this.draw({ num: 1, nodelay });
 				break;
 			case 2:
 				this.recover();
@@ -9263,7 +9740,7 @@ export class Player extends HTMLDivElement {
 				this.tempHide();
 				break;
 			case 5:
-				this.discard(this.getCards("j")).delay = !nodelay;
+				this.discard({ cards: this.getCards("j") }).delay = !nodelay;
 				break;
 			case 6: {
 				if (this.isLinked()) {
@@ -9308,7 +9785,7 @@ export class Player extends HTMLDivElement {
 		var num = list.randomGet();
 		switch (list.randomGet()) {
 			case 1:
-				this.randomDiscard(nodelay ? false : "he");
+				this.randomDiscard({ position: "he", log: nodelay ? false : "popup" });
 				break;
 			case 2:
 				this.loseHp();
@@ -9325,7 +9802,7 @@ export class Player extends HTMLDivElement {
 				this.addTempSkill("fengyin", { player: "phaseAfter" });
 				break;
 			case 6: {
-				var list = [];
+				let list = [];
 				for (var i = 0; i < lib.inpile.length; i++) {
 					var info = lib.card[lib.inpile[i]];
 					if (info.type == "delay" && !info.cancel && !this.hasJudge(lib.inpile[i])) {
@@ -9350,10 +9827,10 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 令玩家进入濒死状态
 	 * @param { GameEvent } [reason]
-	 * @returns { GameEvent }
+	 * @returns { GameEvent | undefined }
 	 */
 	dying(reason) {
-		if (this.nodying || this.hp > 0 || this.isDying()) {
+		if (this.nodying || Number(this.hp) > 0 || this.isDying()) {
 			return;
 		}
 		var next = game.createEvent("dying");
@@ -9364,7 +9841,7 @@ export class Player extends HTMLDivElement {
 		}
 		next.setContent("dying");
 		next.filterStop = function () {
-			if (this.player.hp > 0 || this.nodying) {
+			if (Number(this.getPlayer().hp) > 0 || this.nodying) {
 				delete this.filterStop;
 				return true;
 			}
@@ -9373,7 +9850,7 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * 令玩家死亡
-	 * @param { GameEvent } [reason] 导致角色死亡的事件
+	 * @param { GameEvent | "nosource" } [reason] 导致角色死亡的事件
 	 * @returns { GameEvent }
 	 */
 	die(reason) {
@@ -9382,7 +9859,7 @@ export class Player extends HTMLDivElement {
 		next.reason = reason;
 		//next.restMap = restMap;
 		if (reason) {
-			next.source = reason.source;
+			next.source = reason === "nosource" ? undefined : reason.source;
 		}
 		next.excludeMark = [];
 		next.setContent("die");
@@ -9405,7 +9882,7 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * 令玩家结束休整
-	 * @param { object | undefined } reseEndMap 进入休整状态状态相关的参数（hp是脱离休整复活时回复至的体力值）
+	 * @param {{ hp?: number | null } | undefined} restEndMap 进入休整状态状态相关的参数（hp是脱离休整复活时回复至的体力值）
 	 * @returns { GameEvent }
 	 */
 	restEnd(restEndMap = { hp: null }) {
@@ -9428,7 +9905,7 @@ export class Player extends HTMLDivElement {
 		if (log !== false) {
 			game.log(this, "复活");
 		}
-		this.maxHp = Math.max(1, this.maxHp);
+		this.maxHp = Math.max(1, Number(this.maxHp));
 		this.hp = hp || 1;
 		game.addVideo("revive", this);
 		this.classList.remove("dead");
@@ -9630,24 +10107,29 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * 将一些牌置入到玩家的判定区
-	 * @param { Card } card
-	 * @param { Card[] } [cards]
+	 * @param { string | Card | VCard | CardBaseUIData } card
+	 * @param { (Card | VCard)[] | Card | undefined } [cards]
 	 * @returns { GameEvent }
 	 */
 	addJudge(card, cards) {
 		var next = game.createEvent("addJudge");
-		if (get.itemtype(card) == "card") {
+		if (typeof card == "string") {
+			card = { name: card };
+		}
+		if (card instanceof lib.element.Card) {
 			next.card = card;
 			if (card.isViewAsCard) {
-				next.cards = card[card.cardSymbol].cards;
+				const cardSymbol = card.cardSymbol;
+				const vcard = cardSymbol === undefined ? get.autoViewAs(card, void 0, false) : card[cardSymbol];
+				next.cards = vcard?.cards ?? [card];
 			} else {
 				next.cards = [card];
 			}
 		} else {
-			next.cards = cards;
-			if (get.itemtype(next.cards) == "card") {
-				next.cards = [next.cards];
-			}
+			const cardList = cards === undefined && card instanceof lib.element.VCard ? card.cards ?? [] : cards == null ? [] : Array.isArray(cards) ? cards : [cards];
+			/** @param {Card | VCard} entry @returns {entry is Card} */
+			const isPhysicalCard = entry => get.itemtype(entry) == "card";
+			next.cards = cardList.filter(isPhysicalCard);
 			if (typeof card == "string") {
 				card = { name: card };
 			}
@@ -9719,8 +10201,8 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 返回某些牌是否能进入玩家的判定区
 	 * @overload
-	 * @param { string | Card } card
-	 * @param { Player } player
+	 * @param { string | Card | VCard } card
+	 * @param { Player } [player]
 	 * @returns { boolean }
 	 */
 	canAddJudge(card, player) {
@@ -9766,6 +10248,7 @@ export class Player extends HTMLDivElement {
 				game.log(card, "已被移出处理区，无法置入判定区");
 				return;
 			}
+			/** @type {Player | null} */
 			let target = this;
 			do {
 				target = target.getNext();
@@ -9936,14 +10419,18 @@ export class Player extends HTMLDivElement {
 	}
 	wait(callback) {
 		if (lib.node) {
+			const playerid = this.playerid;
+			if (typeof playerid !== "string") return;
+			const node = lib.requireNodeServer();
 			if (typeof callback == "function") {
 				callback._noname_waiting = true;
-				lib.node.torespond[this.playerid] = callback;
+				node.torespond[playerid] = callback;
 			} else {
-				lib.node.torespond[this.playerid] = "_noname_waiting";
+				node.torespond[playerid] = "_noname_waiting";
 			}
-			clearTimeout(lib.node.torespondtimeout[this.playerid]);
-			if (this.ws && !this.ws.closed) {
+			clearTimeout(node.torespondtimeout[playerid]);
+			const socket = this.ws;
+			if (socket && !socket.closed) {
 				var player = this;
 				var time = parseInt(lib.configOL.choose_timeout) * 1000;
 				if (_status.event._global_timer || _status.event.getParent().skillHidden) {
@@ -9954,9 +10441,13 @@ export class Player extends HTMLDivElement {
 				} else if (!_status.event._global_waiting && _status.noclearcountdown !== "direct") {
 					player.showTimer(time);
 				}
-				lib.node.torespondtimeout[this.playerid] = setTimeout(function () {
+				node.torespondtimeout[playerid] = setTimeout(function () {
 					player.unwait("ai");
-					player.ws.ws.close();
+					const currentSocket = player.ws;
+					if (!currentSocket) {
+						throw new TypeError("联机等待生命周期错误：玩家连接未初始化");
+					}
+					currentSocket.ws.close();
 				}, time + 5000);
 			}
 		}
@@ -9970,49 +10461,55 @@ export class Player extends HTMLDivElement {
 		} else if (!get.event()._global_waiting && (_status.noclearcountdown !== "direct" || (result && result.bool)) && !(result && result._noHidingTimer)) {
 			this.hideTimer();
 		}
-		clearTimeout(lib.node.torespondtimeout[this.playerid]);
-		delete lib.node.torespondtimeout[this.playerid];
-		if (!(this.playerid in lib.node.torespond)) {
+		const playerid = this.playerid;
+		if (typeof playerid !== "string") return;
+		const node = lib.requireNodeServer();
+		clearTimeout(node.torespondtimeout[playerid]);
+		delete node.torespondtimeout[playerid];
+		if (!(playerid in node.torespond)) {
 			return;
 		}
 		var noresume = false;
 		var proceed = null;
-		if (typeof lib.node.torespond[this.playerid] == "function" && lib.node.torespond[this.playerid]._noname_waiting) {
-			proceed = lib.node.torespond[this.playerid](result, this);
+		if (typeof node.torespond[playerid] == "function" && node.torespond[playerid]._noname_waiting) {
+			proceed = node.torespond[playerid](result, this);
 			if (proceed === false) {
 				noresume = true;
 			}
 		}
-		lib.node.torespond[this.playerid] = result;
-		for (var i in lib.node.torespond) {
-			if (lib.node.torespond[i] == "_noname_waiting") {
+		node.torespond[playerid] = result;
+		for (let i in node.torespond) {
+			if (node.torespond[i] == "_noname_waiting") {
 				return;
-			} else if (lib.node.torespond[i] && lib.node.torespond[i]._noname_waiting) {
+			} else if (node.torespond[i] && typeof node.torespond[i] == "function" && node.torespond[i]._noname_waiting) {
 				return;
 			}
 		}
 		_status.event.result = result;
-		_status.event.resultOL = lib.node.torespond;
-		lib.node.torespond = {};
+		_status.event.resultOL = node.torespond;
+		node.torespond = {};
 		if (typeof proceed == "function") {
 			proceed();
 		} else if (_status.paused && !noresume) {
 			game.resume();
 		}
 
-		if (lib.node.waitForResult[this.playerid]?.length > 0) {
-			const current = lib.node.waitForResult[this.playerid].pop();
-			current(result);
-			// delete lib.node.waitForResult[this.playerid];
+		if (node.waitForResult[playerid]?.length > 0) {
+			const current = node.waitForResult[playerid].pop();
+			current?.(result);
+			// delete lib.node.waitForResult[playerid];
 		}
 	}
 	tempUnwait(result) {
-		if (!(this.playerid in lib.node.torespond)) {
+		const playerid = this.playerid;
+		if (typeof playerid !== "string") return;
+		const node = lib.requireNodeServer();
+		if (!(playerid in node.torespond)) {
 			return;
 		}
 		var proceed;
-		if (typeof lib.node.torespond[this.playerid] == "function" && lib.node.torespond[this.playerid]._noname_waiting) {
-			proceed = lib.node.torespond[this.playerid](result, this);
+		if (typeof node.torespond[playerid] == "function" && node.torespond[playerid]._noname_waiting) {
+			proceed = node.torespond[playerid](result, this);
 		}
 		if (typeof proceed == "function") {
 			proceed();
@@ -10026,28 +10523,40 @@ export class Player extends HTMLDivElement {
 	 * @param { * } [args]
 	 */
 	logSkill(name, targets, nature, logv, args) {
-		if (get.itemtype(targets) == "player") {
-			targets = [targets];
+		/** @type {Player[]} */
+		const skillTargets = [];
+		if (targets && !Array.isArray(targets) && get.itemtype(targets) == "player") {
+			skillTargets.push(targets);
+		} else if (Array.isArray(targets)) {
+			for (const target of targets) {
+				if (get.itemtype(target) == "player") {
+					skillTargets.push(target);
+				}
+			}
 		}
 		var nopop = false;
-		var popname = name;
+		var popname = typeof name == "string" ? name : "";
 		if (Array.isArray(name)) {
-			popname = name[1];
-			name = name[0];
+			const skillName = name[0];
+			const displayName = name[1];
+			name = typeof skillName == "string" ? skillName : "";
+			popname = typeof displayName == "string" ? displayName : name;
 		}
-		var checkShow = this.checkShow(name);
+		if (typeof name != "string") name = "";
+		const showState = this.checkShow(name);
+		const checkShow = showState == "main" || showState == "vice" ? showState : false;
 		if (lib.translate[name]) {
 			this.trySkillAnimate(name, popname, checkShow);
-			if (Array.isArray(targets) && targets.length) {
+			if (skillTargets.length) {
 				var str;
-				if (targets[0] == this) {
+				if (skillTargets[0] == this) {
 					str = "#b自己";
-					if (targets.length > 1) {
+					if (skillTargets.length > 1) {
 						str += "、";
-						str += get.translation(targets.slice(1));
+						str += get.translation(skillTargets.slice(1));
 					}
 				} else {
-					str = targets;
+					str = skillTargets;
 				}
 				game.log(this, "对", str, "发动了", "【" + get.skillTranslation(name, this) + "】");
 			} else {
@@ -10058,11 +10567,11 @@ export class Player extends HTMLDivElement {
 			if (nature === undefined) {
 				nature = "green";
 			}
-			this.line(targets, nature);
+			this.line(skillTargets, nature);
 		}
-		var info = lib.skill[name];
-		if (info && info.ai && info.ai.expose != undefined && this.logAi && (!targets || targets.length != 1 || targets[0] != this)) {
-			this.logAi(lib.skill[name].ai.expose);
+		var info = getRegisteredSkill(lib.skill, name);
+		if (info && info.ai && info.ai.expose != undefined && this.logAi && (skillTargets.length != 1 || skillTargets[0] != this)) {
+			this.logAi(info.ai.expose);
 		}
 		if (info && info.round) {
 			var roundname = name + "_roundcount";
@@ -10070,14 +10579,14 @@ export class Player extends HTMLDivElement {
 			this.syncStorage(roundname);
 			this.markSkill(roundname);
 		}
-		game.trySkillAudio(name, this, true, null, null, args);
+		game.trySkillAudio(name, this, true, false, null, args);
 		if (game.chess) {
 			this.chessFocus();
 		}
 		if (logv === true) {
-			game.logv(this, name, targets, null, true);
+			game.logv(this, name, skillTargets, undefined, true);
 		} else if (info && info.logv !== false) {
-			game.logv(this, name, targets);
+			game.logv(this, name, skillTargets);
 		}
 		if (info) {
 			var player = this;
@@ -10086,7 +10595,7 @@ export class Player extends HTMLDivElement {
 			var global = lib.skill.global.slice(0);
 			var logInfo = {
 				skill: name,
-				targets: targets,
+				targets: skillTargets,
 				event: _status.event,
 			};
 			if (info.sourceSkill) {
@@ -10133,23 +10642,21 @@ export class Player extends HTMLDivElement {
 					}
 				}
 			}
-			var next = game.createEvent("logSkill", false),
-				evt = _status.event;
+			var next = game.createEvent("logSkill", false);
+			var evt = _status.event;
 			next.player = player;
 			next.forceDie = true;
 			next.includeOut = true;
 			evt.next.remove(next);
-			if (evt.logSkill || evt.name?.startsWith("pre_")) {
-				evt = evt.getParent();
-			}
-			for (var i in logInfo) {
+			const afterEvent = evt.logSkill || evt.name?.startsWith("pre_") ? evt.getParent() : evt;
+			for (let i in logInfo) {
 				if (i == "event") {
 					next.log_event = logInfo[i];
 				} else {
 					next[i] = logInfo[i];
 				}
 			}
-			evt.after.push(next);
+			requireParentEvent(afterEvent).after.push(next);
 			next.setContent("emptyEvent");
 			player.getHistory("useSkill").push(logInfo);
 			//尽可能别往这写插入结算
@@ -10158,7 +10665,7 @@ export class Player extends HTMLDivElement {
 			next2.player = player;
 			next2.forceDie = true;
 			next2.includeOut = true;
-			for (var i in logInfo) {
+			for (let i in logInfo) {
 				if (i == "event") {
 					next2.log_event = logInfo[i];
 				} else {
@@ -10168,10 +10675,10 @@ export class Player extends HTMLDivElement {
 			next2.setContent("emptyEvent");
 		}
 		if (this._hookTrigger) {
-			for (var i = 0; i < this._hookTrigger.length; i++) {
-				var info = lib.skill[this._hookTrigger[i]].hookTrigger;
+			for (let i = 0; i < this._hookTrigger.length; i++) {
+			let info = requireRegisteredSkill(lib.skill, this._hookTrigger[i]).hookTrigger;
 				if (info && info.log) {
-					info.log(this, name, targets);
+					info.log(this, name, skillTargets);
 				}
 			}
 		}
@@ -10207,12 +10714,16 @@ export class Player extends HTMLDivElement {
 			node = ui.create.div(".popup", this.parentNode);
 			this.node.prompt = node;
 		}
-		node.dataset.position = this.dataset.position;
-		if (this.dataset.position == 0 || parseInt(this.dataset.position) == parseInt(ui.arena.dataset.number) / 2 || typeof name2 == "number" || this.classList.contains("minskin")) {
-			node.innerHTML = name2;
+		const position = this.dataset.position;
+		node.dataset.position = typeof position == "string" ? position : "";
+		const positionNumber = typeof position == "string" ? Number.parseInt(position, 10) : NaN;
+		const arenaPositionCount = ui.arena && typeof ui.arena.dataset.number == "string" ? Number.parseInt(ui.arena.dataset.number, 10) : NaN;
+		const popupText = typeof name2 == "string" || typeof name2 == "number" ? name2 : String(name2);
+		if (positionNumber == 0 || (Number.isFinite(positionNumber) && Number.isFinite(arenaPositionCount) && positionNumber == arenaPositionCount / 2) || typeof popupText == "number" || this.classList.contains("minskin")) {
+			node.innerHTML = String(popupText);
 		} else {
-			for (var i = 0; i < name2.length; i++) {
-				node.innerHTML += name2[i] + "<br/>";
+			for (var i = 0; i < popupText.length; i++) {
+				node.innerHTML += popupText[i] + "<br/>";
 			}
 		}
 		if (className) {
@@ -10221,9 +10732,9 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 *
-	 * @param { string } name
+	 * @param { string | Card | VCard | CardBaseUIData | { name: string; nature?: string | boolean | null } } name
 	 * @param { string } className
-	 * @param { Parameters<this["damagepop"]>[3] } [nobroadcast]
+	 * @param { boolean } [nobroadcast]
 	 */
 	popup(name, className = "water", nobroadcast) {
 		var name2 = get.translation(name);
@@ -10240,12 +10751,16 @@ export class Player extends HTMLDivElement {
 			return node;
 		}
 		game.addVideo("popup", this, [name, className]);
-		node.dataset.position = this.dataset.position;
-		if (this.dataset.position == 0 || parseInt(this.dataset.position) == parseInt(ui.arena.dataset.number) / 2 || typeof name2 == "number" || this.classList.contains("minskin")) {
-			node.innerHTML = name2;
+		const position = this.dataset.position;
+		node.dataset.position = typeof position == "string" ? position : "";
+		const positionNumber = typeof position == "string" ? Number.parseInt(position, 10) : NaN;
+		const arenaPositionCount = ui.arena && typeof ui.arena.dataset.number == "string" ? Number.parseInt(ui.arena.dataset.number, 10) : NaN;
+		const popupText = typeof name2 == "string" || typeof name2 == "number" ? name2 : String(name2);
+		if (positionNumber == 0 || (Number.isFinite(positionNumber) && Number.isFinite(arenaPositionCount) && positionNumber == arenaPositionCount / 2) || typeof popupText == "number" || this.classList.contains("minskin")) {
+			node.innerHTML = String(popupText);
 		} else {
-			for (var i = 0; i < name2.length; i++) {
-				node.innerHTML += name2[i] + "<br/>";
+			for (var i = 0; i < popupText.length; i++) {
+				node.innerHTML += popupText[i] + "<br/>";
 			}
 		}
 		if (className) {
@@ -10473,8 +10988,9 @@ export class Player extends HTMLDivElement {
 			if (player.marks[name]) {
 				player.updateMarks();
 			}
-			if (lib.skill[name]) {
-				info = lib.skill[name].intro;
+			const skillInfo = lib.getSkill(name);
+			if (skillInfo) {
+				info = skillInfo.intro;
 			}
 			if (!info) {
 				return;
@@ -10617,6 +11133,7 @@ export class Player extends HTMLDivElement {
 		if (typeof name == "object") {
 			name = name.name;
 		}
+		/** @type {MarkNode} */
 		var node;
 		if (name.startsWith("unknown")) {
 			node = ui.create.div(".card.mark.drawinghidden");
@@ -10645,7 +11162,10 @@ export class Player extends HTMLDivElement {
 				lib.setHover(node, ui.click.hoverplayer);
 			}
 			if (lib.config.right_info) {
-				node.oncontextmenu = ui.click.rightplayer;
+				node.oncontextmenu = e => {
+					if (!hasHtmlDivParent(node)) return false;
+					return ui.click.rightplayer.call(node, e);
+				};
 			}
 		}
 		ui.updatem(this);
@@ -10680,13 +11200,14 @@ export class Player extends HTMLDivElement {
 			} else {
 				node = ui.create.div(".card.mark.drawinghidden");
 				this.node.marks.insertBefore(node, this.node.marks.childNodes[1]);
-				if (lib.skill[name] && lib.skill[name].markimage) {
-					node.setBackgroundImage(lib.skill[name].markimage);
+				const skillInfo = getRegisteredSkill(lib.skill, name);
+				if (skillInfo?.markimage) {
+					node.setBackgroundImage(skillInfo.markimage);
 					node.style["box-shadow"] = "none";
 					node.style["background-size"] = "contain";
-				} else if (lib.skill[name] && lib.skill[name].markimage2) {
+				} else if (skillInfo?.markimage2) {
 					let img = ui.create.div(".background.skillmark", node);
-					img.setBackgroundImage(lib.skill[name].markimage2);
+					img.setBackgroundImage(skillInfo.markimage2);
 					img.style["background-size"] = "contain";
 				} else {
 					var str = lib.translate[name + "_bg"];
@@ -10727,9 +11248,13 @@ export class Player extends HTMLDivElement {
 			}
 		} else {
 			for (var i = 0; i < this.node.marks.childNodes.length; i++) {
-				if (this.node.marks.childNodes[i].name == name && (!info || this.node.marks.childNodes[i].markidentifer == info)) {
-					this.node.marks.childNodes[i].delete();
-					this.node.marks.childNodes[i].style.transform += " scale(0.2)";
+				const mark = this.node.marks.childNodes[i];
+				if (!isMarkNode(mark)) {
+					continue;
+				}
+				if (hasMarkName(mark, name) && (!info || hasMarkIdentifier(mark, info))) {
+					deleteMarkNode(mark);
+					mark.style.transform += " scale(0.2)";
 					ui.updatem(this);
 					return;
 				}
@@ -10770,13 +11295,8 @@ export class Player extends HTMLDivElement {
 			return false;
 		}
 		if (includecard) {
-			let evt = includecard;
-			if (typeof evt !== "object") {
-				evt = _status.event.getParent("chooseToUse");
-			}
-			if (get.itemtype(evt) !== "event") {
-				evt = undefined;
-			}
+			const candidate = typeof includecard === "object" ? includecard : _status.event.getParent("chooseToUse");
+			const evt = get.itemtype(candidate) === "event" ? requireParentEvent(candidate) : undefined;
 			if (!lib.filter.cardUsable(card, this, evt)) {
 				return false;
 			}
@@ -10811,14 +11331,16 @@ export class Player extends HTMLDivElement {
 			card = { name: card, isCard: true };
 		}
 		var player = this;
-		var targets = game.filterPlayer2(null, null, true);
+		var targets = game.filterPlayer2(undefined, undefined, true);
 		var value = [];
 		var min = 0;
 		var info = get.info(card);
 		if (!info || info.notarget) {
 			return false;
 		}
+		/** @type {Select | undefined} */
 		var range;
+		/** @type {number | Select | ((card: Card | VCard | CardBaseUIData, player: Player) => number | Select) | undefined} */
 		var select = get.copy(info.selectTarget);
 		if (select == undefined) {
 			if (info.filterTarget == undefined) {
@@ -10827,21 +11349,19 @@ export class Player extends HTMLDivElement {
 			range = [1, 1];
 		} else if (typeof select == "number") {
 			range = [select, select];
-		} else if (get.itemtype(select) == "select") {
-			range = select;
+		} else if (Array.isArray(select) && select.length === 2 && typeof select[0] == "number" && typeof select[1] == "number") {
+			range = [select[0], select[1]];
 		} else if (typeof select == "function") {
-			range = select(card, player);
-			if (typeof range == "number") {
-				range = [range, range];
-			}
+			const selectedRange = select(card, player);
+			range = typeof selectedRange == "number" ? [selectedRange, selectedRange] : selectedRange;
 		}
 		if (info.singleCard) {
 			range = [1, 1];
 		}
-		game.checkMod(card, player, range, "selectTarget", player);
 		if (!range) {
 			return false;
 		}
+		game.checkMod(card, player, range, "selectTarget", player);
 
 		let cache = CacheContext.requireCacheContext();
 		for (var i = 0; i < targets.length; i++) {
@@ -10876,14 +11396,16 @@ export class Player extends HTMLDivElement {
 			card = { name: card, isCard: true };
 		}
 		var player = this;
-		var targets = game.filterPlayer2(null, null, true);
+		var targets = game.filterPlayer2(undefined, undefined, true);
 		var value = [];
 		var min = 0;
 		var info = get.info(card);
 		if (!info || info.notarget) {
 			return 0;
 		}
+		/** @type {Select | undefined} */
 		var range;
+		/** @type {number | Select | ((card: Card | VCard | CardBaseUIData, player: Player) => number | Select) | undefined} */
 		var select = get.copy(info.selectTarget);
 		if (select == undefined) {
 			if (info.filterTarget == undefined) {
@@ -10892,21 +11414,19 @@ export class Player extends HTMLDivElement {
 			range = [1, 1];
 		} else if (typeof select == "number") {
 			range = [select, select];
-		} else if (get.itemtype(select) == "select") {
-			range = select;
+		} else if (Array.isArray(select) && select.length === 2 && typeof select[0] == "number" && typeof select[1] == "number") {
+			range = [select[0], select[1]];
 		} else if (typeof select == "function") {
-			range = select(card, player);
-			if (typeof range == "number") {
-				range = [range, range];
-			}
+			const selectedRange = select(card, player);
+			range = typeof selectedRange == "number" ? [selectedRange, selectedRange] : selectedRange;
 		}
 		if (info.singleCard) {
 			range = [1, 1];
 		}
-		game.checkMod(card, player, range, "selectTarget", player);
 		if (!range) {
 			return 0;
 		}
+		game.checkMod(card, player, range, "selectTarget", player);
 
 		let cache = CacheContext.requireCacheContext();
 		for (var i = 0; i < targets.length; i++) {
@@ -10928,7 +11448,7 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * 添加随从
-	 * @param { { hs?: Card[], es?: Card[], skills?: string[], hp?: number, maxHp?: number, hujia?: number, sex?: Sex, group?: string, skill?: string, source?: string  } } cfg
+	 * @param {{name: string, caption?: string, intro?: string, intro2?: string, image?: string | string[], hs?: Card[], es?: Card[], skills?: string[], hp?: number, maxHp?: number, hujia?: number, sex?: Sex, group?: string, skill?: string, source?: string, onremove?: (player: Player, skill?: string) => void}} cfg
 	 */
 	addSubPlayer(cfg) {
 		var skill = "subplayer_" + cfg.name + "_" + get.id();
@@ -10953,6 +11473,7 @@ export class Player extends HTMLDivElement {
 		game.broadcastAll(
 			//TODO: 这里直接修改trashBin部分，后续需要修改为新写法
 			function (player, skill, list, cfg) {
+				const { name, sex = "male", group = "qun", hp = 1, maxHp = 1, hujia = 0, skills = [] } = cfg;
 				lib.skill[skill] = {
 					intro: {
 						content: cfg.intro || "",
@@ -10963,13 +11484,13 @@ export class Player extends HTMLDivElement {
 						subplayer: true,
 					},
 				};
-				lib.character[skill] = [cfg.sex, cfg.group, parseFloat(cfg.hp) + "/" + parseFloat(cfg.maxHp) + "/" + parseFloat(cfg.hujia), cfg.skills, ["tempname:" + cfg.name].concat(lib.character[cfg.name].trashBin || [])];
+				lib.character[skill] = get.convertedCharacter([sex, group, parseFloat(String(hp)) + "/" + parseFloat(String(maxHp)) + "/" + parseFloat(String(hujia)), skills, ["tempname:" + name].concat(lib.character[name].trashBin || [])]);
 				if (Array.isArray(cfg.image)) {
 					cfg.image.forEach(image => lib.character[skill][4].push(image));
 				} else if (typeof cfg.image == "string") {
 					lib.character[skill].trashBin.push(cfg.image);
 				} else {
-					lib.character[skill].trashBin.push("character:" + cfg.name);
+					lib.character[skill].trashBin.push("character:" + name);
 				}
 				for (let i = 0; i < list.length; i++) {
 					if (!list[i]) {
@@ -11037,7 +11558,7 @@ export class Player extends HTMLDivElement {
 		var list = [];
 		for (var i = 0; i < skills.length; i++) {
 			var name = skills[i];
-			var info = lib.skill[name];
+			var info = requireRegisteredSkill(lib.skill, name);
 			if (tag && info.subplayer != tag) {
 				continue;
 			}
@@ -11272,23 +11793,30 @@ export class Player extends HTMLDivElement {
 				} else if (info.mark == "image") {
 					this.markSkill(skill, null, ui.create.card(null, "noclick").init([null, null, skill]), nobroadcast);
 				} else if (info.mark == "character") {
-					var intro = info.intro.content;
-					if (typeof intro == "function") {
-						intro = intro(this.storage[skill], this, skill);
-					} else if (typeof intro == "string") {
-						intro = intro.replace(/#/g, this.storage[skill]);
-						intro = intro.replace(/&/g, get.cnNumber(this.storage[skill]));
-						intro = intro.replace(/\$/g, get.translation(this.storage[skill]));
+					const skillIntro = info.intro;
+					/** @type {string | undefined} */
+					let introContent;
+					const content = skillIntro?.content;
+					if (typeof content == "function") {
+						const renderedContent = content(this.storage[skill], this, skill);
+						if (typeof renderedContent == "string") {
+							introContent = renderedContent;
+						}
+					} else if (typeof content == "string") {
+						introContent = content.replace(/#/g, this.storage[skill]);
+						introContent = introContent.replace(/&/g, String(get.cnNumber(this.storage[skill])));
+						introContent = introContent.replace(/\$/g, get.translation(this.storage[skill]));
 					}
 					var caption;
-					if (typeof info.intro.name == "function") {
-						caption = info.intro.name(this.storage[skill], this, skill);
-					} else if (typeof info.intro.name == "string") {
+					const introName = skillIntro?.name;
+					if (typeof introName == "function") {
+						caption = introName(this.storage[skill], this, skill);
+					} else if (typeof introName == "string") {
 						caption = info.name;
 					} else {
 						caption = get.translation(skill);
 					}
-					this.markSkillCharacter(skill, this.storage[skill], caption, intro, nobroadcast);
+					this.markSkillCharacter(skill, this.storage[skill], caption, introContent, nobroadcast);
 				} else {
 					this.markSkill(skill, null, null, nobroadcast);
 				}
@@ -11313,10 +11841,18 @@ export class Player extends HTMLDivElement {
 			skillsToRemove.addArray(this.getRemovableAdditionalSkills(skill));
 		}
 		//创建对应的addSkills的事件
-		return this.changeSkills(skillsToAdd, skillsToRemove).set("$handle", function (player, skillsToAdd, skillsToRemove) {
+		const next = this.changeSkills(skillsToAdd, skillsToRemove);
+		if (!next) {
+			throw new TypeError("addAdditionalSkills requires an array of skills");
+		}
+		return next.set("$handle", function (player, skillsToAdd, skillsToRemove) {
+			const currentEvent = get.event();
+			if (!currentEvent) {
+				throw new Error("addAdditionalSkills must run in an event context");
+			}
 			//先失去先前获得的衍生技能
 			if (skillsToRemove.length > 0) {
-				player.removeSkillLog(skillsToRemove, get.event().popup);
+				player.removeSkillLog(skillsToRemove, currentEvent.popup);
 			}
 			//再获得新的衍生技能
 			if (skillsToAdd.length > 0) {
@@ -11324,7 +11860,7 @@ export class Player extends HTMLDivElement {
 					player,
 					"获得了技能",
 					...skillsToAdd.map(i => {
-						if (get.event().popup) {
+						if (currentEvent.popup) {
 							player.popup(i);
 						}
 						return "#g【" + get.translation(i) + "】";
@@ -11448,9 +11984,17 @@ export class Player extends HTMLDivElement {
 	removeAdditionalSkills(skill, target) {
 		const player = this,
 			skills = this.getRemovableAdditionalSkills(skill, target);
-		return player.changeSkills([], skills).set("$handle", function (player, addSkills, removeSkills) {
+		const next = player.changeSkills([], skills);
+		if (!next) {
+			throw new TypeError("removeAdditionalSkills requires an array of skills");
+		}
+		return next.set("$handle", function (player, addSkills, removeSkills) {
+			const currentEvent = get.event();
+			if (!currentEvent) {
+				throw new Error("removeAdditionalSkills must run in an event context");
+			}
 			if (removeSkills.length > 0) {
-				player.removeSkillLog(removeSkills, get.event().popup);
+				player.removeSkillLog(removeSkills, currentEvent.popup);
 			}
 			player.$removeAdditionalSkills(skill, target);
 		});
@@ -11542,7 +12086,7 @@ export class Player extends HTMLDivElement {
 			this.storage[skill] = false;
 		}
 		this.awakenedSkills.remove(skill);
-		this.enableSkill(skill + "_awake", skill);
+		this.enableSkill(skill + "_awake");
 		if (!nomark && this.hasSkill(skill, null, null, false)) {
 			this.markSkill(skill);
 		}
@@ -11566,10 +12110,10 @@ export class Player extends HTMLDivElement {
 								cards = [cards];
 							}
 							if (get.itemtype(cards) == "cards") {
-								if (this.onremove == "discard") {
+								if (info.onremove == "discard") {
 									this.$throw(cards);
 								}
-								if (this.onremove == "discard" || this.onremove == "lose") {
+								if (info.onremove == "discard" || info.onremove == "lose") {
 									game.cardsDiscard(cards);
 									delete this.storage[skill];
 								}
@@ -11586,7 +12130,7 @@ export class Player extends HTMLDivElement {
 			}
 			this.disabledSkills[skills] ??= [];
 			this.disabledSkills[skills].add(skill);
-			var group = lib.skill[skills].group;
+			var group = requireRegisteredSkill(lib.skill, skills).group;
 			if (typeof group == "string" || Array.isArray(group)) {
 				this.disableSkill(skill, group);
 			}
@@ -11612,7 +12156,8 @@ export class Player extends HTMLDivElement {
 		var skills = this.getSkills();
 		game.expandSkills(skills);
 		for (var i in this.marks) {
-			if (!skills.includes(i) && !this.marks[i].info.fixed) {
+			const mark = this.marks[i];
+			if (!skills.includes(i) && (!isMarkNode(mark) || !hasFixedMarkInfo(mark))) {
 				this.unmarkSkill(i);
 			}
 		}
@@ -11639,6 +12184,7 @@ export class Player extends HTMLDivElement {
 		_status.event.clearStepCache();
 		return this;
 	}
+	/** @param {VCard} VCard */
 	removeVirtualJudge(VCard) {
 		const player = this;
 		game.addVideo("removeVirtualJudge", player, get.vcardInfo(VCard));
@@ -11668,6 +12214,7 @@ export class Player extends HTMLDivElement {
 			}
 		}
 	}
+	/** @param {VCard} VCard */
 	removeVirtualEquip(VCard) {
 		const player = this;
 		game.addVideo("removeVirtualEquip", player, get.vcardInfo(VCard));
@@ -11688,6 +12235,10 @@ export class Player extends HTMLDivElement {
 		}
 		player.$handleEquipChange();
 	}
+	/**
+	 * @param {Card | VCard} [card]
+	 * @param {boolean} [hasMove]
+	 */
 	removeEquipTrigger(card, hasMove) {
 		if (_status.video) {
 			return;
@@ -11696,11 +12247,15 @@ export class Player extends HTMLDivElement {
 			var info = get.info(card, false);
 			var skills = this.getSkills(null, false);
 			const VEquips = this.getVCards("e");
-			VEquips.remove(card);
+			const equip = VEquips.find(current => current === card);
+			if (equip) {
+				VEquips.remove(equip);
+			}
 			skills.addArray(get.skillsFromEquips(VEquips));
 			const cards = this.vcardsMap?.equips;
-			if (cards && cards.includes(card) && hasMove !== true) {
-				cards.remove(card);
+			const mappedEquip = cards?.find(current => current === card);
+			if (mappedEquip && hasMove !== true) {
+				cards.remove(mappedEquip);
 			}
 			if (info.skills) {
 				for (var j = 0; j < info.skills.length; j++) {
@@ -11840,10 +12395,10 @@ export class Player extends HTMLDivElement {
 									cards = [cards];
 								}
 								if (get.itemtype(cards) == "cards") {
-									if (this.onremove == "discard") {
+									if (info.onremove == "discard") {
 										this.$throw(cards);
 									}
-									if (this.onremove == "discard" || this.onremove == "lose") {
+									if (info.onremove == "discard" || info.onremove == "lose") {
 										game.cardsDiscard(cards);
 										delete this.storage[skill];
 									}
@@ -11888,13 +12443,21 @@ export class Player extends HTMLDivElement {
 		} else if (typeof expire == "string" || Array.isArray(expire)) {
 			expire = { global: expire };
 		}
-		return this.changeSkills(skillsToAdd, []).set("$handle", function (player, addSkills, removeSkills) {
+		const next = this.changeSkills(skillsToAdd, []);
+		if (!next) {
+			throw new TypeError("addTempSkills requires an array of skills");
+		}
+		return next.set("$handle", function (player, addSkills, removeSkills) {
+			const currentEvent = get.event();
+			if (!currentEvent) {
+				throw new Error("addTempSkills must run in an event context");
+			}
 			if (addSkills.length) {
 				game.log(
 					player,
 					"获得了技能",
 					...addSkills.map(i => {
-						if (get.event().popup) {
+						if (currentEvent.popup) {
 							player.popup(i);
 						}
 						return "#g【" + get.translation(i) + "】";
@@ -11923,7 +12486,7 @@ export class Player extends HTMLDivElement {
 	 * 添加临时技能
 	 * @overload
 	 * @param { string | string[] } skill 技能名(数组)
-	 * @param { SkillTrigger |SAAType<Signal> } [expire]
+	 * @param { TempSkillExpire } [expire]
 	 * @param { boolean } [checkConflict]
 	 */
 	addTempSkill(skill, expire, checkConflict) {
@@ -12023,7 +12586,7 @@ export class Player extends HTMLDivElement {
 	clearSkills(all, ...skills) {
 		if (!all) return this.removeSkills(this.getSkills(null, false, false).removeArray(skills));
 		var list = this.skills.filter(skill => {
-			return !lib.skill[skill]?.superCharlotte && !skills.includes(skill);
+			return !getRegisteredSkill(lib.skill, skill)?.superCharlotte && !skills.includes(skill);
 		});
 		for (var i in this.additionalSkills) {
 			this.removeAdditionalSkill(i);
@@ -12059,7 +12622,7 @@ export class Player extends HTMLDivElement {
 			};
 			var forbidlist = lib.config.forbid.concat(lib.config.customforbid);
 			var skills = this.getSkills();
-			for (var i = 0; i < forbidlist.length; i++) {
+			for (let i = 0; i < forbidlist.length; i++) {
 				if (lib.config.customforbid.includes(forbidlist[i]) || !lib.config.forbidlist.includes(getName(forbidlist[i]))) {
 					for (var j = 0; j < forbidlist[i].length; j++) {
 						if (!skills.includes(forbidlist[i][j])) {
@@ -12071,7 +12634,7 @@ export class Player extends HTMLDivElement {
 					}
 				}
 			}
-			for (var i = 0; i < forbid.length; i++) {
+			for (let i = 0; i < forbid.length; i++) {
 				if (forbid[i][1] || this.name2) {
 					this.forbiddenSkills[forbid[i][0]] = this.forbiddenSkills[forbid[i][0]] || [];
 					if (forbid[i][1]) {
@@ -12084,7 +12647,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 遍历当前轮次/倒数第X轮次内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 可选过滤条件；不填写时返回全部历史
@@ -12136,7 +12699,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 获取当前轮次/倒数第X轮次内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 可选过滤条件；不填写时返回全部历史
@@ -12151,7 +12714,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 获取当前轮次/倒数第X轮次内该玩家指定类型的历史事件的数量
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 可选过滤条件；不填写时统计全部历史
@@ -12170,7 +12733,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 判断当前轮次/倒数第X轮次内该玩家是否有指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要判断的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 判断过程需要执行的函数
@@ -12188,7 +12751,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 遍历当前回合内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 可选过滤条件；不填写时返回全部历史
@@ -12227,13 +12790,13 @@ export class Player extends HTMLDivElement {
 	 * 获取当前回合是否为轮次开始时/该玩家的回合
 	 *
 	 * @overload
-	 * @param { "isRound" | "isMe" } key
+	 * @param { "isRound" | "isMe" | "isSkipped" } key
 	 * @returns { boolean }
 	 */
 	/**
 	 * 获取当前回合内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @overload
 	 * @param { TKey } key - 要遍历的历史类型
@@ -12254,7 +12817,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 遍历当前回合内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => void } content - 遍历过程需要执行的函数
@@ -12271,7 +12834,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 获取当前回合内该玩家指定类型的历史事件的数量
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 可选过滤条件；不填写时统计全部历史
@@ -12288,7 +12851,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 判断当前回合内该玩家是否有指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要判断的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 判断过程需要执行的函数
@@ -12304,7 +12867,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 遍历该玩家最新回合内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 可选过滤条件；不填写时返回全部历史
@@ -12359,7 +12922,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 获取该玩家最新回合内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @overload
 	 * @param { TKey } key - 要遍历的历史类型
@@ -12387,7 +12950,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 获取该玩家最新回合内该玩家指定类型的历史事件的数量
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 可选过滤条件；不填写时统计全部历史
@@ -12404,7 +12967,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 判断该玩家最新回合内该玩家是否有指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要判断的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 判断过程需要执行的函数
@@ -12426,7 +12989,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 遍历整局游戏内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @overload
 	 * @param { TKey } key - 要遍历的历史类型
@@ -12469,7 +13032,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 遍历整局游戏内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => void } content - 遍历过程需要执行的函数
@@ -12492,7 +13055,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 获取整局游戏内该玩家指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @overload
 	 * @param { TKey } key - 要遍历的历史类型
@@ -12506,7 +13069,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 获取整局游戏内该玩家指定类型的历史事件的数量
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 可选过滤条件；不填写时统计全部历史
@@ -12523,7 +13086,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * 判断整局游戏内该玩家是否有指定类型的历史事件
 	 *
-	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe"> } TKey
+	 * @template { Exclude<keyof ActionHistory, "isRound" | "isMe" | "isSkipped"> } TKey
 	 * @template { ActionHistory[TKey] extends Array<infer E> ? E : never} TReturn
 	 * @param { TKey } key - 要遍历的历史类型
 	 * @param { (event: TReturn) => boolean } [filter] - 判断过程需要执行的函数
@@ -12574,6 +13137,7 @@ export class Player extends HTMLDivElement {
 	 * @returns {Stat[T]}
 	 */
 	getLastStat(key) {
+		/** @type {Stat | false} */
 		var stat = false;
 		for (var i = this.stat.length - 1; i >= 0; i--) {
 			if (this.stat[i].isMe) {
@@ -12607,7 +13171,10 @@ export class Player extends HTMLDivElement {
 				player.node.avatar.style.transform = "";
 				player.node.avatar2.style.transform = "";
 				if (game.chess) {
-					ui.placeChess(player, player.dataset.position);
+					if (typeof ui.placeChess != "function") {
+						throw new TypeError("Chess mode requires ui.placeChess");
+					}
+					ui.placeChess(player, String(player.dataset.position));
 				}
 				if (player == game.me) {
 					ui.me.removeAttribute("style");
@@ -12621,18 +13188,18 @@ export class Player extends HTMLDivElement {
 			card = { name: card };
 		}
 		card = get.autoViewAs(card);
-		var num = get.info(card).usable;
-		if (typeof num == "function") {
-			num = num(card, player);
+		let usable = get.info(card).usable;
+		if (typeof usable == "function") {
+			usable = usable(card, player);
 		}
-		num = game.checkMod(card, player, num, "cardUsable", player);
-		if (typeof num != "number") {
+		const checked = game.checkMod(card, player, usable, "cardUsable", player);
+		if (typeof checked != "number") {
 			return Infinity;
 		}
 		if (!pure && _status.currentPhase == player) {
-			return num - player.countUsed(card);
+			return checked - player.countUsed(card);
 		}
-		return num;
+		return checked;
 	}
 	/**
 	 * 返回玩家的攻击距离
@@ -12670,7 +13237,7 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * 返回一些牌的攻击距离
-	 * @param { Card[] } [cards]
+	 * @param { (Card | VCard)[] } [cards]
 	 * @returns { number }
 	 */
 	getEquipRange(cards) {
@@ -12682,7 +13249,15 @@ export class Player extends HTMLDivElement {
 				});
 			});
 		}
-		const range = cards.reduce((range, card) => {
+		/** @type {number | false} */
+		let range = false;
+		const length = cards.length;
+		for (let index = 0; index < length; index++) {
+			if (!(index in cards)) {
+				continue;
+			}
+			const card = cards[index];
+			/** @type {number | false} */
 			let newRange = false;
 			const info = get.info(card, false);
 			if (info.distance) {
@@ -12695,14 +13270,12 @@ export class Player extends HTMLDivElement {
 					newRange = 1 - info.distance.attackFrom;
 				}
 			}
-			let isN1 = typeof range == "number";
-			let isN2 = typeof newRange == "number";
-			if (isN1 && isN2) {
-				return Math.max(range, newRange);
-			} else {
-				return isN1 ? range : newRange;
+			if (typeof range == "number" && typeof newRange == "number") {
+				range = Math.max(range, newRange);
+			} else if (typeof range != "number") {
+				range = newRange;
 			}
-		}, false);
+		}
 		return typeof range == "number" ? range : 1;
 	}
 	getGlobalFrom() {
@@ -12750,7 +13323,7 @@ export class Player extends HTMLDivElement {
 	 * @returns { number }
 	 */
 	getHandcardLimit() {
-		var num = Math.max(this.hp, 0);
+		var num = Math.max(Number(this.hp), 0);
 		num = game.checkMod(this, num, "maxHandcardBase", this);
 		num = game.checkMod(this, num, "maxHandcard", this);
 		num = game.checkMod(this, num, "maxHandcardFinal", this);
@@ -12854,12 +13427,12 @@ export class Player extends HTMLDivElement {
 					return true;
 				});
 			} else {
-				var group = lib.character[player.name1][1];
+				var group = lib.character[String(player.name1)][1];
 				targets = game[method](function (target) {
 					if (func && !func(target)) {
 						return false;
 					}
-					return target.identity == "ye" || lib.character[target.name1][1] != group;
+					return target.identity == "ye" || lib.character[String(target.name1)][1] != group;
 				});
 			}
 		} else if (mode == "doudizhu") {
@@ -12960,12 +13533,12 @@ export class Player extends HTMLDivElement {
 			if (player.identity == "ye") {
 				targets = [];
 			} else {
-				var group = lib.character[player.name1][1];
+				var group = lib.character[String(player.name1)][1];
 				targets = game[method](function (target) {
 					if (func && !func(target)) {
 						return false;
 					}
-					return target.identity != "ye" && lib.character[target.name1][1] == group;
+					return target.identity != "ye" && lib.character[String(target.name1)][1] == group;
 				});
 			}
 		} else if (mode == "doudizhu") {
@@ -13031,19 +13604,26 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * 判断角色是否处于休整状态
-	 * @returns { boolean }
+	 * @returns {false | { type: string, count: number } | undefined}
 	 */
 	isRest() {
-		return this.isAlive() && this.isOut() && _status._rest_return[this.playerid];
+		if (!this.isAlive() || !this.isOut()) {
+			return false;
+		}
+		const restReturn = _status._rest_return;
+		if (restReturn === undefined) {
+			throw new TypeError("Rest state has not been initialized");
+		}
+		return restReturn[String(this.playerid)];
 	}
 	isDying() {
-		return _status.dying.includes(this) && this.hp <= 0 && this.isAlive();
+		return _status.dying.includes(this) && Number(this.hp) <= 0 && this.isAlive();
 	}
 	isDamaged() {
-		return this.hp < this.maxHp && !this.storage.nohp;
+		return Number(this.hp) < Number(this.maxHp) && !this.storage.nohp;
 	}
 	isHealthy() {
-		return this.hp >= this.maxHp || this.storage.nohp;
+		return Number(this.hp) >= Number(this.maxHp) || this.storage.nohp;
 	}
 	/**
 	 * 判断玩家是否是场上/某些角色中体力上限最大的玩家
@@ -13059,7 +13639,7 @@ export class Player extends HTMLDivElement {
 			if (value.isOut() || value == this) {
 				return true;
 			}
-			return only ? value.maxHp < this.maxHp : value.maxHp <= this.maxHp;
+			return only ? Number(value.maxHp) < Number(this.maxHp) : Number(value.maxHp) <= Number(this.maxHp);
 		});
 	}
 	/**
@@ -13076,7 +13656,7 @@ export class Player extends HTMLDivElement {
 			if (value.isOut() || value == this) {
 				return true;
 			}
-			return only ? value.maxHp > this.maxHp : value.maxHp >= this.maxHp;
+			return only ? Number(value.maxHp) > Number(this.maxHp) : Number(value.maxHp) >= Number(this.maxHp);
 		});
 	}
 	/**
@@ -13094,7 +13674,7 @@ export class Player extends HTMLDivElement {
 			if (value.isOut() || value == this) {
 				return true;
 			}
-			return only ? value.getHp(raw) < this.getHp(raw) : value.getHp(raw) <= this.getHp(raw);
+			return only ? Number(value.getHp(raw)) < Number(this.getHp(raw)) : Number(value.getHp(raw)) <= Number(this.getHp(raw));
 		});
 	}
 	/**
@@ -13112,7 +13692,7 @@ export class Player extends HTMLDivElement {
 			if (value.isOut() || value == this) {
 				return true;
 			}
-			return only ? value.getHp(raw) > this.getHp(raw) : value.getHp(raw) >= this.getHp(raw);
+			return only ? Number(value.getHp(raw)) > Number(this.getHp(raw)) : Number(value.getHp(raw)) >= Number(this.getHp(raw));
 		});
 	}
 	/**
@@ -13365,7 +13945,7 @@ export class Player extends HTMLDivElement {
 				}
 				var added = false;
 				for (var j of sides) {
-					if (i.isFriendOf(pmap[j])) {
+					if (i.isFriendOf(pmap[String(j)])) {
 						added = true;
 						map[j].push(i);
 						if (i == this) {
@@ -13385,7 +13965,7 @@ export class Player extends HTMLDivElement {
 			if (!player || map[player].length < 2) {
 				return false;
 			}
-			for (var i in map) {
+			for (let i in map) {
 				if (map[i].length > map[player].length) {
 					return false;
 				}
@@ -13410,7 +13990,7 @@ export class Player extends HTMLDivElement {
 				}
 				map[i.group].push(i);
 			}
-			for (var i in map) {
+			for (let i in map) {
 				if (map[i].length > map[this.group].length) {
 					return false;
 				}
@@ -13449,7 +14029,7 @@ export class Player extends HTMLDivElement {
 				}
 				var added = false;
 				for (var j of sides) {
-					if (i.isFriendOf(pmap[j])) {
+					if (i.isFriendOf(pmap[String(j)])) {
 						added = true;
 						map[j].push(i);
 						if (i == this) {
@@ -13466,7 +14046,7 @@ export class Player extends HTMLDivElement {
 					}
 				}
 			}
-			for (var i in map) {
+			for (let i in map) {
 				if (map[i].length < map[player].length) {
 					return false;
 				}
@@ -13491,7 +14071,7 @@ export class Player extends HTMLDivElement {
 				}
 				map[i.group].push(i);
 			}
-			for (var i in map) {
+			for (let i in map) {
 				if (map[i].length < map[this.group].length) {
 					return false;
 				}
@@ -13539,13 +14119,15 @@ export class Player extends HTMLDivElement {
 		if (["unknown", "ye"].includes(this.identity) || this.hasSkill("undist")) {
 			return false;
 		}
-		var next = this,
-			previous = this;
+		/** @type {Player | null} */
+		let next = this;
+		/** @type {Player | null} */
+		let previous = this;
 		var list = [];
 		for (var i = 0; next || previous; i++) {
 			if (next) {
 				next = next.getNext();
-				if (!next.isFriendOf(this) || next == this) {
+				if (!next || !next.isFriendOf(this) || next == this) {
 					next = null;
 				} else {
 					list.add(next);
@@ -13553,7 +14135,7 @@ export class Player extends HTMLDivElement {
 			}
 			if (previous) {
 				previous = previous.getPrevious();
-				if (!previous.isFriendOf(this) || previous == this) {
+				if (!previous || !previous.isFriendOf(this) || previous == this) {
 					previous = null;
 				} else {
 					list.add(previous);
@@ -13588,8 +14170,8 @@ export class Player extends HTMLDivElement {
 		}
 		var unseen0 = this.isUnseen(0);
 		var name1 = this.name1 || this.name;
-		if (lib.character[name1] && (!showonly || unseen0)) {
-			var skills = game.expandSkills(lib.character[name1][3].slice(0));
+		if (lib.character[String(name1)] && (!showonly || unseen0)) {
+			var skills = game.expandSkills(lib.character[String(name1)][3].slice(0));
 			if (skills.includes(skill)) {
 				if (!noshow && this.isUnseen(0)) {
 					this.showCharacter(0);
@@ -13599,7 +14181,7 @@ export class Player extends HTMLDivElement {
 		}
 		var unseen1 = this.isUnseen(1);
 		var name2 = this.name2;
-		if (lib.character[name2] && (!showonly || unseen1)) {
+		if (name2 && lib.character[name2] && (!showonly || unseen1)) {
 			var skills = game.expandSkills(lib.character[name2][3].slice(0));
 			if (skills.includes(skill)) {
 				if (!noshow && this.isUnseen(1)) {
@@ -13613,7 +14195,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 *
 	 * @param { number | Card[] | Card } [add] (逻辑上)同时考虑“获得”的这张/些牌
-	 * @param { (card?: Card, player?: Player) => boolean } [filter] 代替默认策略(计入手牌数的手牌)进行筛选
+	 * @param { (card: Card, player: Player, cards: Card[]) => boolean } [filter] 代替默认策略(计入手牌数的手牌)进行筛选
 	 * @param { boolean } [pure] (手牌上限大于手牌数时)返回负值
 	 * @returns { number } 需要弃置的牌数
 	 */
@@ -13622,13 +14204,19 @@ export class Player extends HTMLDivElement {
 			num = 0;
 		if (typeof add === "number") {
 			num = add;
-		} else if (get.itemtype(add) === "cards") {
+		} else if (Array.isArray(add) && add.every(card => card instanceof lib.element.Card)) {
 			cards.addArray(add);
-		} else if (get.itemtype(add) === "card") {
+		} else if (add instanceof lib.element.Card) {
 			cards.push(add);
 		}
 		if (typeof filter !== "function") {
-			filter = (card, player) => !player.canIgnoreHandcard(card);
+			/**
+			 * @param {Card} card
+			 * @param {Player} player
+			 * @param {Card[]} cards
+			 * @returns {boolean}
+			 */
+			filter = (card, player, cards) => !player.canIgnoreHandcard(card);
 		}
 		cards = cards.filter(card => {
 			return filter(card, this, cards);
@@ -13729,7 +14317,7 @@ export class Player extends HTMLDivElement {
 		var skills = lib.skill.global.slice(0);
 		game.expandSkills(skills);
 		for (var i = 0; i < skills.length; i++) {
-			var info = lib.skill[skills[i]];
+			var info = getRegisteredSkill(lib.skill, skills[i]);
 			if (info && info.ai) {
 				if (info.ai.skillTagFilter && info.ai[tag] && info.ai.skillTagFilter(this, tag, arg) === false) {
 					continue;
@@ -13748,7 +14336,7 @@ export class Player extends HTMLDivElement {
 	/**
 	 * @param {string} tag
 	 * @param {Parameters<this['getSkills']>[0]} [hidden]
-	 * @param {Parameters<SkillAI['skillTagFilter']>[2]} [arg]
+	 * @param {Parameters<NonNullable<SkillAI['skillTagFilter']>>[2]} [arg]
 	 * @param {boolean} [globalskill] 只有为false才不添加全局技能ai进行筛选
 	 */
 	hasSkillTag(tag, hidden, arg, globalskill) {
@@ -13758,7 +14346,7 @@ export class Player extends HTMLDivElement {
 		}
 		game.expandSkills(skills);
 		for (var i = 0; i < skills.length; i++) {
-			var info = lib.skill[skills[i]];
+			var info = getRegisteredSkill(lib.skill, skills[i]);
 			if (info && info.ai) {
 				if (info.ai.skillTagFilter && info.ai[tag]) {
 					if (info.ai.skillTagFilter(this, tag, arg) === false) {
@@ -13862,7 +14450,7 @@ export class Player extends HTMLDivElement {
 				if (typeof ifo.hiddenWuxie == "function" && ifo.hiddenWuxie(this, info)) {
 					return true;
 				}
-			} else if (ifo.viewAs && typeof ifo.viewAs != "function" && ifo.viewAs.name == "wuxie") {
+			} else if (typeof ifo.viewAs == "object" && ifo.viewAs !== null && ifo.viewAs.name == "wuxie") {
 				if (!ifo.viewAsFilter || ifo.viewAsFilter(this)) {
 					return true;
 				}
@@ -13919,7 +14507,7 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * 以viewer视角猜测Player手里的杀
-	 * @param { Player } [viewer]
+	 * @param { Player | null } [viewer]
 	 * @param { "use" | "respond" } [type] 此杀用途："use"/"respond"，无则均加入
 	 * @param { Card[] | Card | null } [ignore] 此牌/这些牌不纳入考量
 	 * @param { "bool" | "count" | "odds" } [rvt]
@@ -13927,7 +14515,7 @@ export class Player extends HTMLDivElement {
 	 */
 	mayHaveSha(viewer, type, ignore, rvt) {
 		let count = 0;
-		if ((this.hp > 2 || (!this.isZhu && this.hp > 1)) && this.hasSkillTag("respondSha", true, type, true)) {
+		if ((Number(this.hp) > 2 || (!this.isZhu && Number(this.hp) > 1)) && this.hasSkillTag("respondSha", true, type, true)) {
 			if (rvt === "count") {
 				count++;
 			} else if (rvt === "odds") {
@@ -13941,9 +14529,9 @@ export class Player extends HTMLDivElement {
 		}
 		let cards,
 			selected = [];
-		if (get.itemtype(ignore) === "cards") {
+		if (Array.isArray(ignore)) {
 			selected.addArray(ignore);
-		} else if (get.itemtype(ignore) === "card") {
+		} else if (typeof ignore == "object" && ignore !== null) {
 			selected.add(ignore);
 		}
 		if (this === viewer || get.itemtype(viewer) == "player") {
@@ -13997,7 +14585,7 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 * 以viewer视角猜测Player手里的闪
-	 * @param { Player } [viewer]
+	 * @param { Player | null } [viewer]
 	 * @param { "use" | "respond" } [type] 此闪用途："use"/"respond"，无则均加入
 	 * @param { Card[] | Card | boolean } [ignore] 此牌/这些牌不纳入考量。若 type 为"use"且此项不为false，则使用 this.getCards("h", i => i.hasGaintag("sha_notshan"))
 	 * @param { "bool" | "count" | "odds" } [rvt]
@@ -14005,7 +14593,7 @@ export class Player extends HTMLDivElement {
 	 */
 	mayHaveShan(viewer, type, ignore, rvt) {
 		let count = 0;
-		if ((this.hp > 2 || (!this.isZhu && this.hp > 1)) && this.hasSkillTag("respondShan", true, type, true)) {
+		if ((Number(this.hp) > 2 || (!this.isZhu && Number(this.hp) > 1)) && this.hasSkillTag("respondShan", true, type, true)) {
 			if (rvt === "count") {
 				count++;
 			} else if (rvt === "odds") {
@@ -14019,9 +14607,9 @@ export class Player extends HTMLDivElement {
 		}
 		let cards,
 			selected = [];
-		if (get.itemtype(ignore) === "cards") {
+		if (Array.isArray(ignore)) {
 			selected.addArray(ignore);
-		} else if (get.itemtype(ignore) === "card") {
+		} else if (typeof ignore == "object" && ignore !== null) {
 			selected.add(ignore);
 		} else if (ignore !== false) {
 			if (type === "use") {
@@ -14250,19 +14838,15 @@ export class Player extends HTMLDivElement {
 			if (cardsetion) {
 				var next = ui.create.div(".cardsetion", cardsetion, node);
 				next.style.setProperty("display", "block", "important");
-				if (node.node) {
-					if (node.node.cardsetion) {
-						node.node.cardsetion.remove();
-						delete node.node.cardsetion;
-					}
-					node.node.cardsetion = next;
-				}
+				replaceThrownCardsetion(node, next);
 			}
 		}
 		node.fixed = true;
 		node.hide();
 
 		var dx, dy;
+		const parentNode = this.parentNode;
+		if (!parentNode) return;
 		if (game.chess) {
 			var rect = this.getBoundingClientRect();
 
@@ -14301,9 +14885,9 @@ export class Player extends HTMLDivElement {
 
 			node.style.left = this.getLeft() + this.offsetWidth / 2 - 52 - dx + "px";
 			node.style.top = this.getTop() + this.offsetHeight / 2 - 52 - dy + "px";
-			this.parentNode.appendChild(node);
+			parentNode.appendChild(node);
 		} else {
-			this.parentNode.appendChild(node);
+			parentNode.appendChild(node);
 			node.style.left = "calc(50% - 52px)";
 			node.style.top = "calc(50% - 52px)";
 
@@ -14382,7 +14966,7 @@ export class Player extends HTMLDivElement {
 	}
 	$compareMultiple(card1, targets, cards, cardsetions) {
 		if (!cardsetions && lib.config.card_animation_info) {
-			var cardsetions = {},
+			let cardsetions = {},
 				cardsetion_targets = [this];
 			cardsetion_targets.addArray(targets);
 			for (let target of cardsetion_targets) {
@@ -14416,7 +15000,9 @@ export class Player extends HTMLDivElement {
 
 		node1.style.transform = "perspective(600px) rotateY(180deg) translateX(0)";
 		if (cardsetions) {
-			var next = ui.create.div(".cardsetion", cardsetions[player.playerid] || "", node1);
+			const playerId = player.playerid === undefined ? "undefined" : player.playerid;
+			const playerCardsetion = cardsetions[playerId];
+			var next = ui.create.div(".cardsetion", playerCardsetion || "", node1);
 			next.style.setProperty("display", "block", "important");
 			if (node1.node) {
 				if (node1.node.cardsetion) {
@@ -14505,7 +15091,7 @@ export class Player extends HTMLDivElement {
 	}
 	$compare(card1, target, card2, cardsetions) {
 		if (!cardsetions && lib.config.card_animation_info) {
-			var cardsetions = {},
+			let cardsetions = {},
 				cardsetion_targets = [this, target];
 			for (let targetx of cardsetion_targets) {
 				let id = targetx.playerid,
@@ -14536,7 +15122,9 @@ export class Player extends HTMLDivElement {
 			node1.classList.add("infohidden");
 		}
 		if (cardsetions) {
-			var next = ui.create.div(".cardsetion", cardsetions[player.playerid] || "", node1);
+			const playerId = player.playerid === undefined ? "undefined" : player.playerid;
+			const playerCardsetion = cardsetions[playerId];
+			var next = ui.create.div(".cardsetion", playerCardsetion || "", node1);
 			next.style.setProperty("display", "block", "important");
 			if (node1.node) {
 				if (node1.node.cardsetion) {
@@ -14614,10 +15202,14 @@ export class Player extends HTMLDivElement {
 	}
 	$throw(card, time, init, nosource, cardsetion, id) {
 		if (!cardsetion && cardsetion !== false && lib.config.card_animation_info) {
+			/** @type {Player} */
 			let source = this;
 			if (["useCard", "respond"].includes(get.event().name)) {
-				source = get.player();
-				cardsetion = get.cardsetion(source);
+				const eventPlayer = get.player();
+				if (eventPlayer) {
+					source = eventPlayer;
+					cardsetion = get.cardsetion(source);
+				}
 				if (!get.event().id) get.event().id = get.id();
 				if (!id) id = get.event().id;
 			}
@@ -14632,15 +15224,16 @@ export class Player extends HTMLDivElement {
 				if (cardsetion) {
 					var next = ui.create.div(".cardsetion", cardsetion, cardx);
 					next.style.setProperty("display", "block", "important");
-					if (cardx.node) {
+					/** @type {ThrownNodeMap | undefined} */
+					const cardNode = cardx.node;
+					if (isThrownNode(cardx) && cardNode) {
+						if (!isThrownNodeMap(cardNode)) {
+							throw new TypeError("thrown node map must be an object");
+						}
 						if (id) {
-							cardx.node.throw_id = id;
+							cardNode.throw_id = id;
 						}
-						if (cardx.node.cardsetion) {
-							cardx.node.cardsetion.remove();
-							delete cardx.node.cardsetion;
-						}
-						cardx.node.cardsetion = next;
+						replaceThrownCardsetion(cardx, next);
 					}
 				}
 				card.push(cardx);
@@ -14700,7 +15293,8 @@ export class Player extends HTMLDivElement {
 					}, 2500);
 				};
 			};*/
-			if (["useCard", "respond"].includes(curEvent.name) && curEvent.lose_map[this.playerid] === card) {
+			const playerid = this.playerid;
+			if (playerid && ["useCard", "respond"].includes(curEvent.name) && curEvent.lose_map[playerid] === card) {
 				const isCard = curEvent.card?.isCard && curEvent.cards?.length == 1;
 				const isCard2 =
 					curEvent.cards.length == 1 &&
@@ -14719,15 +15313,40 @@ export class Player extends HTMLDivElement {
 					// 因为抛出的实体牌数组就是event.cards哦，所以我们直接比对
 					// 如果以后改了（应该不至于改喵）这里也要同步更改喵
 					async function makeViewAsCard(event, lastCardid) {
+						/** @param {Node | null | undefined} node @returns {node is HTMLDivElement & { _cardid?: unknown, node?: unknown, init?: unknown, _customintro?: unknown }} */
+						const isThrownCard = node => node instanceof HTMLDivElement;
+						/** @param {HTMLDivElement & { _cardid?: unknown }} node @returns {unknown} */
+						const getThrownCardId = node => {
+							return node._cardid;
+						};
+						/** @param {HTMLDivElement & { node?: unknown }} node @returns {{ cardsetion?: unknown, name2?: unknown, range?: unknown } | undefined} */
+						const getThrownNodeMap = node => {
+							const nodeMap = node.node;
+							if (!nodeMap) return;
+							if (typeof nodeMap !== "object" && typeof nodeMap !== "function") {
+								throw new TypeError("thrown node map must be an object");
+							}
+							return nodeMap;
+						};
+						/** @param {HTMLDivElement & { node?: unknown }} node @returns {Node | undefined} */
+						const getThrownCardsetion = node => {
+							const cardsetion = getThrownNodeMap(node)?.cardsetion;
+							if (cardsetion === undefined) return;
+							if (!(cardsetion instanceof Node)) {
+								throw new TypeError("thrown card section must be a Node");
+							}
+							return cardsetion;
+						};
 						const vcard = event.card;
 						const throwns = Array.from(ui.arena.querySelectorAll(".card.thrown")).reverse();
 						const lastCard = throwns.find(c => {
-							return c._cardid == lastCardid;
+							return isThrownCard(c) && getThrownCardId(c) == lastCardid;
 						});
-						if (!lastCard) return;
+						if (!isThrownCard(lastCard)) return;
 						const curCards = event.cards;
 
 						// 定义异步工具函数喵
+						/** @returns {Promise<void>} */
 						function waitForTransition(node, time) {
 							return new Promise(resolve => {
 								node.listenTransition(() => {
@@ -14737,6 +15356,7 @@ export class Player extends HTMLDivElement {
 						}
 
 						async function waitForAnimationFrame(count = 1) {
+							/** @returns {Promise<void>} */
 							function waitForSingleFrame() {
 								return new Promise(resolve => {
 									requestAnimationFrame(() => {
@@ -14750,6 +15370,7 @@ export class Player extends HTMLDivElement {
 							}
 						}
 
+						/** @returns {Promise<void>} */
 						function waitForAnimation(node, keyframes, options) {
 							return new Promise(resolve => {
 								node.animate(keyframes, options).onfinish = () => {
@@ -14758,18 +15379,31 @@ export class Player extends HTMLDivElement {
 							});
 						}
 
+						/**
+						 * @param {HTMLDivElement & { node?: unknown, init?: unknown }} card
+						 * @param {ThrowInitData} data
+						 */
 						function reinitClonedCard(card, data) {
+							const cardNode = getThrownNodeMap(card);
+							if (!cardNode || !card.init) return;
 							const Card = lib.element.Card;
-							const oldPrototype = Reflect.getPrototypeOf(card);
-							Reflect.setPrototypeOf(card, Card.prototype);
+							const oldPrototype = Object.getPrototypeOf(card);
+							Object.setPrototypeOf(card, Card.prototype);
+							if (!(card instanceof Card)) {
+								throw new TypeError("cloned card must adopt the Card prototype");
+							}
+							const init = card.init;
+							if (typeof init !== "function") {
+								throw new TypeError("cloned card init method must be callable");
+							}
 							// 防止报错的东西喵
-							card.node.name2 = {};
-							card.node.range = {};
+							cardNode.name2 = {};
+							cardNode.range = {};
 							// 因为这是复制的div哦喵 _(:з」∠)_
-							card.init(data);
-							delete card.node.name2;
-							delete card.node.range;
-							Reflect.setPrototypeOf(card, oldPrototype);
+							init.call(card, data);
+							delete cardNode.name2;
+							delete cardNode.range;
+							Object.setPrototypeOf(card, oldPrototype);
 						}
 
 						// 等待动画之后添加喵
@@ -14796,10 +15430,12 @@ export class Player extends HTMLDivElement {
 						let suit = get.suit(vcard, false),
 							color = get.color(vcard, false),
 							color2 = color == "red" ? "red" : "black";
-						const initData = [suit, isFinite(number) && number != null ? String(number) : `<span style="color:${color2}">${vcardStr}</span>`, get.name(vcard, false), get.nature(vcard, false)];
+						const numberText = typeof number == "number" ? String(number) : `<span style="color:${color2}">${vcardStr}</span>`;
+						/** @type {ThrowInitData} */
+						const initData = [suit, numberText, get.name(vcard, false) || "", get.nature(vcard, false)];
 
 						// 创建卡牌变化的动画
-						const position = lastCard.node.cardsetion;
+						const position = getThrownCardsetion(lastCard);
 						const initMask = ui.create.div(".initmask");
 
 						// 如果可能，我们尽量不遮挡cardsetion（牌的使用信息）
@@ -14831,6 +15467,7 @@ export class Player extends HTMLDivElement {
 
 						lastCard.addEventListener(
 							lib.config.touchscreen ? "touchend" : "click",
+							/** @param {Event | Touch} e */
 							function (e) {
 								lastCard._customintro = function (uiintro, evt) {
 									delete lastCard._customintro;
@@ -14854,10 +15491,9 @@ export class Player extends HTMLDivElement {
 									newUiintro.close();
 								};
 
-								if (e.changedTouches && e.changedTouches[0]) {
+								if (e instanceof TouchEvent && e.changedTouches[0]) {
 									e = e.changedTouches[0];
 								}
-
 								return ui.click.intro.call(lastCard, e);
 							},
 							true
@@ -14881,8 +15517,9 @@ export class Player extends HTMLDivElement {
 					}
 					// 如果本次的抛出动画没有被广播那我们的广播就没有意义哦
 					// 不过一般都会广播的吧喵？
-					if (init !== "nobroadcast") game.broadcastAll(makeViewAsCard, curEvent, lastNode?._cardid);
-					else makeViewAsCard(curEvent, lastNode._cardid);
+					const lastCardId = lastNode && isThrownNode(lastNode) ? getThrownCardId(lastNode) : undefined;
+					if (init !== "nobroadcast") game.broadcastAll(makeViewAsCard, curEvent, lastCardId);
+					else makeViewAsCard(curEvent, lastCardId);
 				}
 			}
 
@@ -14891,7 +15528,7 @@ export class Player extends HTMLDivElement {
 		} else {
 			var node;
 			if (card == void 0 || card.length == 0) return;
-			var cardx = card.copy("thrown");
+			let cardx = card.copy("thrown");
 			if (id) cardx.node.throw_id = id;
 			node = this.$throwordered(cardx, nosource, cardsetion);
 			if (time != void 0) {
@@ -14904,11 +15541,10 @@ export class Player extends HTMLDivElement {
 			return node;
 		}
 	}
-	$throwordered() {
-		const $throwordered2 = this.$throwordered2.apply(this, arguments);
+	$throwordered(node, nosource, cardsetion) {
+		const $throwordered2 = this.$throwordered2(node, nosource);
 		if (lib.config.card_animation_info) {
-			let node = arguments[0];
-			let eventInfo = arguments[2],
+			let eventInfo = cardsetion,
 				player = this;
 			if (eventInfo !== false) {
 				eventInfo = get.cardsetion(player);
@@ -14916,11 +15552,28 @@ export class Player extends HTMLDivElement {
 			if (eventInfo?.length) {
 				game.broadcastAll(
 					function (node, eventInfo, id) {
+						/** @param {Node} value @returns {value is HTMLDivElement & { _cardid?: unknown, selectedt?: unknown, node?: unknown }} */
+						const isThrownCard = value => value instanceof HTMLDivElement;
+						/** @param {HTMLDivElement & { _cardid?: unknown }} value @returns {unknown} */
+						const getThrownCardId = value => {
+							return value._cardid;
+						};
+						/** @param {HTMLDivElement & { selectedt?: unknown }} value @returns {boolean} */
+						const isThrownCardSelected = value => {
+							return Boolean(value.selectedt);
+						};
+						/** @param {HTMLDivElement & { _cardid?: unknown, selectedt?: unknown }} value @returns {boolean} */
+						const selectThrownCard = value => {
+							if (getThrownCardId(value) != id || isThrownCardSelected(value)) return false;
+							value.selectedt = true;
+							return true;
+						};
 						if (!node?.node) {
 							node = [...ui.arena.childNodes].find(c => {
-								if (c.classList.contains("thrown") && c.classList.contains("card")) {
-									if (c._cardid == id && !c.selectedt) {
-										c.selectedt = true;
+								if (!isThrownCard(c)) return false;
+								const cardNode = c;
+								if (cardNode.classList.contains("thrown") && cardNode.classList.contains("card")) {
+									if (selectThrownCard(cardNode)) {
 										return true;
 									}
 								}
@@ -15045,15 +15698,19 @@ export class Player extends HTMLDivElement {
 			node.style.transform = "scale(0)";
 			node.classList.add("center");
 		} else {
+			/**
+			 * @param {string} str
+			 * @returns {[number, number]}
+			 */
 			var parseCalc = function (str) {
 				var per = str.slice(str.indexOf("calc(") + 5, str.indexOf("%"));
 				var add = str.slice(str.indexOf("%") + 1, str.indexOf("px")).replace(/\s/g, "");
 				return [parseInt(per), parseInt(add)];
 			};
-			var nx = parseCalc(node.style.left);
-			var ny = parseCalc(node.style.top);
-			nx = (nx[0] * ui.arena.offsetWidth) / 100 + nx[1];
-			ny = (ny[0] * ui.arena.offsetHeight) / 100 + ny[1];
+			var [nxPer, nxAdd] = parseCalc(node.style.left);
+			var [nyPer, nyAdd] = parseCalc(node.style.top);
+			var nx = (nxPer * ui.arena.offsetWidth) / 100 + nxAdd;
+			var ny = (nyPer * ui.arena.offsetHeight) / 100 + nyAdd;
 			var dx, dy;
 			if (game.chess) {
 				var rect = this.getBoundingClientRect();
@@ -15088,10 +15745,8 @@ export class Player extends HTMLDivElement {
 		node.hide();
 		node.style.transitionProperty = "left,top,opacity,transform";
 		if (!nosource) {
-			var nx = [50, -52];
-			var ny = [50, -52];
-			nx = (nx[0] * ui.arena.offsetWidth) / 100 + nx[1];
-			ny = (ny[0] * ui.arena.offsetHeight) / 100 + ny[1];
+			var nx = (50 * ui.arena.offsetWidth) / 100 - 52;
+			var ny = (50 * ui.arena.offsetHeight) / 100 - 52;
 			var dx, dy;
 			if (game.chess) {
 				var rect = this.getBoundingClientRect();
@@ -15217,7 +15872,7 @@ export class Player extends HTMLDivElement {
 	}
 	$throwxy2(card, left, top, trans, flipx, flipy) {
 		if (game.chess) {
-			return this.$throwxy.apply(this, arguments);
+			return this.$throwxy(card, left, top);
 		}
 		var node = card.copy("thrown", "thrownhighlight");
 		node.style.left = left;
@@ -15225,15 +15880,19 @@ export class Player extends HTMLDivElement {
 		node.hide();
 		// node.style.transitionProperty='left,top,opacity,transform';
 
+		/**
+		 * @param {string} str
+		 * @returns {[number, number]}
+		 */
 		var parseCalc = function (str) {
 			var per = str.slice(str.indexOf("calc(") + 5, str.indexOf("%"));
 			var add = str.slice(str.indexOf("%") + 1, str.indexOf("px")).replace(/\s/g, "");
 			return [parseInt(per), parseInt(add)];
 		};
-		var nx = parseCalc(node.style.left);
-		var ny = parseCalc(node.style.top);
-		nx = (nx[0] * ui.arena.offsetWidth) / 100 + nx[1];
-		ny = (ny[0] * ui.arena.offsetHeight) / 100 + ny[1];
+		var [nxPer, nxAdd] = parseCalc(node.style.left);
+		var [nyPer, nyAdd] = parseCalc(node.style.top);
+		var nx = (nxPer * ui.arena.offsetWidth) / 100 + nxAdd;
+		var ny = (nyPer * ui.arena.offsetHeight) / 100 + nyAdd;
 		var dx = this.getLeft() + this.offsetWidth / 2 - 52 - nx;
 		var dy = this.getTop() + this.offsetHeight / 2 - 52 - ny;
 		if (flipx) {
@@ -15269,7 +15928,21 @@ export class Player extends HTMLDivElement {
 		game.broadcastAll(function (num) {
 			var diceContainer = ui.create.div(".fullsize.dice-container", ui.window);
 			ui.window.classList.add("dicepaused");
-			var dice = ui.create.div(".dice");
+			/** @type {DiceRoll} */
+			const roll = function (deg) {
+				if (typeof deg == "number") {
+					this.current[0] += deg;
+					deg = this.current;
+				}
+				const current = deg.slice(0);
+				this.current = current;
+				this.style.transform = "rotateX(" + current[0] + "deg) rotateY(" + current[1] + "deg) rotateZ(" + current[2] + "deg)";
+			};
+			/** @type {DiceNode} */
+			var dice = Object.assign(ui.create.div(".dice"), {
+				current: [],
+				roll,
+			});
 			var side;
 
 			side = ui.create.div(".side.front", dice);
@@ -15323,15 +15996,6 @@ export class Player extends HTMLDivElement {
 				5: [345, -45, 180],
 				6: [255, 0, 135],
 			};
-			dice.roll = function (deg) {
-				if (typeof deg == "number") {
-					dice.current[0] += deg;
-					deg = dice.current;
-				}
-				deg = deg.slice(0);
-				dice.current = deg;
-				this.style.transform = "rotateX(" + deg[0] + "deg) rotateY(" + deg[1] + "deg) rotateZ(" + deg[2] + "deg)";
-			};
 			dice.roll(map[num]);
 			diceContainer.appendChild(dice);
 			ui.refresh(dice);
@@ -15355,20 +16019,18 @@ export class Player extends HTMLDivElement {
 			});
 		}, num);
 	}
-	$giveAuto(card, player) {
+	$giveAuto(card, player, log) {
 		if (Array.isArray(card) && card.length == 0) {
 			return;
 		}
-		var args = Array.from(arguments);
 		if (_status.connectMode || (!this.isUnderControl(true) && !player.isUnderControl(true))) {
 			if (Array.isArray(card)) {
 				card = card.length;
 			} else {
 				card = 1;
 			}
-			args[0] = card;
 		}
-		return this.$give.apply(this, args);
+		return this.$give(card, player, log);
 	}
 	$give(card, player, log, init, cardsetion) {
 		if (!cardsetion && cardsetion !== false && lib.config.card_animation_info) {
@@ -15454,13 +16116,7 @@ export class Player extends HTMLDivElement {
 						node.classList.add("infohidden");
 						let next = ui.create.div(".cardsetion", cardsetion, node);
 						next.style.setProperty("display", "block", "important");
-						if (node.node) {
-							if (node.node.cardsetion) {
-								node.node.cardsetion.remove();
-								delete node.node.cardsetion;
-							}
-							node.node.cardsetion = next;
-						}
+						replaceThrownCardsetion(node, next);
 					}
 				}
 				// node.dataset.position=this.dataset.position;
@@ -15508,7 +16164,7 @@ export class Player extends HTMLDivElement {
 	}
 	$handleEquipChange() {
 		const player = this;
-		const cards = Array.from(player.node.equips.childNodes);
+		const cards = Array.from(player.node.equips.children).filter(node => node instanceof lib.element.Card);
 		const cardsResume = cards.slice(0);
 		const extraEquip = [];
 		player.extraEquip.forEach(info => {
@@ -15524,6 +16180,7 @@ export class Player extends HTMLDivElement {
 		});
 		cards.forEach(card => {
 			let num = get.equipNum(card);
+			/** @type {boolean | number} */
 			let remove = false;
 			if (card.name.indexOf("empty_equip") == 0) {
 				if ((num == 4 || num == 3) && get.is.mountCombined()) {
@@ -15588,9 +16245,12 @@ export class Player extends HTMLDivElement {
 				delete card._transform;
 				const equipNum = get.equipNum(card);
 				let equipped = false;
-				for (let j = 0; j < player.node.equips.childNodes.length; j++) {
-					if (get.equipNum(player.node.equips.childNodes[j]) >= equipNum) {
-						player.node.equips.insertBefore(card, player.node.equips.childNodes[j]);
+				for (const node of player.node.equips.children) {
+					if (!(node instanceof lib.element.Card)) {
+						continue;
+					}
+					if (get.equipNum(node) >= equipNum) {
+						player.node.equips.insertBefore(card, node);
 						equipped = true;
 						break;
 					}
@@ -15616,8 +16276,10 @@ export class Player extends HTMLDivElement {
 				delete card._transform;
 				const equipNum = get.equipNum(card);
 				let equipped = false;
-				for (let j = 0; j < player.node.equips.childNodes.length; j++) {
-					const node = player.node.equips.childNodes[j];
+				for (const node of player.node.equips.children) {
+					if (!(node instanceof lib.element.Card)) {
+						continue;
+					}
 					if (get.equipNum(node) == info[2].at(-1) && info && node.classList.contains("emptyequip") && !node.extraEquip) {
 						node.node.name2.innerHTML = info[1];
 						node.extraEquip = info[0];
@@ -16004,9 +16666,7 @@ export class Player extends HTMLDivElement {
 				if (get.itemtype(card) == "card") {
 					node = card.copy("thrown", false);
 				} else {
-					node = ui.create.div(".card.thrown");
-					node.moveTo = lib.element.Card.prototype.moveTo;
-					node.moveDelete = lib.element.Card.prototype.moveDelete;
+					node = createGainAnimationNode();
 				}
 				if (cardsetion) {
 					var next = ui.create.div(".cardsetion", cardsetion, node);
@@ -16287,11 +16947,11 @@ export class Player extends HTMLDivElement {
 		var node = ui.create.div(".damage");
 		if (avatar && this.node) {
 			if (avatar == "vice") {
-				if (lib.character[this.name2]) {
+				if (this.name2 && lib.character[this.name2]) {
 					avatar = this.node.avatar2;
 				}
 			} else {
-				if (lib.character[this.name]) {
+				if (lib.character[String(this.name)]) {
 					avatar = this.node.avatar;
 				}
 			}
@@ -16306,10 +16966,15 @@ export class Player extends HTMLDivElement {
 			ui.create.div("", ui.create.div(node));
 			// ui.create.div('',str.split('').join('<br>'),ui.create.div('.text.textbg',node));
 			ui.create.div("", "<div>" + str.split("").join("</div><br><div>") + "</div>", ui.create.div(".text", node));
-			node.firstChild.firstChild.style.backgroundImage = avatar.style.backgroundImage;
+			const avatarNode = node.firstElementChild?.firstElementChild;
+			const textNode = node.lastElementChild?.firstElementChild;
+			if (!(avatarNode instanceof HTMLElement && textNode instanceof HTMLElement)) {
+				throw new Error("fullscreenpop avatar nodes failed to initialize");
+			}
+			avatarNode.style.backgroundImage = avatar.style.backgroundImage;
 			node.dataset.nature = nature || "unknown";
 			var num = 0;
-			var nodes = node.lastChild.firstChild.querySelectorAll("div");
+			var nodes = textNode.querySelectorAll("div");
 			var interval = setInterval(function () {
 				if (num < nodes.length) {
 					nodes[num].classList.add("flashtext");
@@ -16334,7 +16999,7 @@ export class Player extends HTMLDivElement {
 		ui.refresh(node);
 		if (avatar) {
 			node.style.transform = "scale(1)";
-			node.style.opacity = 1;
+			node.style.opacity = "1";
 		} else {
 			node.classList.add("damageadded");
 		}
@@ -16348,7 +17013,7 @@ export class Player extends HTMLDivElement {
 	}
 	/**
 	 *
-	 * @param { number | string } num
+	 * @param { number | string } [num]
 	 * @param { string } [nature]
 	 * @param { boolean } [font]
 	 * @param { boolean } [nobroadcast]
@@ -16380,14 +17045,14 @@ export class Player extends HTMLDivElement {
 			} else if (num == -Infinity) {
 				num = "-∞";
 			}
-			node.innerHTML = num;
+			node.innerHTML = String(num);
 			this.damagepopups.push(node);
 			node.dataset.nature = nature || "soil";
 			if (this.damagepopups.length == 1) {
 				this.$damagepop();
 			}
 		} else if (this.damagepopups.length) {
-			var node = this.damagepopups[0];
+			let node = this.damagepopups[0];
 			this.appendChild(node);
 			ui.refresh(node);
 			node.classList.add("damageadded");
