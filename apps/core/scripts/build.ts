@@ -4,6 +4,7 @@ import { existsSync, readdirSync } from "fs";
 import { Target, viteStaticCopy } from "vite-plugin-static-copy";
 import generateImportMap from "./vite-plugin-importmap";
 import jit from "@noname/jit";
+import { isMain } from "./isMain";
 
 import { moderned_characters } from "../game/config.json";
 const root = join(import.meta.dirname, "..");
@@ -222,6 +223,6 @@ interface IndividualContent {
 	moderned: boolean;
 }
 
-if (import.meta.main) {
+if (isMain(import.meta)) {
 	await main();
 }

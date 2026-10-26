@@ -79,7 +79,24 @@ test("forced selection only accepts an empty result when no legal item exists", 
 });
 
 test("GameEvent backup restores selectionSpec or removes a temporary one", () => {
-	const source = readFileSync(new URL("../../noname/library/element/gameEvent.ts", import.meta.url), "utf8");
+	const source = readFileSync(new URL("../../noname/library/element/GameEvent/selectionMethods.ts", import.meta.url), "utf8");
 	assert.match(source, /selectionSpecExists: Object\.hasOwn\(this, "selectionSpec"\)/);
 	assert.match(source, /if \(this\._backup\.selectionSpecExists\) \{\s*this\.selectionSpec = this\._backup\.selectionSpec;\s*\} else \{\s*delete this\.selectionSpec;/s);
+});
+
+test("selection context preserves identities and copies string-reference selections", () => {
+	const event = {}, player = {};
+	const initial = ["c0"];
+	const context = new SelectionContext({ event, player, selected: { card: initial } });
+	initial.push("outside");
+	context.bindInitialSelection("cards", "card");
+	const copy = context.getStepSelected("cards");
+	copy.push("outside");
+	assert.deepEqual(context.getStepSelected("cards"), ["c0"]);
+	const view = context.getReadonlyView();
+	assert.equal(view.event, event);
+	assert.equal(view.player, player);
+	assert.deepEqual(view.selected.card, ["c0"]);
+	assert.ok(Object.isFrozen(view.selected.card));
+	assert.ok(Object.isFrozen(view.steps.cards.items));
 });
