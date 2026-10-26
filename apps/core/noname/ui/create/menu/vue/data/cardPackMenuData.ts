@@ -101,14 +101,12 @@ function buildLeftPaneData(connectMenu: boolean): LeftPaneItem[] {
 	// ---- 1. mode_banned（旧版 478-492） ----
 	if (!connectMenu && lib.config.show_ban_menu) {
 		// 构建临时 lib.cardPack.mode_banned 用于显示
-		// @ts-expect-error lib.cardPack.mode_banned 是临时属性，运行时动态构建
 		lib.cardPack.mode_banned = [];
 		for (let i = 0; i < lib.config.all.mode.length; i++) {
 			const banned = lib.config[lib.config.all.mode[i] + "_bannedcards"];
 			if (banned) {
 				for (let j = 0; j < banned.length; j++) {
-					// @ts-expect-error Array.prototype.add 是 noname 运行时扩展（去重 push）
-					lib.cardPack.mode_banned.add(banned[j]);
+				lib.cardPack.mode_banned.add(banned[j]);
 				}
 			}
 		}
@@ -117,7 +115,6 @@ function buildLeftPaneData(connectMenu: boolean): LeftPaneItem[] {
 			key: "mode_banned",
 			attrs: { hidden: lib.cardPack.mode_banned.length === 0 },
 		});
-		// @ts-expect-error 删除临时属性
 		delete lib.cardPack.mode_banned;
 	}
 
@@ -227,7 +224,6 @@ export function refreshCardPack(packName: string, connectMenu: boolean): void {
 			}
 		}
 		if (connectMenu) {
-			// @ts-expect-error Array.prototype.add 是 noname 运行时扩展
 			lib.connectCardPack.add(packName);
 		}
 		triggerUpdate();

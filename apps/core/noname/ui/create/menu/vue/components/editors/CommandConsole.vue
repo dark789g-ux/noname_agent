@@ -162,8 +162,7 @@ function initGamePrint() {
 	game.print = function () {
 		if (!preRef.value || !outputContainerRef.value) {
 			// 还未挂载时，保存到 _status.toprint（旧版 686-689）
-			(_status as any).toprint = Array.from(arguments);
-			originalPrint.apply(game, arguments as any);
+			originalPrint(...arguments);
 			return;
 		}
 		const args = [...arguments];
@@ -312,7 +311,9 @@ onMounted(() => {
 
 	// 输出之前缓存的内容（旧版 686-689）
 	if (_status.toprint) {
-		game.print(...(_status.toprint as any[]));
+		for (const args of _status.toprint) {
+			game.print(...args);
+		}
 		delete _status.toprint;
 	}
 

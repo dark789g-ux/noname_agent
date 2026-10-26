@@ -3949,6 +3949,9 @@ class Sandbox {
 					if (!Domain.isError(e)) {
 						throw e;
 					} // 非错误对象无法读取堆栈，继续向上抛出
+					if ((typeof e !== "object" || e === null) && typeof e !== "function") {
+						throw e;
+					}
 
 					// 保存当前错误信息
 					// 这样无论几次重抛都可以复现最原始的错误信息

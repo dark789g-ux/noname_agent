@@ -51,6 +51,19 @@ export const menuBridge = {
 	refreshOptionsConfig: null as ((configName: string) => void) | null,
 
 	/**
+	 * 切换「导入游戏设置」文件控件的可见状态。
+	 * 由 OptionsRightPane 挂载时注册、卸载时清理；库配置的 clear 按钮经此
+	 * 请求操作当前面板，替代已不存在的 ui.import_data_button DOM 节点。
+	 */
+	requestImportData: null as (() => void) | null,
+
+	/**
+	 * 菜单容器关闭时清理选项页的瞬态状态。OptionsRightPane 挂载时注册；
+	 * 容器只是隐藏而非卸载，因此不能依赖组件卸载钩子完成这一步。
+	 */
+	clearOptionsMenuState: null as (() => void) | null,
+
+	/**
 	 * 打开「制作扩展」页并（可选）加载指定扩展。
 	 * 由 ExtensionMaker onMounted 注册、onUnmounted 置 null
 	 * （ExtensionPane 以 v-if 挂载，未显示时为 null）。

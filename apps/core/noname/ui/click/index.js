@@ -1,5 +1,358 @@
 import { lib, game, get, _status, ui } from "noname";
 import { menuBridge } from "@/ui/create/menu/vue/utils/menuBridge";
+import { requireRegisteredSkill } from "../../library/skillRegistry.js";
+
+/**
+ * 保证未注册翻译的武将仍可生成安全的 ruby 文本。
+ * @param {string} name
+ * @param {string | undefined} rawName
+ * @param {string | undefined} rawReading
+ * @param {string | undefined} displayMode
+ * @param {(value: string) => string[]} pinyin
+ */
+function getCharacterRubyText(name, rawName, rawReading, displayMode, pinyin) {
+	const hasCharacterName = rawName !== undefined;
+	const characterName = hasCharacterName ? rawName : name;
+	if (displayMode == "showCodeIdentifier") {
+		return { characterName, characterReading: name };
+	}
+	if (typeof rawReading == "string" && rawReading.length > 0) {
+		return { characterName, characterReading: rawReading };
+	}
+	return { characterName, characterReading: hasCharacterName ? pinyin(characterName).join(" ") : name };
+}
+
+/**
+ * @typedef {{
+ * 	creator?: string,
+ * 	content: string,
+ * 	day: number,
+ * 	hour: number,
+ * 	nickname: string,
+ * 	members: string[],
+ * 	title: string,
+ * 	id: string
+ * }} ConnectEventInfo
+ */
+
+/**
+ * @callback ConnectInputKeydown
+ * @this {HTMLInputElement}
+ * @param {KeyboardEvent} event
+ * @returns {void}
+ */
+
+/**
+ * @typedef {Omit<HTMLInputElement, "onkeydown"> & {
+ * 	onkeydown: ConnectInputKeydown | null
+ * }} ConnectInput
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	info: ConnectEventInfo[],
+ * 	focused?: boolean,
+ * 	textnode: HTMLElement,
+ * 	input: ConnectInput,
+ * 	interval?: ReturnType<typeof setInterval>,
+ * 	intervaltext?: string
+ * }} ConnectEventsButton
+ */
+
+/**
+ * @typedef {[nickname: string, avatar: string, available: boolean, status: string | undefined, wsid: string, onlineKey: string | undefined]} ConnectClientInfo
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	info: ConnectClientInfo[],
+ * 	focused?: boolean,
+ * 	textnode: HTMLElement,
+ * 	input: ConnectInput,
+ * 	interval?: ReturnType<typeof setInterval>,
+ * 	intervaltext?: string
+ * }} ConnectClientsButton
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	info: {content: string}
+ * }} ConnectEventContentNode
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	info: ConnectEventInfo
+ * }} ConnectEventNode
+ */
+
+/**
+ * @typedef {Card & {
+ * 	_waitingfordrag?: {clientX: number, clientY: number},
+ * 	parentNode: (HTMLDivElement & {parentNode: HTMLDivElement | null}) | null
+ * }} InteractiveCard
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	_longpresstimeout?: ReturnType<typeof setTimeout>,
+ * 	_longpressevent?: TouchEvent,
+ * 	_longpresscallback?: (this: HTMLDivElement, event: TouchEvent) => void,
+ * 	_waitingfordrag?: {clientX: number, clientY: number}
+ * }} LongPressTarget
+ */
+
+/**
+ * @typedef {Control & {
+ * 	_doubleclick?: boolean,
+ * 	firstChild: ControlButton | null
+ * }} ControlContainer
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	link: string,
+ * }} ControlButton
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	_scrollnum?: number,
+ * 	_scrollspeed?: number,
+ * 	interval?: ReturnType<typeof setInterval>
+ * }} ScrollableDiv
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	name?: string
+ * }} IntroTarget
+ */
+
+/**
+ * @typedef {IntroTarget & {
+ * 	logvtimeout?: ReturnType<typeof setTimeout>
+ * }} LogvTarget
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	firstChild: HTMLElement,
+ * 	parentNode: Player,
+ * 	_customintro?: (intro: Dialog) => void
+ * }} IdentityTarget
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	childNodes: NodeListOf<IdentityCircleNode>
+ * }} IdentityCircleContainer
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+	* 	link: [IdentityTarget, string, string],
+	* 	_source: Player,
+ * 	parentNode: ParentNode | null
+ * }} IdentityCircleNode
+ */
+
+/**
+ * @typedef {Button & {
+ * 	node: {name: HTMLDivElement},
+ * 	buttonscrollinterval?: ReturnType<typeof setInterval>
+ * }} ButtonNameTarget
+ */
+
+/**
+ * @typedef {Dialog & {
+ * 	_dragorigin?: {clientX: number, clientY: number},
+ * 	_dragtransform?: number[],
+ * 	_dragorigintransform?: number[]
+ * }} DraggableDialog
+ */
+
+/**
+ * @typedef {HoverTarget & {
+ * 	_uiintro?: Dialog,
+ * 	_poppedfunc?: () => Dialog | undefined,
+ * 	_poppedwidth?: number,
+ * 	_poppedheight?: number,
+ * 	forceclick?: boolean,
+ * 	_paused2?: boolean,
+ * 	parentNode: HTMLElement
+ * }} PoppedTarget
+ */
+
+/**
+ * @typedef {Player & {
+ * 	_waitingfordrag?: {clientX: number, clientY: number}
+ * }} DraggablePlayer
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	_mouseentercreated?: boolean,
+ * 	_hoveration?: number,
+ * 	_hoverfunc?: (this: HoverTarget, event: MouseEvent) => Dialog | undefined,
+ * 	_nopup?: boolean,
+ * 	_hoverwidth?: number,
+ * 	_mouseenterdialog?: Dialog,
+ * 	parentNode: HTMLDivElement | null
+ * }} HoverTarget
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	link: string,
+ * 	linkname: string,
+ * 	linkAudioName?: string,
+ * 	playername?: string,
+ * 	dieAudios?: string[],
+ * 	playAudio?: () => void,
+ * 	audioName?: string
+ * }} CharacterSkillButton
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	tempSkin?: string
+ * }} CharacterAvatarNode
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	name: string
+ * }} CharacterSkinButton
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	startX: number,
+ * 	startY: number
+ * }} TouchScrollTarget
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	link: string
+ * }} SkillToggleTarget
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	link: Player,
+ * 	func: (player: Player) => void
+ * }} SkillButtonTarget
+ */
+
+/**
+ * @callback CharacterSkillClick
+ * @this {CharacterSkillButton}
+ * @param {Event | "init"} event
+ * @returns {void}
+ */
+
+/**
+ * @param {Node | null} node
+ * @returns {node is CharacterSkillButton}
+ */
+function isCharacterSkillButton(node) {
+	return node instanceof HTMLDivElement && "link" in node && typeof node.link == "string" && "linkname" in node && typeof node.linkname == "string";
+}
+
+/**
+ * @param {HTMLDivElement} node
+ * @returns {node is TouchScrollTarget}
+ */
+function isTouchScrollTarget(node) {
+	return "startX" in node && typeof node.startX === "number" && "startY" in node && typeof node.startY === "number";
+}
+
+/**
+ * @param {HTMLDivElement} node
+ * @returns {node is SkillToggleTarget}
+ */
+function isSkillToggleTarget(node) {
+	return "link" in node && typeof node.link === "string";
+}
+
+/**
+ * @param {HTMLDivElement} node
+ * @returns {node is SkillButtonTarget}
+ */
+function isSkillButtonTarget(node) {
+	return "link" in node && "func" in node && typeof node.func === "function" && get.itemtype(node.link) === "player";
+}
+
+/**
+ * @param {Element} item
+ * @param {string | void} itemtype
+ * @returns {item is NonNullable<typeof _status.draggingdialog>}
+ */
+function isDraggingDialog(item, itemtype) {
+	return itemtype === "dialog";
+}
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	querySelector(selectors: ".toggle"): ConfigSwitcher
+ * }} ConfigRow
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	link: boolean,
+ * 	parentNode: ConfigRow,
+ * 	additionalCommand?: (value: boolean, parent: ConfigRow) => void
+ * }} ToggleTarget
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	link: string,
+ * 	additionalCommand?: (target: EditorTarget) => void
+ * }} EditorTarget
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	link: string | number,
+ * 	choice: (string | number)[],
+ * 	expand?: boolean,
+ * 	parentNode: ConfigRow,
+ * 	nextSibling: HTMLDivElement,
+ * 	previousSibling: HTMLDivElement,
+ * 	additionalCommand?: (value: string | number, parent: ConfigRow) => void
+ * }} ConfigSwitcher
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	link: string | number,
+ * 	parentNode: HTMLDivElement & {parentNode: ConfigRow}
+ * }} SwitcherChoice
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	parentNode: Player,
+ * 	_doubleClicking?: boolean
+ * }} AvatarTarget
+ */
+
+/**
+ * @typedef {HTMLDivElement & {
+ * 	roomfull: boolean,
+ * 	roomgaming: boolean,
+ * 	roomempty: boolean,
+ * 	version: number | string | null,
+ * 	serving: boolean,
+ * 	key: string,
+ * 	config?: {observe?: boolean}
+ * }} ConnectRoomTarget
+ */
+
 export class Click {
 	/**
 	 * @type {() => void}
@@ -13,19 +366,36 @@ export class Click {
 	 * @type {() => void}
 	 */
 	configMenu;
+	/**
+	 * @this {IdentityCircleNode}
+	 */
 	identitycircle() {
 		var list = [];
+		/**
+		 * @param {ParentNode | null} value
+		 * @returns {value is IdentityCircleContainer}
+		 */
+		const isIdentityCircleContainer = value => {
+			if (!(value instanceof HTMLElement)) {
+				return false;
+			}
+			return Array.from(value.childNodes).every(child => child instanceof HTMLElement && "link" in child && Array.isArray(child.link));
+		};
+		if (!isIdentityCircleContainer(this.parentNode)) {
+			return;
+		}
+		const parentNode = this.parentNode;
 		this.classList.toggle("transparent");
-		for (var i = 0; i < this.parentNode.childNodes.length; i++) {
-			if (!this.parentNode.childNodes[i].classList.contains("transparent")) {
-				list.add(this.parentNode.childNodes[i].link[2]);
+		for (var i = 0; i < parentNode.childNodes.length; i++) {
+			if (!parentNode.childNodes[i].classList.contains("transparent")) {
+				list.add(parentNode.childNodes[i].link[2]);
 			}
 		}
 		var info = this.link;
 		if (list.length == 1) {
-			for (var i = 0; i < this.parentNode.childNodes.length; i++) {
-				if (!this.parentNode.childNodes[i].classList.contains("transparent")) {
-					var info2 = this.parentNode.childNodes[i].link;
+			for (var i = 0; i < parentNode.childNodes.length; i++) {
+				if (!parentNode.childNodes[i].classList.contains("transparent")) {
+					var info2 = parentNode.childNodes[i].link;
 					info[0].firstChild.innerHTML = info2[1];
 					info[0].dataset.color = info2[2];
 				}
@@ -37,9 +407,13 @@ export class Click {
 		}
 		this._source._guozhanguess = list;
 	}
+	/**
+	 * @this {ConnectEventsButton}
+	 */
 	connectEvents() {
 		if (this.info) {
 			var button = this;
+			const onlineKey = game.onlineKey;
 			var layer = ui.create.div(".poplayer", ui.window);
 			var uiintro = ui.create.dialog("hidden", "notouchscroll");
 			this.classList.add("active");
@@ -47,8 +421,8 @@ export class Click {
 				lib.setScroll(uiintro.contentContainer);
 			}
 			layer.listen(function () {
-				if (this.clicked) {
-					this.clicked = false;
+				if (_status.clicked) {
+					_status.clicked = false;
 					return;
 				}
 				button.classList.remove("active");
@@ -58,7 +432,7 @@ export class Click {
 			uiintro.listen(function () {
 				_status.clicked = true;
 			});
-			uiintro.style.zIndex = 21;
+			uiintro.style.zIndex = "21";
 			uiintro.classList.add("popped");
 			uiintro.classList.add("static");
 			uiintro.classList.add("onlineclient");
@@ -75,10 +449,22 @@ export class Click {
 				}
 				uiintro.content.innerHTML = "";
 				uiintro.addText("创建约战");
-				button.textnode = uiintro.content.lastChild.lastChild;
+				const textContainer = uiintro.content.lastElementChild;
+				if (!(textContainer instanceof HTMLElement) || !(textContainer.lastElementChild instanceof HTMLElement)) {
+					return;
+				}
+				button.textnode = textContainer.lastElementChild;
 				uiintro.add('<input type="text" style="width:calc(100% - 10px);resize: none;border: none;border-radius: 2px;box-shadow: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px;margin-top: -2px;margin-bottom: 2px;">');
-				uiintro.content.lastChild.style.paddingTop = 0;
-				button.input = uiintro.content.lastChild.lastChild;
+				const inputContainer = uiintro.content.lastElementChild;
+				if (!(inputContainer instanceof HTMLElement)) {
+					return;
+				}
+				inputContainer.style.paddingTop = "0";
+				const input = inputContainer.lastElementChild;
+				if (!(input instanceof HTMLInputElement)) {
+					return;
+				}
+				button.input = input;
 				button.input.onfocus = function () {
 					button.focused = true;
 				};
@@ -87,13 +473,13 @@ export class Click {
 				};
 				if (button.interval) {
 					button.input.disabled = true;
-					button.input.style.opacity = 0.6;
+					button.input.style.opacity = "0.6";
 					if (button.intervaltext) {
 						button.textnode.innerHTML = button.intervaltext;
 					}
 				}
 				var datenode = ui.create.div(uiintro.content);
-				datenode.style.marginTop = 0;
+			datenode.style.marginTop = "0";
 				datenode.style.whiteSpace = "nowrap";
 				var date = new Date();
 				var days = [];
@@ -146,19 +532,22 @@ export class Click {
 						alert("创建失败，时间已过");
 						return;
 					}
+					if (typeof onlineKey != "string") {
+						return;
+					}
 					if (get.is.banWords(button.input.value)) {
+						const eventContent = get.plainText(button.input.value);
 						var eventnode = ui.create.div(
 							".menubutton.videotext.onlineevent.pointerdiv",
 							function () {
-								var that = this;
 								setTimeout(function () {
-									if (that.classList.contains("active")) {
-										if (confirm("确定要离开" + that.info.content + "？")) {
-											that.classList.remove("active");
+									if (eventnode.classList.contains("active")) {
+										if (confirm("确定要离开" + eventContent + "？")) {
+											eventnode.classList.remove("active");
 										}
 									} else {
-										if (confirm("确定要加入" + that.info.content + "？")) {
-											that.classList.add("active");
+										if (confirm("确定要加入" + eventContent + "？")) {
+											eventnode.classList.add("active");
 										}
 									}
 								});
@@ -172,11 +561,10 @@ export class Click {
 							hour: parseInt(hoursselect.value),
 							nickname: get.connectNickname(),
 							avatar: lib.config.connect_avatar,
-							content: get.plainText(button.input.value),
-							create: game.onlineKey,
-							members: [game.onlineKey],
+							content: eventContent,
+							create: onlineKey,
+							members: [onlineKey],
 						};
-						eventnode.info = fakeinfo;
 						ui.create.div(".title", fakeinfo.content, eventnode);
 						var str;
 						if (fakeinfo.day < currentDay) {
@@ -210,7 +598,7 @@ export class Click {
 						}
 						ui.create.div("", "已有" + fakeinfo.members.length + "人加入", eventnode);
 						ui.create.div("", "时间：" + str, eventnode);
-						if (fakeinfo.members.includes(game.onlineKey)) {
+						if (fakeinfo.members.includes(onlineKey)) {
 							eventnode.classList.add("active");
 						}
 						button.input.value = "";
@@ -227,40 +615,39 @@ export class Click {
 							avatar: lib.config.connect_avatar,
 							content: get.plainText(button.input.value),
 						},
-						game.onlineKey
+						onlineKey
 					);
 				};
 
 				var num = 0;
 				for (var i = 0; i < button.info.length; i++) {
-					if (typeof button.info[i].creator == "string" && button.info[i].creator != game.onlineKey && get.is.banWords(button.info[i].content)) {
+					if (typeof button.info[i].creator == "string" && (typeof onlineKey != "string" || button.info[i].creator != onlineKey) && get.is.banWords(button.info[i].content)) {
 						continue;
 					}
-					if (button.info[i].creator == game.onlineKey) {
+					if (typeof onlineKey == "string" && typeof button.info[i].creator == "string" && button.info[i].creator == onlineKey) {
 						num++;
 					}
-					var eventnode = ui.create.div(
+					const eventInfo = button.info[i];
+					const eventnode = ui.create.div(
 						".menubutton.videotext.onlineevent.pointerdiv",
 						function () {
-							var that = this;
-							if (typeof that.info.creator != "string") {
+							if (typeof eventInfo.creator != "string") {
 								return;
 							}
 							setTimeout(function () {
-								if (that.classList.contains("active")) {
-									if (confirm("确定要离开" + that.info.content + "？")) {
-										game.send("server", "events", that.info.id, game.onlineKey, "leave");
+								if (eventnode.classList.contains("active")) {
+									if (confirm("确定要离开" + eventInfo.content + "？") && typeof onlineKey == "string") {
+										game.send("server", "events", eventInfo.id, onlineKey, "leave");
 									}
 								} else {
-									if (confirm("确定要加入" + that.info.content + "？")) {
-										game.send("server", "events", that.info.id, game.onlineKey, "join");
+									if (confirm("确定要加入" + eventInfo.content + "？") && typeof onlineKey == "string") {
+										game.send("server", "events", eventInfo.id, onlineKey, "join");
 									}
 								}
 							});
 						},
 						uiintro.content
 					);
-					eventnode.info = button.info[i];
 					if (typeof button.info[i].creator == "string") {
 						ui.create.div(".title", button.info[i].content, eventnode);
 						var str;
@@ -297,7 +684,7 @@ export class Click {
 						//ui.create.div('','创建者：'+(button.info[i].nickname)+'<br>ID：'+button.info[i].creator,eventnode);
 						ui.create.div("", "已有" + button.info[i].members.length + "人加入", eventnode);
 						ui.create.div("", "时间：" + str, eventnode);
-						if (button.info[i].members.includes(game.onlineKey)) {
+						if (typeof onlineKey == "string" && button.info[i].members.includes(onlineKey)) {
 							eventnode.classList.add("active");
 						}
 					} else {
@@ -308,21 +695,24 @@ export class Click {
 				}
 				if (num >= 3) {
 					button.input.disabled = true;
-					button.input.style.opacity = 0.6;
+					button.input.style.opacity = "0.6";
 					hoursselect.disabled = true;
 					daysselect.disabled = true;
 					timeconfirm.disabled = true;
 				}
 			};
-			uiintro.refresh();
+			uiintro.refresh?.();
 			ui.window.appendChild(uiintro);
 			_status.connectEventsCallback = function () {
 				if (uiintro.parentNode == ui.window) {
-					uiintro.refresh();
+					uiintro.refresh?.();
 				}
 			};
 		}
 	}
+	/**
+	 * @this {ConnectClientsButton}
+	 */
 	connectClients() {
 		if (this.info) {
 			var button = this;
@@ -333,8 +723,8 @@ export class Click {
 				lib.setScroll(uiintro.contentContainer);
 			}
 			layer.listen(function () {
-				if (this.clicked) {
-					this.clicked = false;
+				if (_status.clicked) {
+					_status.clicked = false;
 					return;
 				}
 				button.classList.remove("active");
@@ -361,10 +751,19 @@ export class Click {
 				}
 				uiintro.content.innerHTML = "";
 				uiintro.addText("发状态");
-				button.textnode = uiintro.content.lastChild.lastChild;
+				const textContainer = uiintro.content.lastElementChild;
+				if (textContainer instanceof HTMLElement && textContainer.lastElementChild instanceof HTMLElement) {
+					button.textnode = textContainer.lastElementChild;
+				}
 				uiintro.add('<input type="text" style="width:calc(100% - 10px);resize: none;border: none;border-radius: 2px;box-shadow: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px;margin-top: -2px;margin-bottom: 2px;">');
-				uiintro.content.lastChild.style.paddingTop = 0;
-				button.input = uiintro.content.lastChild.lastChild;
+				const inputContainer = uiintro.content.lastElementChild;
+				if (inputContainer instanceof HTMLElement) {
+					inputContainer.style.paddingTop = "0";
+					const input = inputContainer.lastElementChild;
+					if (input instanceof HTMLInputElement) {
+						button.input = input;
+					}
+				}
 				button.input.onfocus = function () {
 					button.focused = true;
 				};
@@ -373,7 +772,7 @@ export class Click {
 				};
 				if (button.interval) {
 					button.input.disabled = true;
-					button.input.style.opacity = 0.6;
+					button.input.style.opacity = "0.6";
 					if (button.intervaltext) {
 						button.textnode.innerHTML = button.intervaltext;
 					}
@@ -383,13 +782,13 @@ export class Click {
 						game.send("server", "status", this.value);
 						this.blur();
 						this.disabled = true;
-						this.style.opacity = 0.6;
+						this.style.opacity = "0.6";
 						button.textnode.innerHTML = "发状态(10)";
 						button.intervaltext = button.textnode.innerHTML;
 						var num = 10;
 						var that = this;
 						button.input.disabled = true;
-						button.input.style.opacity = 0.6;
+						button.input.style.opacity = "0.6";
 						this.value = "";
 						button.interval = setInterval(function () {
 							num--;
@@ -413,7 +812,6 @@ export class Click {
 					ui.create.div(".menubutton.videoavatar", node).setBackground(button.info[i][1] || "caocao", "character");
 					if (button.info[i][4] == game.wsid) {
 						ui.create.div(".name", '<span class="thundertext thunderauto">' + (button.info[i][0] || "无名玩家"), node);
-						node.isme = true;
 					} else if (button.info[i][2]) {
 						ui.create.div(".name", button.info[i][0] || "无名玩家", node);
 					} else {
@@ -422,18 +820,19 @@ export class Click {
 					//show ID
 					//ui.create.div('.videostatus',node,button.info[i][5]);
 					//node.classList.add('videonodestatus');
-					if (button.info[i][3]) {
-						ui.create.div(".videostatus", node, get.plainText(button.info[i][3].slice(0, 80)));
+					const status = button.info[i][3];
+					if (typeof status == "string" && status) {
+						ui.create.div(".videostatus", node, get.plainText(status.slice(0, 80)));
 						node.classList.add("videonodestatus");
 					}
 				}
 			};
 
-			uiintro.refresh();
+			uiintro.refresh?.();
 			ui.window.appendChild(uiintro);
 			_status.connectClientsCallback = function () {
 				if (uiintro.parentNode == ui.window) {
-					uiintro.refresh();
+					uiintro.refresh?.();
 				}
 			};
 		}
@@ -458,6 +857,9 @@ export class Click {
 		var autoskin = function () {
 			if (players.length) {
 				var player = players.randomRemove();
+				if (!player) {
+					return;
+				}
 				var list = [];
 				if (player.name && !player.isUnseen(0)) {
 					list.push("1");
@@ -642,6 +1044,9 @@ export class Click {
 		}
 		e.stopPropagation();
 	}
+	/**
+	 * @this {ButtonNameTarget}
+	 */
 	buttonnameenter() {
 		if (this.buttonscrollinterval) {
 			clearInterval(this.buttonscrollinterval);
@@ -664,6 +1069,9 @@ export class Click {
 			}, 16);
 		}
 	}
+	/**
+	 * @this {ButtonNameTarget}
+	 */
 	buttonnameleave() {
 		if (this.buttonscrollinterval) {
 			clearInterval(this.buttonscrollinterval);
@@ -681,6 +1089,9 @@ export class Click {
 			}, 16);
 		}
 	}
+	/**
+	 * @this {DraggableDialog}
+	 */
 	dragtouchdialog(e) {
 		if (e.touches.length > 1 && !this.classList.contains("popped") && !this.classList.contains("fixed")) {
 			_status.draggingtouchdialog = this;
@@ -696,6 +1107,9 @@ export class Click {
 			e.stopPropagation();
 		}
 	}
+	/**
+	 * @this {IdentityTarget}
+	 */
 	identity(e) {
 		if (_status.dragged) {
 			return;
@@ -710,9 +1124,10 @@ export class Click {
 		if (this.parentNode.forceShown) {
 			return;
 		}
-		if (!_status.connectMode && this.parentNode.ai.stratagem_camouflage && get.config("nei_auto_mark_camouflage") && game.me.identity == "nei") {
-			return;
-		}
+			const playerAi = this.parentNode.ai;
+			if (!_status.connectMode && "stratagem_camouflage" in playerAi && playerAi.stratagem_camouflage && get.config("nei_auto_mark_camouflage") && game.getMe().identity == "nei") {
+				return;
+			}
 		if (_status.clickingidentity) {
 			for (var i = 0; i < _status.clickingidentity[1].length; i++) {
 				_status.clickingidentity[1][i].delete();
@@ -728,8 +1143,8 @@ export class Click {
 			return;
 		}
 		if (lib.config.mark_identity_style == "click") {
-			var list2 = [];
-			for (var i in list) {
+			const list2 = [];
+			for (let i in list) {
 				list2.push(i);
 			}
 			list2.push(list2[0]);
@@ -743,7 +1158,7 @@ export class Click {
 		} else {
 			if (get.mode() == "guozhan") {
 				list = { wei: "魏", shu: "蜀", wu: "吴", qun: "群", jin: "晋", ye: "野" };
-				if (_status.forceKey) {
+				if ("forceKey" in _status && _status.forceKey) {
 					list.key = "键";
 				}
 				for (let i in list) {
@@ -752,7 +1167,8 @@ export class Click {
 					}
 				}
 			}
-			var list2 = get.copy(list);
+			const identityList = list;
+				const list2 = get.copy(list);
 			if (game.getIdentityList2) {
 				game.getIdentityList2(list2);
 			}
@@ -772,34 +1188,46 @@ export class Click {
 					uiintro.style.width = "85px";
 				}
 				var source = this.parentNode;
-				for (var i in list) {
-					var node = ui.create.div();
+				for (var i in identityList) {
+					const target = this;
+					const createLink =
+						/** @returns {[IdentityTarget, string, string]} */
+						() => [target, identityList[i], i];
+					/** @type {IdentityCircleNode} */
+					const node = Object.assign(ui.create.div(), {
+						_source: source,
+						link: createLink(),
+					});
 					node.classList.add("guessidentity");
 					node.classList.add("pointerdiv");
-					ui.create.div(".menubutton.large", list2[i], node);
-					if (!get.is.phoneLayout()) {
-						node.firstChild.style.fontSize = "24px";
-						node.firstChild.style.lineHeight = "24px";
-					}
-					if (get.mode() == "guozhan") {
+						ui.create.div(".menubutton.large", list2[i], node);
+						if (!get.is.phoneLayout()) {
+							const firstChild = node.firstElementChild;
+							if (firstChild instanceof HTMLElement) {
+								firstChild.style.fontSize = "24px";
+								firstChild.style.lineHeight = "24px";
+							}
+						}
+						if (get.mode() == "guozhan") {
 						if (source._guozhanguess) {
 							if (!source._guozhanguess.includes(i)) {
 								node.classList.add("transparent");
 							}
 						}
-						node._source = source;
-						node.listen(ui.click.identitycircle);
-					} else {
-						node.listen(function () {
-							var info = this.link;
-							info[0].firstChild.innerHTML = info[1];
-							info[0].dataset.color = info[2];
-							_status.clicked = false;
-						});
-					}
+							node.listen(ui.click.identitycircle.bind(node));
+						} else {
+							node.listen(
+								/** @this {IdentityCircleNode} */
+								function () {
+									var info = this.link;
+									info[0].firstChild.innerHTML = info[1];
+									info[0].dataset.color = info[2];
+									_status.clicked = false;
+								}.bind(node)
+							);
+						}
 
-					node.link = [this, list[i], i];
-					uiintro.add(node);
+						uiintro.add(node);
 				}
 			};
 			ui.click.touchpop();
@@ -834,13 +1262,21 @@ export class Click {
 			// }
 		}
 	}
+	/**
+	 * @this {HTMLElement}
+	 */
 	identity2() {
 		if (_status.clickingidentity) {
 			_status.clicked = true;
 			var player = _status.clickingidentity[0];
 			var nodes = _status.clickingidentity[1];
 			player.node.identity.dataset.color = this.dataset.color;
-			player.node.identity.firstChild.innerHTML = this.firstChild.innerHTML;
+			const firstChild = player.node.identity.firstElementChild;
+			const selectedChild = this.firstElementChild;
+			if (!(firstChild instanceof HTMLElement) || !(selectedChild instanceof HTMLElement)) {
+				return;
+			}
+			firstChild.innerHTML = selectedChild.innerHTML;
 			for (var i = 0; i < nodes.length; i++) {
 				nodes[i].delete();
 				nodes[i].style.transform = "";
@@ -912,12 +1348,11 @@ export class Click {
 			var node = ui.create.div(".newgame.pointernode");
 			for (var i = 0; i < 3 && i + k * 3 < modes.length; i++) {
 				var thismode = modes[i + k * 3];
-				var div = ui.create.div(thismode == (_status.sourcemode || lib.config.mode) ? ".underlinenode.on" : ".underlinenode", node);
-				div.innerHTML = lib.translate[thismode];
-				div.link = thismode;
-				div.addEventListener(lib.config.touchscreen ? "touchend" : "click", function () {
+				var div = Object.assign(ui.create.div(thismode == (_status.sourcemode || lib.config.mode) ? ".underlinenode.on" : ".underlinenode", node), { link: thismode });
+				div.innerHTML = String(lib.translate[thismode]);
+				div.addEventListener(lib.config.touchscreen ? "touchend" : "click", /** @this {HTMLDivElement & { link: string }} */ function () {
 					game.saveConfig("mode", this.link);
-					localStorage.setItem(lib.configprefix + "directstart", true);
+					localStorage.setItem(lib.configprefix + "directstart", "true");
 					game.reload();
 				});
 			}
@@ -1003,8 +1438,8 @@ export class Click {
 			list.scrollTop = list.scrollHeight;
 			uiintro.style.height = uiintro.content.scrollHeight + "px";
 		};
+		addEntry._origin = uiintro;
 		_status.addChatEntry = addEntry;
-		_status.addChatEntry._origin = uiintro;
 		if (lib.chatHistory.length) {
 			for (var i = 0; i < lib.chatHistory.length; i++) {
 				addEntry(lib.chatHistory[i]);
@@ -1021,9 +1456,16 @@ export class Click {
 			_status.chatValue = "";
 		}
 		var node = uiintro.add('<input type="text" value="' + _status.chatValue + '">');
-		node.style.paddingTop = 0;
+		if (!(node instanceof HTMLDivElement)) {
+			throw new TypeError("chat input container is not a div");
+		}
+		node.style.paddingTop = "0";
 		node.style.marginBottom = "16px";
-		input = node.firstChild;
+		const inputNode = node.firstChild;
+		if (!(inputNode instanceof HTMLInputElement)) {
+			throw new TypeError("chat input is not an input element");
+		}
+		input = inputNode;
 		input.style.width = "calc(100% - 20px)";
 		input.onchange = function () {
 			_status.chatValue = input.value;
@@ -1077,7 +1519,11 @@ export class Click {
 				list3.remove();
 				uiintro.add(list1);
 				while (list2.childNodes.length) {
-					list2.firstChild.remove();
+					const firstChild = list2.firstChild;
+					if (!firstChild) {
+						throw new TypeError("chat emotion list child is missing");
+					}
+					firstChild.remove();
 				}
 			} else {
 				emotionTitle.innerHTML = "快捷语音";
@@ -1108,9 +1554,13 @@ export class Click {
 		//uiintro.add(list2);
 		const createEmotion = function (name) {
 			const srcBase = `${lib.assetURL}image/emotion/${name}/`;
-			const files = _status.emotion_cache[name];
+			const emotionCache = _status.emotion_cache;
+			if (!emotionCache) {
+				return;
+			}
+			const files = emotionCache[name];
 			for (const file of files) {
-				const emotionButton = ui.create.div(".card.fullskin", `<img src="${srcBase}${file}" width="50" height="50">`, function () {
+				const emotionButton = Object.assign(ui.create.div(".card.fullskin", `<img src="${srcBase}${file}" width="50" height="50">`, /** @this {HTMLDivElement & { pack: string, emotionID: string }} */ function () {
 					let player = game.me;
 					if (!player) {
 						if (game.connectPlayers) {
@@ -1134,9 +1584,7 @@ export class Click {
 					} else {
 						player.emotion(this.pack, this.emotionID);
 					}
-				});
-				emotionButton.emotionID = file;
-				emotionButton.pack = name;
+				}), { emotionID: file, pack: name });
 				emotionButton.style.height = "50px";
 				emotionButton.style.width = "50px";
 				list2.appendChild(emotionButton);
@@ -1144,13 +1592,12 @@ export class Click {
 		};
 		const srcBase = `${lib.assetURL}image/emotion/`;
 		for (const folder in _status.emotion_cache) {
-			const emotionPack = ui.create.div(".card.fullskin", `<img src="${srcBase}${folder}/1.gif" width="50" height="50">`, function () {
+			const emotionPack = Object.assign(ui.create.div(".card.fullskin", `<img src="${srcBase}${folder}/1.gif" width="50" height="50">`, /** @this {HTMLDivElement & { pack: string }} */ function () {
 				emotionTitle.innerHTML = get.translation(this.pack);
 				createEmotion(this.pack);
 				list1.remove();
 				uiintro.add(list2);
-			});
-			emotionPack.pack = folder;
+			}), { pack: folder });
 			emotionPack.style.height = "50px";
 			emotionPack.style.width = "50px";
 			list1.appendChild(emotionPack);
@@ -1166,7 +1613,7 @@ export class Click {
 		list3.style.overflow = "scroll";
 		lib.setScroll(list3);
 		for (var i = 0; i < lib.quickVoice.length; i++) {
-			var node = ui.create.div(".text.chat", function () {
+			let node = ui.create.div(".text.chat", /** @this {HTMLDivElement} */ function () {
 				var player = game.me;
 				var str = this.innerHTML;
 				if (!player) {
@@ -1207,8 +1654,7 @@ export class Click {
 		var vol1 = ui.create.div(".volumn");
 		uiintro.add(vol1);
 		for (var i = 0; i < 8; i++) {
-			var span = document.createElement("span");
-			span.link = i + 1;
+			var span = Object.assign(document.createElement("span"), { link: i + 1 });
 			span.addEventListener(lib.config.touchscreen ? "touchend" : "click", ui.click.volumn_background);
 			if (i < lib.config.volumn_background) {
 				span.innerHTML = "●";
@@ -1222,8 +1668,7 @@ export class Click {
 		var vol2 = ui.create.div(".volumn");
 		uiintro.add(vol2);
 		for (var i = 0; i < 8; i++) {
-			var span = document.createElement("span");
-			span.link = i + 1;
+			var span = Object.assign(document.createElement("span"), { link: i + 1 });
 			span.addEventListener(lib.config.touchscreen ? "touchend" : "click", ui.click.volumn_audio);
 			if (i < lib.config.volumn_audio) {
 				span.innerHTML = "●";
@@ -1235,6 +1680,7 @@ export class Click {
 		uiintro.add(ui.create.div(".placeholder"));
 		return uiintro;
 	}
+	/** @this {HTMLSpanElement & { link: number }} */
 	volumn_background(e) {
 		if (_status.dragged) {
 			return;
@@ -1247,13 +1693,16 @@ export class Click {
 		ui.backgroundMusic.volume = volume / 8;
 		for (var i = 0; i < 8; i++) {
 			if (i < lib.config.volumn_background) {
-				this.parentNode.childNodes[i].innerHTML = "●";
+				const child = this.parentElement?.children[i];
+				if (child instanceof HTMLElement) child.innerHTML = "●";
 			} else {
-				this.parentNode.childNodes[i].innerHTML = "○";
+				const child = this.parentElement?.children[i];
+				if (child instanceof HTMLElement) child.innerHTML = "○";
 			}
 		}
 		e.stopPropagation();
 	}
+	/** @this {HTMLSpanElement & { link: number }} */
 	volumn_audio(e) {
 		if (_status.dragged) {
 			return;
@@ -1265,13 +1714,18 @@ export class Click {
 		game.saveConfig("volumn_audio", volume);
 		for (var i = 0; i < 8; i++) {
 			if (i < lib.config.volumn_audio) {
-				this.parentNode.childNodes[i].innerHTML = "●";
+				const child = this.parentElement?.children[i];
+				if (child instanceof HTMLElement) child.innerHTML = "●";
 			} else {
-				this.parentNode.childNodes[i].innerHTML = "○";
+				const child = this.parentElement?.children[i];
+				if (child instanceof HTMLElement) child.innerHTML = "○";
 			}
 		}
 		e.stopPropagation();
 	}
+	/**
+	 * @this {NonNullable<import("../index.js").UI["currentpopped"]>}
+	 */
 	hoverpopped() {
 		if (this._uiintro) {
 			return;
@@ -1316,7 +1770,11 @@ export class Click {
 		} else {
 			uiintro.style.top = "50px";
 		}
-		var left = this.parentNode.offsetLeft + this.offsetLeft + this.offsetWidth / 2 - width / 2;
+		const parent = this.parentNode;
+		if (!(parent instanceof HTMLElement)) {
+			throw new TypeError("popped target parent is not an HTMLElement");
+		}
+		var left = parent.offsetLeft + this.offsetLeft + this.offsetWidth / 2 - width / 2;
 		if (left < 10) {
 			left = 10;
 		} else if (left + width > ui.window.offsetWidth - 10) {
@@ -1332,26 +1790,30 @@ export class Click {
 			uiintro._onopen();
 		}
 		if (this._paused2 && !lib.config.touchscreen) {
+			const intro = uiintro;
 			game.pause2();
 			uiintro.classList.add("static");
 			var layer = ui.create.div(".poplayer", ui.window);
 			var clicklayer = function (e) {
-				uiintro.delete();
+				intro.delete();
 				layer.remove();
 				game.resume2();
 				e.stopPropagation();
 				return false;
 			};
-			uiintro.style.zIndex = 21;
+			intro.style.zIndex = "21";
 			layer.onclick = clicklayer;
 			layer.oncontextmenu = clicklayer;
-			uiintro.addEventListener("mouseleave", clicklayer);
-			uiintro.addEventListener("click", clicklayer);
+			intro.addEventListener("mouseleave", clicklayer);
+			intro.addEventListener("click", clicklayer);
 		}
 	}
 	hoverpopped_leave() {
 		this._poppedalready = false;
 	}
+	/**
+	 * @this {Dialog & {_poppedorigin?: HTMLDivElement & {_uiintro?: Dialog}}}
+	 */
 	leavehoverpopped() {
 		if (_status.dragged) {
 			return;
@@ -1364,15 +1826,15 @@ export class Click {
 
 		var uiintro = this;
 		setTimeout(function () {
-			if (button._uiintro == uiintro) {
+			if (button && button._uiintro == uiintro) {
 				delete button._uiintro;
 			}
 		}, 500);
 	}
 	dierevive() {
-		if (game.me.isDead()) {
-			game.me.revive(Math.max(1, game.me.maxHp));
-			game.me.draw(2);
+		if (game.getMe().isDead()) {
+			game.getMe().revive(Math.max(1, Number(game.getMe().maxHp)));
+			game.getMe().draw(2);
 		} else {
 			if (ui.revive) {
 				ui.revive.close();
@@ -1381,12 +1843,13 @@ export class Click {
 		}
 	}
 	dieswap() {
-		if (game.me.isDead()) {
+		if (game.getMe().isDead()) {
 			_status.clicked = true;
 			var i, translation, intro, str;
 			if (ui.intro) {
-				ui.intro.close();
-				if (ui.intro.source == "dieswap") {
+				const intro = ui.intro;
+				intro.close();
+				if (intro.source == "dieswap") {
 					delete ui.intro;
 					ui.control.show();
 					game.resume2();
@@ -1399,14 +1862,14 @@ export class Click {
 			ui.intro.source = "dieswap";
 
 			var players = [];
-			for (var i = 0; i < game.players.length; i++) {
+			for (let i = 0; i < game.players.length; i++) {
 				if (game.players[i].isAlive()) {
 					players.push(game.players[i]);
 				}
 			}
 			ui.intro.add(players, true);
 			var buttons = ui.intro.querySelectorAll(".button");
-			for (var i = 0; i < buttons.length; i++) {
+			for (let i = 0; i < buttons.length; i++) {
 				buttons[i].addEventListener(lib.config.touchscreen ? "touchend" : "click", ui.click.dieswap2);
 			}
 		} else {
@@ -1416,6 +1879,9 @@ export class Click {
 			}
 		}
 	}
+	/**
+	 * @this {HTMLDivElement & { link: Player }}
+	 */
 	dieswap2() {
 		if (_status.dragged) {
 			return;
@@ -1501,10 +1967,15 @@ export class Click {
 				}
 			}
 			while (item) {
+				if (!(item instanceof HTMLElement)) {
+					item = item.parentElement;
+					continue;
+				}
 				if (lib.config.enable_touchdragline && _status.mouseleft && !game.chess) {
 					ui.canvas.width = ui.arena.offsetWidth;
 					ui.canvas.height = ui.arena.offsetHeight;
-					var ctx = ui.ctx;
+					const ctx = ui.canvas.getContext("2d");
+					if (ctx) {
 					ctx.shadowBlur = 5;
 					ctx.shadowColor = "rgba(0,0,0,0.3)";
 					ctx.strokeStyle = "white";
@@ -1532,6 +2003,7 @@ export class Click {
 							ctx.lineTo(exy[0], exy[1]);
 							ctx.stroke();
 						}
+					}
 					}
 				}
 
@@ -1573,12 +2045,20 @@ export class Click {
 							_status.clicked = false;
 							_status.dragged = false;
 							var notbefore = itemtype == "player" && !item.classList.contains("selected");
-							ui.click[itemtype].call(item);
+							if (itemtype == "card" && item instanceof lib.element.Card) {
+								ui.click.card.call(item);
+							} else if (itemtype == "button" && item instanceof HTMLDivElement) {
+								ui.click.button.call(item);
+						} else if (itemtype == "player" && item instanceof lib.element.Player) {
+								ui.click.target.call(item);
+							}
 							if (item.classList.contains("selected")) {
 								if (notbefore) {
 									_status.lastdragchange.push(item);
-									item._lastdragchange = [exx, eyy];
-									if (lib.falseitem) {
+									/** @type {HTMLElement & {_lastdragchange?: [number, number]}} */
+									const dragItem = item;
+									dragItem._lastdragchange = [exx, eyy];
+									if ("falseitem" in lib && lib.falseitem) {
 										var from = [_status.mousedragging.clientX / game.documentZoom - ui.arena.offsetLeft, _status.mousedragging.clientY / game.documentZoom - ui.arena.offsetTop];
 										var to = [exx, eyy];
 										var node = ui.create.div(".linexy.hidden");
@@ -1613,7 +2093,9 @@ export class Click {
 										node.show();
 										node.style.transform = "rotate(" + -deg + "deg) scaleY(1)";
 										ui.touchlines.push(node);
-										node._origin = item;
+									/** @type {HTMLDivElement & {_origin?: HTMLElement}} */
+									const touchLine = node;
+									touchLine._origin = item;
 									}
 								}
 							} else {
@@ -1637,7 +2119,7 @@ export class Click {
 					}
 					return;
 				}
-				item = item.parentNode;
+				item = item.parentElement;
 			}
 			_status.mouseleft = true;
 			_status.dragstatuschanged = null;
@@ -1669,7 +2151,9 @@ export class Click {
 					ui.click.roundmenu();
 					ui.roundmenu._dragtransform = ui.roundmenu._dragorigintransform;
 					translate = ui.roundmenu._dragtransform;
-					ui.roundmenu.style.transform = "translate(" + translate[0] + "px," + translate[1] + "px)";
+					if (translate) {
+						ui.roundmenu.style.transform = "translate(" + translate[0] + "px," + translate[1] + "px)";
+					}
 				} else {
 					translate = ui.roundmenu._dragtransform;
 					translate[0] += dx;
@@ -1755,6 +2239,7 @@ export class Click {
 				}
 			}
 		}
+		/** @type {boolean | HTMLDivElement} */
 		var tmpflag = false;
 		_status.mousedown = false;
 		_status.clicked = false;
@@ -1791,18 +2276,21 @@ export class Click {
 		_status.clicked = false;
 	}
 	checkroundtranslate(translate) {
-		var translate = translate || ui.roundmenu._dragtransform;
-		if (translate[1] + ui.roundmenu._position[1] + 50 + ui.arena.offsetTop > ui.window.offsetHeight) {
-			translate[1] = ui.window.offsetHeight - (ui.roundmenu._position[1] + 50) - ui.arena.offsetTop;
-		} else if (translate[1] + ui.roundmenu._position[1] + ui.arena.offsetTop < 0) {
-			translate[1] = -ui.roundmenu._position[1] - ui.arena.offsetTop;
+		const currentTranslate = translate ?? ui.roundmenu._dragtransform;
+		if (!currentTranslate) {
+			return;
 		}
-		if (translate[0] + ui.roundmenu._position[0] + 50 + ui.arena.offsetLeft > ui.window.offsetWidth) {
-			translate[0] = ui.window.offsetWidth - (ui.roundmenu._position[0] + 50) - ui.arena.offsetLeft;
-		} else if (translate[0] + ui.roundmenu._position[0] + ui.arena.offsetLeft < 0) {
-			translate[0] = -ui.roundmenu._position[0] - ui.arena.offsetLeft;
+		if (currentTranslate[1] + ui.roundmenu._position[1] + 50 + ui.arena.offsetTop > ui.window.offsetHeight) {
+			currentTranslate[1] = ui.window.offsetHeight - (ui.roundmenu._position[1] + 50) - ui.arena.offsetTop;
+		} else if (currentTranslate[1] + ui.roundmenu._position[1] + ui.arena.offsetTop < 0) {
+			currentTranslate[1] = -ui.roundmenu._position[1] - ui.arena.offsetTop;
 		}
-		ui.roundmenu.style.transform = "translate(" + translate[0] + "px," + translate[1] + "px)";
+		if (currentTranslate[0] + ui.roundmenu._position[0] + 50 + ui.arena.offsetLeft > ui.window.offsetWidth) {
+			currentTranslate[0] = ui.window.offsetWidth - (ui.roundmenu._position[0] + 50) - ui.arena.offsetLeft;
+		} else if (currentTranslate[0] + ui.roundmenu._position[0] + ui.arena.offsetLeft < 0) {
+			currentTranslate[0] = -ui.roundmenu._position[0] - ui.arena.offsetLeft;
+		}
+		ui.roundmenu.style.transform = "translate(" + currentTranslate[0] + "px," + currentTranslate[1] + "px)";
 	}
 	checkdialogtranslate(translate, dialog) {
 		var translate = translate || dialog._dragtransform;
@@ -1827,10 +2315,12 @@ export class Click {
 		if (e.button == 2) {
 			return;
 		}
+		/** @type {NodeListOf<HTMLDivElement>} */
 		var dialogs = document.querySelectorAll("#window>.dialog.popped:not(.static)");
 		for (var i = 0; i < dialogs.length; i++) {
 			dialogs[i].delete();
 		}
+		/** @type {HoverTarget | null | undefined} */
 		var node = _status.currentmouseenter;
 		var sourceitem = document.elementFromPoint(e.clientX, e.clientY);
 		if (game.chess && ui.selected.cards.length) {
@@ -1886,7 +2376,8 @@ export class Click {
 
 				ui.canvas.width = ui.arena.offsetWidth;
 				ui.canvas.height = ui.arena.offsetHeight;
-				var ctx = ui.ctx;
+				const ctx = ui.canvas.getContext("2d");
+				if (ctx) {
 				ctx.shadowBlur = 5;
 				ctx.shadowColor = "rgba(0,0,0,0.3)";
 				ctx.strokeStyle = "white";
@@ -1906,7 +2397,8 @@ export class Click {
 					ctx.lineTo(e.clientX / game.documentZoom - ui.arena.offsetLeft, e.clientY / game.documentZoom - ui.arena.offsetTop);
 				}
 				ctx.stroke();
-				if (!_status.multitarget) {
+				}
+				if (ctx && !_status.multitarget) {
 					for (var i = 0; i < _status.lastdragchange.length; i++) {
 						ctx.moveTo(_status.mousedragging.clientX / game.documentZoom - ui.arena.offsetLeft, _status.mousedragging.clientY / game.documentZoom - ui.arena.offsetTop);
 						var exy = _status.lastdragchange[i]._lastdragchange;
@@ -1917,6 +2409,10 @@ export class Click {
 			}
 
 			while (item) {
+				if (!(item instanceof HTMLElement)) {
+					item = item.parentElement;
+					continue;
+				}
 				if (item == _status.mousedragorigin) {
 					if (_status.mouseleft) {
 						_status.mousedragging = null;
@@ -1957,11 +2453,19 @@ export class Click {
 							_status.dragstatuschanged = item;
 							_status.clicked = false;
 							var notbefore = itemtype == "player" && !item.classList.contains("selected");
-							ui.click[itemtype].call(item);
+							if (itemtype == "card" && item instanceof lib.element.Card) {
+								ui.click.card.call(item);
+							} else if (itemtype == "button" && item instanceof HTMLDivElement) {
+								ui.click.button.call(item);
+							} else if (itemtype == "player" && item instanceof lib.element.Player) {
+								ui.click.player.call(item);
+							}
 							if (item.classList.contains("selected")) {
 								if (notbefore) {
 									_status.lastdragchange.push(item);
-									item._lastdragchange = [exx, eyy];
+									/** @type {HTMLElement & {_lastdragchange?: [number, number]}} */
+									const dragItem = item;
+									dragItem._lastdragchange = [exx, eyy];
 								}
 							} else {
 								_status.lastdragchange.remove(item);
@@ -1978,7 +2482,7 @@ export class Click {
 					}
 					return;
 				}
-				item = item.parentNode;
+				item = item.parentElement;
 			}
 			if (!_status.mouseleft) {
 				_status.mouseleft = true;
@@ -2002,7 +2506,7 @@ export class Click {
 						}
 					}
 					_status._mouseentertimeout = setTimeout(function () {
-						if (_status.currentmouseenter != node || node._mouseentercreated || _status.tempunpopup || _status.mousedragging || _status.mousedown || !node.offsetWidth || !node.offsetHeight) {
+						if (!node || _status.currentmouseenter != node || node._mouseentercreated || _status.tempunpopup || _status.mousedragging || _status.mousedown || !node.offsetWidth || !node.offsetHeight) {
 							return;
 						}
 						if (node._hoverfunc && !node._nopup) {
@@ -2022,7 +2526,7 @@ export class Click {
 					}, hoveration);
 					break;
 				}
-				item = item.parentNode;
+				item = item.parentElement;
 			}
 			if (_status.draggingdialog) {
 				var ddialog = _status.draggingdialog;
@@ -2036,7 +2540,7 @@ export class Click {
 			}
 			if (_status.draggingroundmenu) {
 				if (ui.roundmenu._dragorigin && ui.roundmenu._dragtransform) {
-					var translate = ui.roundmenu._dragtransform.slice(0);
+					let translate = ui.roundmenu._dragtransform.slice(0);
 					translate[0] += e.clientX / game.documentZoom - ui.roundmenu._dragorigin.clientX / game.documentZoom;
 					translate[1] += e.clientY / game.documentZoom - ui.roundmenu._dragorigin.clientY / game.documentZoom;
 					ui.click.checkroundtranslate(translate);
@@ -2056,6 +2560,7 @@ export class Click {
 			return;
 		}
 		_status.mousedown = true;
+		/** @type {NodeListOf<HTMLDivElement>} */
 		var dialogs = ui.window.querySelectorAll("#window>.dialog.popped:not(.static)");
 		for (var i = 0; i < dialogs.length; i++) {
 			dialogs[i].delete();
@@ -2067,7 +2572,7 @@ export class Click {
 			if (itemtype == "button") {
 				break;
 			}
-			if (itemtype == "dialog" && !item.classList.contains("popped") && !item.classList.contains("fixed")) {
+			if (isDraggingDialog(item, itemtype) && !item.classList.contains("popped") && !item.classList.contains("fixed")) {
 				var ddialog = item;
 				_status.draggingdialog = ddialog;
 				ddialog._dragorigin = e;
@@ -2084,7 +2589,7 @@ export class Click {
 				}
 				return;
 			}
-			item = item.parentNode;
+			item = item.parentElement;
 		}
 
 		var evt = _status.event;
@@ -2104,10 +2609,18 @@ export class Click {
 			if (itemtype == "card" || itemtype == "button" || itemtype == "player") {
 				if (item.classList.contains("selectable") && !item.classList.contains("selected") && !item.classList.contains("noclick")) {
 					_status.clicked = false;
-					ui.click[itemtype].call(item);
+					if (itemtype == "card" && item instanceof lib.element.Card) {
+						ui.click.card.call(item);
+					} else if (itemtype == "button" && item instanceof HTMLDivElement) {
+						ui.click.button.call(item);
+					} else if (itemtype == "player" && item instanceof lib.element.Player) {
+						ui.click.player.call(item);
+					}
 					if (item.classList.contains("selected")) {
 						_status.mousedragging = e;
-						_status.mousedragorigin = item;
+						if (item instanceof HTMLDivElement) {
+							_status.mousedragorigin = item;
+						}
 						_status.mouseleft = false;
 						_status.selectionfull = false;
 						_status.multitarget = false;
@@ -2117,9 +2630,12 @@ export class Click {
 				}
 				return;
 			}
-			item = item.parentNode;
+			item = item.parentElement;
 		}
 	}
+	/**
+	 * @this {InteractiveCard}
+	 */
 	cardtouchstart(e) {
 		if (e.touches.length != 1) {
 			return;
@@ -2146,6 +2662,9 @@ export class Click {
 			};
 		}
 	}
+	/**
+	 * @this {InteractiveCard}
+	 */
 	cardtouchmove(e) {
 		ui.click.longpresscancel.call(this);
 		if (this._waitingfordrag) {
@@ -2164,6 +2683,9 @@ export class Click {
 			delete this._waitingfordrag;
 		}
 	}
+	/**
+	 * @this {InteractiveCard}
+	 */
 	cardmouseenter() {
 		if (!lib.config.spread_card) return;
 		if (this.parentNode?.parentNode?.parentNode !== ui.me) return;
@@ -2171,6 +2693,9 @@ export class Click {
 		ui._handcardHover = this;
 		ui.updatehl();
 	}
+	/**
+	 * @this {InteractiveCard}
+	 */
 	cardmouseleave() {
 		if (ui._handcardHover === this) {
 			ui._handcardHover = null;
@@ -2179,6 +2704,9 @@ export class Click {
 			}
 		}
 	}
+	/**
+	 * @this {DraggablePlayer}
+	 */
 	playertouchstart(e) {
 		if (e.touches.length != 1 || !lib.config.enable_drag) {
 			return;
@@ -2190,6 +2718,9 @@ export class Click {
 			};
 		}
 	}
+	/**
+	 * @this {DraggablePlayer}
+	 */
 	playertouchmove(e) {
 		ui.click.longpresscancel.call(this);
 		if (this._waitingfordrag) {
@@ -2258,6 +2789,7 @@ export class Click {
 				_status.noright = true;
 			}
 		} else {
+			/** @type {boolean | HTMLDivElement} */
 			var tmpflag = false;
 			_status.mousedown = false;
 			for (var i = 0; i < ui.selected.cards.length; i++) {
@@ -2289,7 +2821,9 @@ export class Click {
 				ui.canvas.height = ui.arena.offsetHeight;
 			}
 			if (tmpflag) {
-				ui.click[get.itemtype(tmpflag)].call(tmpflag);
+				const click = ui.click;
+				const itemType = get.itemtype(tmpflag);
+				click[itemType === undefined ? "undefined" : itemType].call(tmpflag);
 				game.check();
 			}
 			// ui.updatehl();
@@ -2298,6 +2832,9 @@ export class Click {
 			ui.arena.classList.remove("dragging");
 		}
 	}
+	/**
+	 * @this {HoverTarget}
+	 */
 	mousemove() {
 		if (!lib.config.hover_handcard && this.parentNode && this.parentNode.parentNode == ui.me) {
 			return;
@@ -2306,12 +2843,18 @@ export class Click {
 			_status.currentmouseenter = this;
 		}
 	}
+	/**
+	 * @this {HoverTarget}
+	 */
 	mouseenter() {
 		if (!lib.config.hover_handcard && this.parentNode && this.parentNode.parentNode == ui.me) {
 			return;
 		}
 		_status.currentmouseenter = this;
 	}
+	/**
+	 * @this {HoverTarget}
+	 */
 	mouseleave() {
 		ui.click.mouseentercancel();
 		if (_status.currentmouseenter == this) {
@@ -2319,6 +2862,9 @@ export class Click {
 		}
 		this._mouseentercreated = false;
 	}
+	/**
+	 * @this {HoverTarget}
+	 */
 	mousedown() {
 		ui.click.mouseentercancel();
 		if (_status.currentmouseenter == this) {
@@ -2339,6 +2885,9 @@ export class Click {
 		}
 		return node;
 	}
+	/**
+	 * @this {LongPressTarget}
+	 */
 	longpressdown(e) {
 		if (_status.longpressed) {
 			return;
@@ -2394,6 +2943,9 @@ export class Click {
 			ui.click.touchpop();
 		}
 	}
+	/**
+	 * @this {LongPressTarget}
+	 */
 	longpresscancel() {
 		if (this._longpresstimeout) {
 			clearTimeout(this._longpresstimeout);
@@ -2494,6 +3046,9 @@ export class Click {
 			_status.event.custom.add.window(clicked);
 		}
 	}
+	/**
+	 * @this {ToggleTarget}
+	 */
 	toggle() {
 		if (_status.dragged) {
 			return;
@@ -2516,6 +3071,9 @@ export class Click {
 			}
 		}
 	}
+	/**
+	 * @this {EditorTarget}
+	 */
 	editor() {
 		if (_status.dragged) {
 			return;
@@ -2530,6 +3088,9 @@ export class Click {
 			this.additionalCommand(this);
 		}
 	}
+	/**
+	 * @this {ConfigSwitcher}
+	 */
 	switcher() {
 		if (_status.dragged) {
 			return;
@@ -2545,20 +3106,26 @@ export class Click {
 		this.previousSibling.hide();
 		var node = ui.create.div(".switcher", this.parentNode).addTempClass("start");
 		for (var i = 0; i < this.choice.length; i++) {
-			var choice = ui.create.div(".pointerdiv", node);
+			var choice = Object.assign(ui.create.div(".pointerdiv", node), { link: this.choice[i] });
 			choice.innerHTML = get.translation(this.choice[i]);
-			choice.link = this.choice[i];
 			choice.addEventListener(lib.config.touchscreen ? "touchend" : "click", ui.click.choice);
 		}
 		// this.parentNode.style.height=(node.offsetHeight)+'px';
 		_status.choosing = this;
-		if (!_status.choosing.expand) {
-			_status.choosing.expand = true;
+		if (!this.expand) {
+			this.expand = true;
 			setTimeout(function () {
-				_status.choosing.expand = false;
+				const choosing = _status.choosing;
+				if (!choosing) {
+					throw new TypeError("choosing switcher is missing");
+				}
+				choosing.expand = false;
 			}, 500);
 		}
 	}
+	/**
+	 * @this {SwitcherChoice}
+	 */
 	choice() {
 		if (_status.dragged) {
 			return;
@@ -2573,9 +3140,17 @@ export class Click {
 		_status.choosing.previousSibling.show();
 		delete _status.choosing;
 		if (this.parentNode.parentNode.querySelector(".toggle").additionalCommand) {
-			this.parentNode.parentNode.querySelector(".toggle").additionalCommand(this.link, this.parentNode.parentNode);
+			const secondToggle = this.parentNode.parentNode.querySelector(".toggle");
+			const additionalCommand = secondToggle.additionalCommand;
+			if (typeof additionalCommand != "function") {
+				throw new TypeError("toggle additionalCommand is not a function");
+			}
+			additionalCommand.call(secondToggle, this.link, this.parentNode.parentNode);
 		}
 	}
+	/**
+	 * @this {HTMLDivElement}
+	 */
 	button() {
 		if (_status.dragged) {
 			return;
@@ -2623,6 +3198,9 @@ export class Click {
 		}
 		game.check();
 	}
+	/**
+	 * @this {IntroTarget}
+	 */
 	touchintro() {
 		var rect = this.getBoundingClientRect();
 		ui.click.touchpop();
@@ -2632,6 +3210,9 @@ export class Click {
 		});
 		_status.clicked = false;
 	}
+	/**
+	 * @this {InteractiveCard}
+	 */
 	card() {
 		delete this._waitingfordrag;
 		if (_status.dragged) {
@@ -2680,7 +3261,7 @@ export class Click {
 			this.updateTransform(true);
 		}
 		if (game.chess && get.config("show_range") && !_status.event.skill && this.classList.contains("selected") && _status.event.isMine() && _status.event.name == "chooseToUse") {
-			var player = _status.event.player;
+			var player = _status.event.getPlayer();
 			var range = get.info(this).range;
 			if (range) {
 				if (typeof range.attack === "number") {
@@ -2704,6 +3285,9 @@ export class Click {
 			});
 		}
 	}
+	/**
+	 * @this {AvatarTarget}
+	 */
 	avatar() {
 		if (!lib.config.doubleclick_intro) {
 			return;
@@ -2711,7 +3295,7 @@ export class Click {
 		if (this.parentNode.isUnseen(0)) {
 			return;
 		}
-		if (!lib.character[this.parentNode.name]) {
+		if (!lib.character[String(this.parentNode.name)]) {
 			return;
 		}
 		if (!ui.menuContainer) {
@@ -2731,9 +3315,12 @@ export class Click {
 		}
 		// ui.click.skin(this,player.name);
 		game.pause2();
-		var audioName = player.skin.name || player.name1 || player.name;
+		var audioName = player.skin?.name || player.name1 || player.name;
 		ui.click.charactercard(player.name1 || player.name, null, null, true, this, audioName);
 	}
+	/**
+	 * @this {AvatarTarget}
+	 */
 	avatar2() {
 		if (!lib.config.doubleclick_intro) {
 			return;
@@ -2741,7 +3328,8 @@ export class Click {
 		if (this.parentNode.classList.contains("unseen2")) {
 			return;
 		}
-		if (!lib.character[this.parentNode.name2]) {
+		const name2 = this.parentNode.name2;
+		if (!name2 || !lib.character[name2]) {
 			return;
 		}
 		if (!ui.menuContainer) {
@@ -2761,8 +3349,11 @@ export class Click {
 		}
 		// ui.click.skin(this,player.name2);
 		game.pause2();
-		ui.click.charactercard(player.name2, null, null, true, this, player.skin.name2 || player.name2);
+		ui.click.charactercard(name2, null, null, true, this, player.skin?.name2 || name2);
 	}
+	/**
+	 * @this {ConnectRoomTarget}
+	 */
 	connectroom(e) {
 		if (_status.dragged) {
 			return;
@@ -2782,7 +3373,7 @@ export class Click {
 				alert("房间不允许旁观");
 			}
 		} else if (!this.roomempty && this.version != lib.versionOL) {
-			if (this.version > lib.versionOL) {
+			if (Number(this.version) > Number(lib.versionOL)) {
 				alert("加入失败：你的游戏版本过低");
 			} else {
 				alert("加入失败：房主的游戏版本过低");
@@ -2795,9 +3386,15 @@ export class Click {
 			}
 		}
 	}
-	player() {
-		return ui.click.target.apply(this, arguments);
+	/**
+	 * @this {Player}
+	 */
+	player(e) {
+		return ui.click.target.call(this, e);
 	}
+	/**
+	 * @this {Player}
+	 */
 	target(e) {
 		if (_status.dragged) {
 			return;
@@ -2851,7 +3448,7 @@ export class Click {
 								game.saveConfig("banned_info", id);
 							}
 						}, id);
-						lib.node.banned.push(id);
+						lib.requireNodeServer().banned.push(id);
 					}
 				}
 			} else {
@@ -2936,11 +3533,21 @@ export class Click {
 		}
 		game.check();
 	}
+	/**
+	 * @this {ControlContainer}
+	 */
 	control2() {
 		if (this.childNodes.length == 1 && !this._doubleclick) {
-			ui.click.control.call(this.firstChild);
+			const firstChild = this.firstElementChild;
+			if (firstChild instanceof HTMLDivElement && "link" in firstChild && typeof firstChild.link == "string") {
+				const controlButton = Object.assign(firstChild, { link: firstChild.link });
+				ui.click.control.call(controlButton);
+			}
 		}
 	}
+	/**
+	 * @this {ControlButton}
+	 */
 	control() {
 		if (_status.dragged) {
 			return;
@@ -2948,14 +3555,15 @@ export class Click {
 		if (ui.control.classList.contains("hidden")) {
 			return;
 		}
-		var node = this.parentNode;
+		var node = this.parentElement;
 		if (node) {
-			if (node._doubleclick) {
+			const controlContainer = node;
+			if ("_doubleclick" in node && node._doubleclick === true) {
 				return;
 			} else {
-				node._doubleclick = true;
+				Object.assign(node, { _doubleclick: true });
 				setTimeout(function () {
-					node._doubleclick = false;
+					Object.assign(controlContainer, { _doubleclick: false });
 				}, 500);
 			}
 			if (node.classList.contains("hidden")) {
@@ -2973,8 +3581,9 @@ export class Click {
 			delete ui.intro;
 		}
 		_status.clicked = true;
-		if (this.parentNode.custom) {
-			this.parentNode.custom(this.link, this);
+		const parent = this.parentElement;
+		if (parent && "custom" in parent && typeof parent.custom == "function") {
+			parent.custom(this.link, this);
 			return;
 		}
 		if (this.link == "ok") {
@@ -2989,13 +3598,16 @@ export class Click {
 				control: this.link,
 				links: get.links(ui.selected.buttons),
 			};
-			if (this.parentNode.close != false) {
+			if (parent && "close" in parent && typeof parent.close == "function") {
 				game.uncheck();
-				this.parentNode.close();
+				parent.close();
 			}
 			game.resume();
 		}
 	}
+	/**
+	 * @this {ControlButton}
+	 */
 	dialogcontrol() {
 		_status.event.result = {
 			buttons: ui.selected.buttons.slice(0),
@@ -3010,10 +3622,11 @@ export class Click {
 		var info = get.info(skill);
 		var event = _status.event;
 		event.backup(skill);
+		const player = event.getPlayer();
 		if (info.filterCard && info.discard != false && info.lose != false && !info.viewAs) {
-			var cards = event.player.getCards(event.position);
+			var cards = player.getCards(event.position);
 			for (var i = 0; i < cards.length; i++) {
-				if (!lib.filter.cardDiscardable(cards[i], event.player)) {
+				if (!lib.filter.cardDiscardable(cards[i], player)) {
 					cards[i].uncheck("useSkill");
 				}
 			}
@@ -3031,7 +3644,7 @@ export class Click {
 			if (info.prompt) {
 				var str2;
 				if (typeof info.prompt == "function") {
-					str2 = info.prompt(event, event.player);
+					str2 = info.prompt(event, player);
 				} else {
 					str2 = info.prompt;
 				}
@@ -3041,9 +3654,9 @@ export class Click {
 					ui.update();
 				}
 			} else if (info.promptfunc) {
-				event.skillDialog = ui.create.dialog(str, '<div><div style="width:100%">' + info.promptfunc(event, event.player) + "</div></div>");
+				event.skillDialog = ui.create.dialog(str, '<div><div style="width:100%">' + info.promptfunc(event, player) + "</div></div>");
 			} else if (lib.dynamicTranslate[skill]) {
-				event.skillDialog = ui.create.dialog(str, '<div><div style="width:100%">' + lib.dynamicTranslate[skill](event.player, skill) + "</div></div>");
+				event.skillDialog = ui.create.dialog(str, '<div><div style="width:100%">' + lib.dynamicTranslate[skill](player, skill) + "</div></div>");
 			} else if (lib.translate[skill + "_info"]) {
 				event.skillDialog = ui.create.dialog(str, '<div><div style="width:100%">' + lib.translate[skill + "_info"] + "</div></div>");
 			}
@@ -3057,6 +3670,7 @@ export class Click {
 			replaceConfirm(true);
 			return;
 		}
+		/** @type { Pick<Result, "buttons" | "cards" | "targets" | "confirm" | "bool" | "links"> & Partial<Result> } */
 		const result = (gameEvent.result = {
 			buttons: ui.selected.buttons.slice(),
 			cards: ui.selected.cards.slice(),
@@ -3070,15 +3684,16 @@ export class Click {
 		}
 		const skill = gameEvent.skill;
 		if (skill) {
+			const player = gameEvent.getPlayer();
 			result.skill = skill;
 			const info = get.info(skill);
 			if (info && info.direct && !info.clearTime) {
 				result._noHidingTimer = true;
 			}
-			const skillInformation = get.info(gameEvent.skill),
+			const skillInformation = get.info(skill),
 				viewAs = skillInformation.viewAs;
 			if (typeof viewAs == "function") {
-				let viewedAs = viewAs(result.cards, gameEvent.player);
+				let viewedAs = viewAs(result.cards, player);
 				if (viewedAs) {
 					if (typeof viewedAs == "string") {
 						viewedAs = { name: viewedAs };
@@ -3086,8 +3701,10 @@ export class Click {
 					result.card = get.autoViewAs(viewedAs);
 				}
 			} else if (viewAs) {
-				result.card = get.autoViewAs(viewAs);
+				const viewedAs = typeof viewAs == "string" ? { name: viewAs } : viewAs;
+				result.card = get.autoViewAs(viewedAs);
 			}
+			/** @type {{ suit?: string | null; number?: number | "unsure" | null } | undefined} */
 			const resultCard = result.card;
 			if (resultCard) {
 				const cards = result.cards;
@@ -3102,10 +3719,10 @@ export class Click {
 				}
 			}
 			const skillDialog = gameEvent.skillDialog;
-			if (skillDialog && get.objtype(skillDialog) == "div") {
+			if (skillDialog && (typeof skillDialog == "object" || typeof skillDialog == "function") && "close" in skillDialog && typeof skillDialog.close == "function") {
 				skillDialog.close();
 			}
-			gameEvent.player.getCards("hej").forEach(card => card.recheck("useSkill"));
+			player.getCards("hej").forEach(card => card.recheck("useSkill"));
 			gameEvent.restore();
 		} else if (["chooseToUse", "chooseToRespond"].includes(gameEvent.name)) {
 			result.card = get.autoViewAs(result.cards[0]);
@@ -3133,7 +3750,8 @@ export class Click {
 			return;
 		}
 		if (event.skill && !event.norestore) {
-			if (event.skillDialog && get.objtype(event.skillDialog) == "div") {
+			const player = event.getPlayer();
+			if (event.skillDialog && (typeof event.skillDialog == "object" || typeof event.skillDialog == "function") && "close" in event.skillDialog && typeof event.skillDialog.close == "function") {
 				event.skillDialog.close();
 			}
 			if (typeof event.dialog == "string" && event.isMine()) {
@@ -3144,7 +3762,7 @@ export class Click {
 			}
 			// ui.control.addTempClass('nozoom',100);
 			event.restore();
-			var cards = event.player.getCards("hej");
+			var cards = player.getCards("hej");
 			for (var i = 0; i < cards.length; i++) {
 				cards[i].recheck("useSkill");
 			}
@@ -3175,6 +3793,9 @@ export class Click {
 		}
 		game.resume();
 	}
+	/**
+	 * @this {LogvTarget}
+	 */
 	logv(e) {
 		if (_status.currentlogv) {
 			if (_status.currentlogv == this) {
@@ -3196,6 +3817,9 @@ export class Click {
 			ui.click.intro.call(this, e);
 		}
 	}
+	/**
+	 * @this {LogvTarget}
+	 */
 	logvleave() {
 		if (_status.currentlogv == this) {
 			setTimeout(function () {
@@ -3230,7 +3854,7 @@ export class Click {
 			ui.menuContainer.classList.add("blur");
 		}
 		var layer = ui.create.div(".popup-container");
-		var clicklayer = function (e) {
+		var clicklayer = /** @this {HTMLDivElement & { delete(): void }} */ function (e) {
 			if (_status.touchpopping) {
 				return;
 			}
@@ -3256,8 +3880,11 @@ export class Click {
 		let iSTemp = false;
 		if (!lib.character[audioName] && lib.characterSubstitute[name]?.some(skin => skin[0] == audioName)) {
 			iSTemp = true;
-			lib.character[audioName] = ["", "", 0, [], (lib.characterSubstitute[name].find(i => i[0] == audioName) || [audioName, []])[1]];
+			const substitute = lib.characterSubstitute[name].find(i => i[0] == audioName);
+			const substituteInfo = substitute ? substitute[1] : [];
+			lib.character[audioName] = new lib.element.Character(["", "", 0, [], substituteInfo]);
 		}
+		/** @type {CharacterAvatarNode} */
 		var bg = ui.create
 			.div(".avatar", playerbg, function () {
 				if (changeskinfunc) {
@@ -3284,6 +3911,10 @@ export class Click {
 			const info = get.character(name),
 				src = get.skinPath(name);
 			if (src) {
+				const getFileList = game.getFileList;
+				if (!getFileList) {
+					throw new Error("Character skin selection requires getFileList");
+				}
 				const createButtons = list => {
 					if (!list.length) {
 						return;
@@ -3295,7 +3926,7 @@ export class Click {
 						}
 					}
 					for (const i of ["originSkin", ...list]) {
-						const button = ui.create.div(avatars, function () {
+						const button = ui.create.div(avatars, /** @this {HTMLDivElement & { _link: string, _skinName: string }} */ function () {
 							playerbg.classList.remove("scroll");
 							if (this._link) {
 								const skinname = this._skinName,
@@ -3370,7 +4001,8 @@ export class Click {
 					}
 				};
 				let defaultFolder = src;
-				game.getFileList(
+				getFileList.call(
+					game,
 					defaultFolder,
 					(folders, files) => {
 						if (files.length && !node) {
@@ -3382,7 +4014,8 @@ export class Click {
 									return;
 								}
 								node._created = true;
-								game.getFileList(
+								getFileList.call(
+									game,
 									defaultFolder,
 									(folders, files) => {
 										const list = files.map(file => {
@@ -3400,7 +4033,8 @@ export class Click {
 				);
 			}
 		}
-		var ban = ui.create.div(".menubutton.large.ban.character", uiintro, "禁用", function (e) {
+		var ban = Object.assign(
+			ui.create.div(".menubutton.large.ban.character", uiintro, "禁用", /** @this {HTMLDivElement} */ function (e) {
 			if (this.classList.contains("unselectable")) {
 				return;
 			}
@@ -3422,9 +4056,9 @@ export class Click {
 				ui.click.intro.call(this, e);
 				_status.clicked = true;
 			}
-		});
-		ban.link = name;
-		ban._banning = "offline";
+			}),
+			{ link: name, _banning: "offline", updateBanned: () => {} }
+		);
 		ban.updateBanned = function () {
 			if (noedit === true) {
 				return;
@@ -3439,7 +4073,7 @@ export class Click {
 			}
 		};
 		ban.updateBanned();
-		var fav = ui.create.div(".menubutton.large.fav", uiintro, "收藏", function () {
+		var fav = ui.create.div(".menubutton.large.fav", uiintro, "收藏", /** @this {HTMLDivElement} */ function () {
 			if (this.classList.contains("unselectable")) {
 				return;
 			}
@@ -3459,8 +4093,9 @@ export class Click {
 		}
 
 		let intro,
-			list = [],
-			clickSkill;
+			list = [];
+		/** @type {CharacterSkillClick | undefined} */
+		let clickSkill;
 		let skills = ui.create.div(".characterskill", uiintro);
 		let btnIntro = ui.create.div(".menubutton.large.introButton", uiintro, "简介", function () {
 			applyViewMode("intro");
@@ -3476,16 +4111,16 @@ export class Click {
 			const intro2Node = uiintro.querySelector(".intro2");
 			if (viewMode === "intro") {
 				if (intro) intro.style.display = "";
-				if (intro2Node) intro2Node.style.display = "none";
+				if (intro2Node instanceof HTMLElement) intro2Node.style.display = "none";
 				if (skills) skills.style.display = "none";
 			} else {
 				if (intro) intro.style.display = "none";
-				if (intro2Node) intro2Node.style.display = "";
+				if (intro2Node instanceof HTMLElement) intro2Node.style.display = "";
 				if (skills) {
 					skills.style.display = "";
 					// 若尚未选中技能，则初始化第一个技能
 					const first = skills.firstChild;
-					if (first && !skills.querySelector(".active") && typeof clickSkill === "function") {
+					if (isCharacterSkillButton(first) && !skills.querySelector(".active") && typeof clickSkill === "function") {
 						clickSkill.call(first, "init");
 						first.classList.add("active");
 					}
@@ -3508,11 +4143,11 @@ export class Click {
 				intro = uiintro.querySelector(".characterintro") || ui.create.div(".characterintro", get.characterIntro(name), uiintro);
 				if (lib.config.show_characternamepinyin == "showPinyin2" || lib.config.show_characternamepinyin == "showCodeIdentifier2") {
 					var charactername = get.rawName2(name);
-					var characterpinyin = lib.config.show_characternamepinyin == "showCodeIdentifier2" ? name : get.pinyin(charactername);
+					var characterpinyin = lib.config.show_characternamepinyin == "showCodeIdentifier2" ? name : get.pinyin(charactername, undefined);
 					var charactersex = get.translation(nameinfo[0]);
-					const charactergroups = get.is.double(name, true);
+					const charactergroups = get.is.double(name, []);
 					let charactergroup;
-					if (charactergroups) {
+					if (Array.isArray(charactergroups)) {
 						charactergroup = charactergroups.map(i => get.translation(i)).join("/");
 					} else {
 						charactergroup = get.translation(nameinfo[1]);
@@ -3565,18 +4200,27 @@ export class Click {
 				}
 
 				if (lib.config.mousewheel) {
-					skills.onmousewheel = ui.click.mousewheel;
+					Object.assign(skills, { onmousewheel: ui.click.mousewheel });
 				}
-				clickSkill = function (e) {
+				/** @type {CharacterSkillClick} */
+				const characterSkillClick = function (e) {
 					while (intro2.firstChild) {
-						intro2.removeChild(intro2.lastChild);
+						const lastChild = intro2.lastChild;
+						if (!lastChild) {
+							break;
+						}
+						intro2.removeChild(lastChild);
 					}
-					var current = this.parentNode.querySelector(".active");
+					var current = this.parentElement?.querySelector(".active");
 					if (current) {
 						current.classList.remove("active");
 					}
 					this.classList.add("active");
 					if (this.link != "dieAudios") {
+						const linkAudioName = this.linkAudioName;
+						if (typeof linkAudioName != "string") {
+							return;
+						}
 						var skillname = get.translation(this.link);
 						var skilltranslationinfo = get.skillInfoTranslation(this.link, null, false);
 						if ((lib.config.show_skillnamepinyin == "showPinyin2" || lib.config.show_skillnamepinyin == "showCodeIdentifier2") && skillname != "阵亡") {
@@ -3588,7 +4232,7 @@ export class Click {
 						var info = get.info(this.link);
 						var skill = this.link;
 						var playername = this.linkname;
-						let audioName = this.linkAudioName;
+						let audioName = linkAudioName;
 						let skinName = bg.tempSkin || audioName;
 						var skillnode = this;
 						if (info.derivation) {
@@ -3616,7 +4260,7 @@ export class Click {
 							intro2.innerHTML += '<br><br><span style="font-weight:bold;color:#ff6b6b;">引文</span><br>';
 							const appendDiv = document.createElement("div");
 							appendDiv.style.fontSize = "15.2px";
-							appendDiv.innerHTML = lib.translate[this.link + "_append"];
+							appendDiv.innerHTML = String(lib.translate[this.link + "_append"]);
 							intro2.appendChild(appendDiv);
 						}
 
@@ -3662,21 +4306,30 @@ export class Click {
 						}
 
 						if (lib.config.background_speak && e !== "init") {
-							if (!this.playAudio || name != this.audioName) {
+							if (typeof this.playAudio != "function" || name != this.audioName) {
 								const audioList = get.Audio.skill({ skill: this.link, player: { name: playername, skin: { name: skinName }, tempname: [skinName] } }).fileList;
-								this.playAudio = game.tryAudio({
+								const playAudio = game.tryAudio({
 									audioList,
 									addVideo: false,
 									random: false,
 									autoplay: false,
 								});
+								if (typeof playAudio == "function") {
+									this.playAudio = playAudio;
+								}
 								this.audioName = name;
 							}
-							this.playAudio();
+							if (typeof this.playAudio == "function") {
+								this.playAudio();
+							}
 						}
 					} else {
+						const playername = this.playername;
+						if (typeof playername != "string") {
+							return;
+						}
 						let skinName2 = bg.tempSkin || this.linkname;
-						let dieAudios3 = get.Audio.die({ player: { name: this.playername, skin: { name: skinName2 }, tempname: [skinName2] } })
+						let dieAudios3 = get.Audio.die({ player: { name: playername, skin: { name: skinName2 }, tempname: [skinName2] } })
 							.audioList.map(i3 => i3.text)
 							.filter(Boolean);
 						intro2.innerHTML = '<span style="font-weight:bold;margin-right:5px">阵亡台词</span>';
@@ -3687,20 +4340,26 @@ export class Click {
 							intro2.appendChild(dieTextSpan);
 						});
 						if (lib.config.background_speak && e !== "init") {
-							if (!this.playAudio || name != this.audioName) {
-								let audioList = get.Audio.die({ player: { name: this.playername, skin: { name: skinName2 }, tempname: [skinName2] } }).fileList;
-								this.playAudio = game.tryAudio({
+							if (typeof this.playAudio != "function" || name != this.audioName) {
+								let audioList = get.Audio.die({ player: { name: playername, skin: { name: skinName2 }, tempname: [skinName2] } }).fileList;
+								const playAudio = game.tryAudio({
 									audioList,
 									addVideo: false,
 									random: false,
 									autoplay: false,
 								});
+								if (typeof playAudio == "function") {
+									this.playAudio = playAudio;
+								}
 								this.audioName = name;
 							}
-							this.playAudio();
+							if (typeof this.playAudio == "function") {
+								this.playAudio();
+							}
 						}
 					}
 				};
+				clickSkill = characterSkillClick;
 			} else {
 				// 样式一
 				//TODO: 这里的数据也暂时没有改成新格式，需要后续的修改
@@ -3748,7 +4407,9 @@ export class Click {
 						span = document.createElement("span");
 					span.style.fontWeight = "bold";
 					const exInfo = nameInfo.trashBin,
-						characterName = exInfo && exInfo.includes("ruby") ? lib.translate[name] : get.rawName2(name);
+						translatedCharacterName = lib.translate[name],
+						rawCharacterName = translatedCharacterName === undefined ? undefined : exInfo && exInfo.includes("ruby") ? translatedCharacterName : get.rawName2(name),
+						{ characterName, characterReading } = getCharacterRubyText(name, rawCharacterName, lib.translate[`${name}_rt`], showCharacterNamePinyin, value => get.pinyin(value));
 					span.innerHTML = characterName;
 					const ruby = document.createElement("ruby");
 					ruby.appendChild(span);
@@ -3756,7 +4417,7 @@ export class Click {
 					leftParenthesisRP.textContent = "（";
 					ruby.appendChild(leftParenthesisRP);
 					const rt = document.createElement("rt");
-					rt.innerHTML = showCharacterNamePinyin == "showCodeIdentifier" ? name : lib.translate[`${name}_rt`] || get.pinyin(characterName).join(" ");
+					rt.innerHTML = characterReading;
 					ruby.appendChild(rt);
 					const rightParenthesisRP = document.createElement("rp");
 					rightParenthesisRP.textContent = "）";
@@ -3776,7 +4437,7 @@ export class Click {
 						if (!image) {
 							resolve(`${lib.assetURL}image/card/${imageName}.png`);
 						} else if (image.startsWith("db:")) {
-							game.getDB("image", image.slice(3)).then(resolve, reject);
+							game.getDB("image", image.slice(3)).then(value => resolve(String(value)), reject);
 						} else if (image.startsWith("ext:")) {
 							resolve(`${lib.assetURL}${image.replace(/^ext:/, "extension/")}`);
 						} else {
@@ -3811,7 +4472,7 @@ export class Click {
 											return `${lib.assetURL}image/card/${imageName}.png`;
 										}
 										if (image.startsWith("db:")) {
-											return await game.getDB("image", image.slice(3));
+											return String(await game.getDB("image", image.slice(3)));
 										}
 										if (image.startsWith("ext:")) {
 											return `${lib.assetURL}${image.replace(/^ext:/, "extension/")}`;
@@ -3849,7 +4510,7 @@ export class Click {
 									return `${lib.assetURL}image/card/${imageName}.png`;
 								}
 								if (image.startsWith("db:")) {
-									return await game.getDB("image", image.slice(3));
+									return String(await game.getDB("image", image.slice(3)));
 								}
 								if (image.startsWith("ext:")) {
 									return `${lib.assetURL}${image.replace(/^ext:/, "extension/")}`;
@@ -3902,18 +4563,27 @@ export class Click {
 				}
 
 				if (lib.config.mousewheel) {
-					skills.onmousewheel = ui.click.mousewheel;
+					Object.assign(skills, { onmousewheel: ui.click.mousewheel });
 				}
-				clickSkill = function (e) {
+				/** @type {CharacterSkillClick} */
+				const characterSkillClick = function (e) {
 					while (introduction2.firstChild) {
-						introduction2.removeChild(introduction2.lastChild);
+						const lastChild = introduction2.lastChild;
+						if (!lastChild) {
+							break;
+						}
+						introduction2.removeChild(lastChild);
 					}
-					var current2 = this.parentNode.querySelector(".active");
+					var current2 = this.parentElement?.querySelector(".active");
 					if (current2) {
 						current2.classList.remove("active");
 					}
 					this.classList.add("active");
 					if (this.link != "dieAudios") {
+						const linkAudioName = this.linkAudioName;
+						if (typeof linkAudioName != "string") {
+							return;
+						}
 						const skillNameSpan = document.createElement("span"),
 							skillNameSpanStyle = skillNameSpan.style;
 						skillNameSpanStyle.fontWeight = "bold";
@@ -3945,7 +4615,7 @@ export class Click {
 						var info = get.info(this.link);
 						var skill = this.link;
 						var playername = this.linkname;
-						let audioName2 = this.linkAudioName;
+						let audioName2 = linkAudioName;
 						let skinName2 = bg.tempSkin || audioName2;
 						var skillnode = this;
 						let derivations = info.derivation;
@@ -3993,7 +4663,7 @@ export class Click {
 							introduction2.innerHTML += '<br><br><span style="font-weight:bold;color:#ff6b6b;">引文</span><br>';
 							const appendDiv = document.createElement("div");
 							appendDiv.style.fontSize = "15.2px";
-							appendDiv.innerHTML = lib.translate[this.link + "_append"];
+							appendDiv.innerHTML = String(lib.translate[this.link + "_append"]);
 							introduction2.appendChild(appendDiv);
 						}
 
@@ -4036,21 +4706,30 @@ export class Click {
 						}*/
 
 						if (lib.config.background_speak && e !== "init") {
-							if (!this.playAudio || name != this.audioName) {
+							if (typeof this.playAudio != "function" || name != this.audioName) {
 								const audioList = get.Audio.skill({ skill: this.link, player: { name: playername, skin: { name: skinName2 }, tempname: [skinName2] } }).fileList;
-								this.playAudio = game.tryAudio({
+								const playAudio = game.tryAudio({
 									audioList,
 									addVideo: false,
 									random: false,
 									autoplay: false,
 								});
+								if (typeof playAudio == "function") {
+									this.playAudio = playAudio;
+								}
 								this.audioName = name;
 							}
-							this.playAudio();
+							if (typeof this.playAudio == "function") {
+								this.playAudio();
+							}
 						}
 					} else {
+						const playername = this.playername;
+						if (typeof playername != "string") {
+							return;
+						}
 						let skinName2 = bg.tempSkin || this.linkname;
-						let dieAudios3 = get.Audio.die({ player: { name: this.playername, skin: { name: skinName2 }, tempname: [skinName2] } })
+						let dieAudios3 = get.Audio.die({ player: { name: playername, skin: { name: skinName2 }, tempname: [skinName2] } })
 							.audioList.map(i2 => i2.text)
 							.filter(Boolean);
 						introduction2.innerHTML = '<span style="font-weight:bold;margin-right:5px">阵亡台词</span>';
@@ -4061,23 +4740,33 @@ export class Click {
 							introduction2.appendChild(dieTextSpan);
 						});
 						if (lib.config.background_speak && e !== "init") {
-							if (!this.playAudio || name != this.audioName) {
-								let audioList = get.Audio.die({ player: { name: this.playername, skin: { name: skinName2 }, tempname: [skinName2] } }).fileList;
-								this.playAudio = game.tryAudio({
+							if (typeof this.playAudio != "function" || name != this.audioName) {
+								let audioList = get.Audio.die({ player: { name: playername, skin: { name: skinName2 }, tempname: [skinName2] } }).fileList;
+								const playAudio = game.tryAudio({
 									audioList,
 									addVideo: false,
 									random: false,
 									autoplay: false,
 								});
+								if (typeof playAudio == "function") {
+									this.playAudio = playAudio;
+								}
 								this.audioName = name;
 							}
-							this.playAudio();
+							if (typeof this.playAudio == "function") {
+								this.playAudio();
+							}
 						}
 					}
 				};
+				clickSkill = characterSkillClick;
 			}
 		};
 		refreshIntro();
+		const characterSkillClick = clickSkill;
+		if (typeof characterSkillClick != "function") {
+			return;
+		}
 		// 先打开介绍页
 		applyViewMode("intro");
 		// 创建皮肤容器并添加到intro底部
@@ -4100,7 +4789,10 @@ export class Click {
 					const skillButtons = document.getElementsByClassName("characterskill")?.[0]?.childNodes;
 					if (skillButtons) {
 						for (let i = 0; i < skillButtons.length; i++) {
-							delete skillButtons[i].playAudio;
+							const skillButton = skillButtons[i];
+							if (isCharacterSkillButton(skillButton)) {
+								delete skillButton.playAudio;
+							}
 						}
 					}
 					const currentSkinsContainer = intro.querySelector(".skins-container");
@@ -4120,13 +4812,19 @@ export class Click {
 					let skinList = lib.characterSubstitute[name];
 					let skinButtonList = [name, ...skinList.map(skin => skin[0])];
 					for (let skinName of skinButtonList) {
-						let skinButton = ui.create.div(".skin-button", skinsList, function () {
+						/**
+						 * @this {CharacterSkinButton}
+						 */
+						const clickSkin = function () {
 							bg.style.backgroundImage = this.style.backgroundImage;
 							bg.tempSkin = this.name;
 							const skillButtons = document.getElementsByClassName("characterskill")?.[0]?.childNodes;
 							if (skillButtons) {
 								for (let i = 0; i < skillButtons.length; i++) {
-									delete skillButtons[i].playAudio;
+									const skillButton = skillButtons[i];
+									if (isCharacterSkillButton(skillButton)) {
+										delete skillButton.playAudio;
+									}
 								}
 							}
 							const currentSkinsContainer = intro.querySelector(".skins-container");
@@ -4160,8 +4858,8 @@ export class Click {
 							}
 
 							game.callHook("refreshSkin", [skinButtonList[0], this.name, sourcenode, avatar]);
-						});
-						skinButton.name = skinName;
+						};
+						let skinButton = Object.assign(ui.create.div(".skin-button", skinsList, clickSkin), { name: skinName });
 						skinButton.style.width = "80px";
 						skinButton.style.height = "110px";
 						skinButton.style.borderRadius = "4px";
@@ -4201,13 +4899,14 @@ export class Click {
 			if (skilltrans.startsWith("&nbsp;")) {
 				skilltrans = skilltrans.slice(6);
 			}
-			var current = ui.create.div(".menubutton.large", skills, clickSkill, skilltrans);
-			current.link = list[i];
-			current.linkname = name;
-			current.linkAudioName = audioName;
+			var current = Object.assign(ui.create.div(".menubutton.large", skills, characterSkillClick, skilltrans), {
+				link: list[i],
+				linkname: name,
+				linkAudioName: audioName,
+			});
 			if (!initskill) {
 				initskill = true;
-				clickSkill.call(current, "init");
+				characterSkillClick.call(current, "init");
 			}
 			let derivations = get.info(list[i]).derivation;
 			if (derivations) {
@@ -4237,31 +4936,37 @@ export class Click {
 				tran = tran.slice(6);
 			}
 			tran = `<span data-nature="${border}">${tran}</span>`;
-			let currentx = ui.create.div(".menubutton.large", skills, clickSkill, tran);
-			currentx.link = skill;
-			currentx.linkname = name;
-			currentx.linkAudioName = audioName;
+			let currentx = Object.assign(ui.create.div(".menubutton.large", skills, characterSkillClick, tran), {
+				link: skill,
+				linkname: name,
+				linkAudioName: audioName,
+			});
 			if (!initskill) {
 				initskill = true;
-				clickSkill.call(currentx, "init");
+				characterSkillClick.call(currentx, "init");
 			}
 		}
-		let dieAudios = get.Audio.die({ player: { name: name, skin: { name: bg.tempSkin || audioName } } })
+		let dieAudios = get.Audio.die({ player: { name, name2: name, tempname: [name], skin: { name: bg.tempSkin || audioName, name2: audioName } } })
 			.audioList.map(i => i.text)
 			.filter(Boolean);
 		if (dieAudios.length) {
-			let dieaudio = ui.create.div(".menubutton.large", skills, clickSkill, "阵亡");
+			let dieaudio = Object.assign(ui.create.div(".menubutton.large", skills, characterSkillClick, "阵亡"), {
+				link: "dieAudios",
+				linkname: audioName,
+				playername: name,
+				dieAudios,
+			});
 			dieaudio.style.backgroundColor = "rgb(0, 0, 0, 1)";
-			dieaudio.link = "dieAudios";
-			dieaudio.dieAudios = dieAudios;
-			dieaudio.playername = name;
-			dieaudio.linkname = audioName;
 		}
 
 		uiintro.addEventListener(lib.config.touchscreen ? "touchend" : "click", ui.click.touchpop);
 		layer.addEventListener(lib.config.touchscreen ? "touchend" : "click", clicklayer);
 		ui.window.appendChild(layer);
 	}
+	/**
+	 * @this {IntroTarget}
+	 * @param {Event | Touch | { clientX: number, clientY: number }} e
+	 */
 	intro(e) {
 		if (_status.dragged) {
 			return;
@@ -4280,11 +4985,13 @@ export class Click {
 					return;
 				}
 			}
-			ui.historybar.style.zIndex = 22;
+			ui.historybar.style.zIndex = "22";
 		}
 		var uiintro;
-		if (this.classList.contains("card") && this.parentNode && this.parentNode.classList.contains("equips") && get.is.phoneLayout() && !get.is.mobileMe(this.parentNode.parentNode)) {
-			uiintro = get.nodeintro(this.parentNode.parentNode, false, e);
+		const parent = this.parentElement;
+		const owner = parent?.parentElement;
+		if (this.classList.contains("card") && parent?.classList.contains("equips") && owner instanceof lib.element.Player && get.is.phoneLayout() && !get.is.mobileMe(owner)) {
+			uiintro = get.nodeintro(owner, false, e);
 		}
 		uiintro = uiintro || get.nodeintro(this, false, e);
 		if (!uiintro) {
@@ -4294,7 +5001,9 @@ export class Click {
 		uiintro.classList.add("static");
 		ui.window.appendChild(uiintro);
 		var layer = ui.create.div(".poplayer", ui.window);
-		var clicklayer = function (e) {
+		var clicklayer =
+			/** @this {HTMLDivElement} */
+			function (e) {
 			if (_status.touchpopping) {
 				return;
 			}
@@ -4315,10 +5024,10 @@ export class Click {
 				uiintro._onclose();
 			}
 			return false;
-		};
+			};
 		layer.addEventListener(lib.config.touchscreen ? "touchend" : "click", clicklayer);
 		if (!lib.config.touchscreen) {
-			layer.oncontextmenu = clicklayer;
+			layer.oncontextmenu = /** @this {GlobalEventHandlers} @param {PointerEvent} e */ function (e) { return clicklayer.call(layer, e); };
 		}
 		if (this.parentNode == ui.historybar && lib.config.touchscreen) {
 			var rect = this.getBoundingClientRect();
@@ -4333,7 +5042,9 @@ export class Click {
 			}
 		}
 		uiintro.style.zIndex = 21;
-		var clickintro = function (e) {
+		var clickintro =
+			/** @this {HTMLDivElement} */
+			function (e) {
 			const poptip = e.relatedTarget?.parentNode?.parentNode;
 			const isPoptip = e.target?.matches("noname-poptip") || (poptip && poptip === _status.poptip?.[0]);
 			if (_status.touchpopping || isPoptip) {
@@ -4351,7 +5062,7 @@ export class Click {
 			if (uiintro._onclose) {
 				uiintro._onclose();
 			}
-		};
+			};
 		var currentpop = this;
 		_status.removePop = function (node) {
 			if (node == currentpop) {
@@ -4378,6 +5089,7 @@ export class Click {
 		game.pause2();
 		return uiintro;
 	}
+	/** @this {HTMLElement} */
 	intro2() {
 		if (ui.intro) {
 			ui.intro.close();
@@ -4426,7 +5138,7 @@ export class Click {
 			} else if (_status.connectMode) {
 				game.broadcastAll(function (player) {
 					player.setNickname(player.nickname + " - 托管");
-				}, game.me);
+				}, game.getMe());
 			}
 		} else {
 			if (game.notMe) {
@@ -4442,10 +5154,11 @@ export class Click {
 			} else if (_status.connectMode) {
 				game.broadcastAll(function (player) {
 					player.setNickname(player.nickname);
-				}, game.me);
+				}, game.getMe());
 			}
 		}
 	}
+	/** @this {Control} */
 	wuxie() {
 		if (this.classList.contains("hidden")) {
 			return;
@@ -4455,6 +5168,7 @@ export class Click {
 			ui.click.cancel(ui.confirm.lastChild);
 		}
 	}
+	/** @this {Control & { _origin?: string | number }} */
 	tempnowuxie() {
 		if (this.classList.contains("hidden")) {
 			return;
@@ -4462,9 +5176,15 @@ export class Click {
 		this.classList.toggle("glow");
 		if (this.classList.contains("glow") && _status.event.type == "wuxie" && _status.event.isMine() && ui.confirm && _status.imchoosing) {
 			var triggerevent = _status.event.getTrigger();
-			if (triggerevent && this._origin == triggerevent.parent.id) {
-				if (triggerevent.targets && triggerevent.num == triggerevent.targets.length - 1) {
-					this.close();
+			if (triggerevent) {
+				const triggerParent = triggerevent.parent;
+				if (!triggerParent) {
+					throw new TypeError("wuxie trigger requires a parent event");
+				}
+				if (this._origin == triggerParent.id) {
+					if (triggerevent.targets && triggerevent.num == triggerevent.targets.length - 1) {
+						this.close();
+					}
 				}
 			}
 			ui.click.cancel(ui.confirm.lastChild);
@@ -4510,6 +5230,7 @@ export class Click {
 			game.onpause();
 		}
 	}
+	/** @this {HTMLDivElement} @param {Event} e */
 	resume(e) {
 		if (_status.pausing) {
 			return;
@@ -4552,6 +5273,9 @@ export class Click {
 		ui.system1.classList.remove("shown");
 		ui.system2.classList.remove("shown");
 	}
+	/**
+	 * @this {Player}
+	 */
 	swap() {
 		if (_status.dragged) {
 			return;
@@ -4570,6 +5294,9 @@ export class Click {
 		}
 		game.swapPlayer(this);
 	}
+	/**
+	 * @this {ScrollableDiv}
+	 */
 	mousewheel(evt) {
 		if (this.firstElementChild && this.firstElementChild.classList.contains("handcards") && !this.classList.contains("scrollh")) {
 			return;
@@ -4596,16 +5323,30 @@ export class Click {
 			}, 16);
 		}
 	}
+	/**
+	 * @this {HTMLDivElement}
+	 */
 	touchStart(e) {
-		this.startX = e.touches[0].clientX / game.documentZoom;
-		this.startY = e.touches[0].clientY / game.documentZoom;
+		Object.assign(this, {
+			startX: e.touches[0].clientX / game.documentZoom,
+			startY: e.touches[0].clientY / game.documentZoom,
+		});
 		_status.dragged = false;
 	}
+	/**
+	 * @this {HTMLDivElement}
+	 */
 	dialogtouchStart(e) {
 		ui.click.touchStart.call(this, e);
 		_status.dialogtouched = true;
 	}
+	/**
+	 * @this {HTMLDivElement}
+	 */
 	touchScroll(e) {
+		if (!isTouchScrollTarget(this)) {
+			return;
+		}
 		if (_status.mousedragging) {
 			return;
 		}
@@ -4635,18 +5376,33 @@ export class Click {
 		}
 		game.saveConfig("autoskilllist", list);
 	}
+	/**
+	 * @this {HTMLDivElement}
+	 */
 	skillbutton() {
+		if (!isSkillButtonTarget(this)) {
+			return;
+		}
 		this.func(this.link);
 	}
+	/**
+	 * @this {HTMLDivElement}
+	 */
 	autoskill2(e) {
+		if (!isSkillToggleTarget(this)) {
+			return;
+		}
+		const link = this.link;
+		const info = requireRegisteredSkill(lib.skill, link);
 		this.classList.toggle("on");
 		var list = [];
-		if (lib.skill[this.link].frequent) {
-			list.push(this.link);
+		if (info.frequent) {
+			list.push(link);
 		}
-		if (lib.skill[this.link].subfrequent) {
-			for (var i = 0; i < lib.skill[this.link].subfrequent.length; i++) {
-				list.push(this.link + "_" + lib.skill[this.link].subfrequent[i]);
+		const subfrequent = info.subfrequent;
+		if (subfrequent) {
+			for (var i = 0; i < subfrequent.length; i++) {
+				list.push(link + "_" + subfrequent[i]);
 			}
 		}
 		for (var i = 0; i < list.length; i++) {
@@ -4660,9 +5416,15 @@ export class Click {
 		ui.click.touchpop();
 		e.stopPropagation();
 	}
+	/**
+	 * @this {HTMLDivElement}
+	 */
 	hiddenskill(e) {
+		if (!isSkillToggleTarget(this)) {
+			return;
+		}
 		this.classList.toggle("on");
-		var hidden = lib.skill[this.link].preHidden;
+		const hidden = requireRegisteredSkill(lib.skill, this.link).preHidden;
 		if (Array.isArray(hidden)) {
 			if (this.classList.contains("on")) {
 				_status.prehidden_skills.removeArray(hidden);
@@ -4678,6 +5440,9 @@ export class Click {
 		ui.click.touchpop();
 		e.stopPropagation();
 	}
+	/**
+	 * @this {PoppedTarget}
+	 */
 	rightplayer(e) {
 		if (this._nopup) {
 			return false;
@@ -4729,6 +5494,9 @@ export class Click {
 		e.preventDefault();
 		return false;
 	}
+	/**
+	 * @this {HTMLDivElement & { parentNode: Player }}
+	 */
 	count(e) {
 		if (_status.dragged) {
 			return;
@@ -4752,7 +5520,7 @@ export class Click {
 
 		//创建对话框，到处都是啊
 		const dialog = ui.create.dialog("hidden", `${get.translation(target)}的手牌`); //"notouchscroll"
-		_status.countDialogs[target.playerid] = dialog;
+		_status.countDialogs[String(target.playerid)] = dialog;
 		dialog.setAttribute("id", "count_handcards_" + target.playerid);
 		//dialog.classList.add("popped");
 		dialog.classList.add("scroll1");
@@ -4816,7 +5584,7 @@ export class Click {
 		/**
 		 * 创建一个手牌容器
 		 * @param {Player} target
-		 * @returns {HTMLDivElement} 返回配置好的容器
+		 * @returns {RuntimeHandcardsContainer} 返回配置好的容器
 		 */
 		function createHandCardsContainer(target) {
 			const container = ui.create.handcardsContainer();
@@ -4830,15 +5598,17 @@ export class Click {
 		 * @returns { boolean } 是否有关闭到对话框
 		 */
 		function closeCountDialog(target) {
-			if (_status.countDialogs[target.playerid]) {
-				const dialog = _status.countDialogs[target.playerid];
+			if (_status.countDialogs[String(target.playerid)]) {
+				const dialog = _status.countDialogs[String(target.playerid)];
 				if (ui.window.querySelector(`#${dialog.id}`)) {
 					clearInterval(dialog._intervalId);
 					const container = dialog.handcardsContainer;
-					container.destroyContainer();
+					if (container) {
+						container.destroyContainer();
+					}
 					dialog?.delete();
 				}
-				delete _status.countDialogs[target.playerid];
+				delete _status.countDialogs[String(target.playerid)];
 				return true;
 			}
 			return false;

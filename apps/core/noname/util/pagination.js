@@ -31,17 +31,17 @@ export class Pagination {
 		disbaleNextCName: "no-next",
 		pageNumberCName: "page-number",
 		changePageEvent: "click",
-		/** @type { Required<PaginationState> } */
+		/** @type { PaginationState['insertAfter'] } */
 		insertAfter: undefined,
-		/** @type { Required<PaginationState> } */
+		/** @type { PaginationState['activePosition'] } */
 		activePosition: undefined,
-		/** @type { Required<PaginationState> } */
+		/** @type { PaginationState['pageNumberForCN'] } */
 		pageNumberForCN: undefined,
-		/** @type { Required<PaginationState> } */
+		/** @type { PaginationState['pageLimitForCN'] } */
 		pageLimitForCN: undefined,
-		/** @type { Required<PaginationState> } */
+		/** @type { PaginationState['pageRefuseChanged'] } */
 		pageRefuseChanged: undefined,
-		/** @type { Required<PaginationState> } */
+		/** @type { PaginationState['pageElement'] } */
 		pageElement: undefined,
 	};
 	/**
@@ -242,7 +242,6 @@ export class Pagination {
 				afterElement.insertAdjacentHTML("afterend", paginationStr);
 				// @ts-expect-error ignore
 				this.element = afterElement.nextElementSibling;
-				// @ts-expect-error ignore
 				this.element.style.position = "static";
 			}
 		} else {
@@ -254,9 +253,7 @@ export class Pagination {
 		// 在dialog中使用分页，将应用shadowed这个css类名以靠近dialog样式
 		let ele = this.element;
 		while (ele !== null) {
-			// @ts-expect-error ignore
 			if (ele.classList.contains("dialog")) {
-				// @ts-expect-error ignore
 				Array.from(this.element.children).forEach(item => {
 					if (item.classList.contains("number-ellipsis") || item.classList.contains("ellipsis-tail")) {
 						return;

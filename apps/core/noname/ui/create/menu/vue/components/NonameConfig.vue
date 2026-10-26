@@ -70,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, toRaw } from "vue";
+import { ref, computed, onMounted, toRaw, watch } from "vue";
 import { _status, game, get, lib, ui } from "noname";
 import type { SelectConfigData } from "./../../../../../../typings/type";
 import { doToggle, doMenuItem } from "../utils/configInteract";
@@ -160,6 +160,19 @@ const inputRef = ref<HTMLDivElement>();
  * 旧版存储在 node._link.menu，新版用 ref 保持每个组件实例独立
  */
 const popupMenuEl = ref<HTMLDivElement | null>(null);
+
+// 动态地址源更新 item 后，旧弹出菜单的子项不能继续复用；下次打开时按最新
+// item 重建。更新通常由同页 clear 按钮触发，若菜单仍打开则一并关闭它。
+watch(
+	() => props.config.item,
+	() => {
+		if (popupMenuEl.value?.isConnected) {
+			closePopup();
+		}
+		popupMenuEl.value = null;
+	},
+	{ deep: true },
+);
 
 /**
  * 构建 .menu 节点并打开 —— 1:1 迁移 clickSwitcher（index.js:54-98）

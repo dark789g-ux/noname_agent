@@ -23,15 +23,14 @@
 					:config="cfg"
 				/>
 				<!-- import_data_button 特殊渲染 -->
-				<div v-if="hasImportDataButton" class="config" style="display: none">
-					<!-- ui.import_data_button 无外部消费方，数据层（导入→重载）已生效 -->
-					<input type="file" style="width: 153px" @change="onImportDataChange" />
+				<div v-if="hasImportDataButton" v-show="showImportData" class="config">
+					<input ref="importDataInput" type="file" style="width: 153px" @change="onImportDataChange" />
 					<button @click="onImportDataClick">确定</button>
 				</div>
 				<!-- import_music 特殊渲染 -->
 				<div v-if="hasImportMusic" class="config">
 					<!-- ui.background_music_setting 已数据驱动化，经 menuBridge.refreshOptionsConfig 刷新 -->
-					<input type="file" accept="audio/*" style="width: 153px" @change="onImportMusicChange" />
+					<input ref="importMusicInput" type="file" accept="audio/*" style="width: 153px" @change="onImportMusicChange" />
 					<button @click="onImportMusicClick">导入音乐</button>
 				</div>
 			</template>
@@ -43,11 +42,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { game, lib, _status, ui } from "noname";
 import type { RightPaneContext } from "../types";
 import type { SelectConfigData } from "../../../../../../typings/type";
 import optionsMenuData, { handleImportDataButton, handleImportMusic } from "../data/optionsMenuData";
+import { registerOptionsMenuLifecycle } from "../utils/optionsMenuLifecycle";
 import NonameConfig from "./NonameConfig.vue";
 import BanSkillEditor from "./editors/BanSkillEditor.vue";
 import FileManager from "./editors/FileManager.vue";
@@ -106,17 +106,55 @@ const hasImportMusic = computed(() => {
 // Vue 版通过 @click 直接调用
 // ---------------------------------------------------------------------------
 
+const showImportData = ref(false);
+const importDataInput = ref<HTMLInputElement>();
+const importMusicInput = ref<HTMLInputElement>();
 let importDataFile: File | null = null;
 
+function clearImportDataSelection() {
+	importDataFile = null;
+	if (importDataInput.value) {
+		importDataInput.value.value = "";
+	}
+}
+
+function clearImportMusicSelection() {
+	importMusicFile = null;
+	if (importMusicInput.value) {
+		importMusicInput.value.value = "";
+	}
+}
+
+function clearOptionsMenuState() {
+	showImportData.value = false;
+	clearImportDataSelection();
+	clearImportMusicSelection();
+}
+
+function toggleImportData() {
+	if (!hasImportDataButton.value) {
+		throw new TypeError("导入设置控件不可用");
+	}
+	showImportData.value = !showImportData.value;
+	if (!showImportData.value) {
+		clearImportDataSelection();
+	}
+}
+
 function onImportDataChange(e: Event) {
-	importDataFile = (e.target as HTMLInputElement).files?.[0] || null;
+	const input = e.currentTarget;
+	if (!(input instanceof HTMLInputElement)) {
+		clearImportDataSelection();
+		return;
+	}
+	importDataFile = input.files?.[0] || null;
 }
 
 function onImportDataClick() {
-	if (!importDataFile) return;
-	// 构造模拟的 this 上下文（旧版 this = button element，this.previousSibling = input）
-	let fakeThis = { files: [importDataFile] } as any;
-	handleImportDataButton.call(fakeThis);
+	const fileToLoad = importDataFile;
+	if (!fileToLoad) return;
+	clearImportDataSelection();
+	handleImportDataButton(fileToLoad);
 }
 
 // ---------------------------------------------------------------------------
@@ -127,12 +165,33 @@ function onImportDataClick() {
 let importMusicFile: File | null = null;
 
 function onImportMusicChange(e: Event) {
-	importMusicFile = (e.target as HTMLInputElement).files?.[0] || null;
+	const input = e.currentTarget;
+	if (!(input instanceof HTMLInputElement)) {
+		clearImportMusicSelection();
+		return;
+	}
+	importMusicFile = input.files?.[0] || null;
 }
 
 function onImportMusicClick() {
-	if (!importMusicFile) return;
-	let fakeThis = { files: [importMusicFile] } as any;
-	handleImportMusic.call(fakeThis);
+	const fileToLoad = importMusicFile;
+	if (!fileToLoad) return;
+	clearImportMusicSelection();
+	handleImportMusic(fileToLoad);
 }
+
+let unregisterOptionsMenuLifecycle: (() => void) | null = null;
+
+onMounted(() => {
+	unregisterOptionsMenuLifecycle = registerOptionsMenuLifecycle(toggleImportData, clearOptionsMenuState);
+});
+
+onUnmounted(() => {
+	if (unregisterOptionsMenuLifecycle) {
+		unregisterOptionsMenuLifecycle();
+		unregisterOptionsMenuLifecycle = null;
+	} else {
+		clearOptionsMenuState();
+	}
+});
 </script>

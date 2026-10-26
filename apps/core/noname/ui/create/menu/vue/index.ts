@@ -33,15 +33,12 @@ export let popupContainer: HTMLDivElement;
  */
 function clickContainer(container: HTMLDivElement, connectMenu: boolean) {
 	container.classList.add("hidden");
+	menuBridge.clearOptionsMenuState?.();
 	if (connectMenu) {
-		// @ts-expect-error enteringroom/creatingroom 是运行时挂在 _status 上的属性，TS 类型声明缺失
 		if (_status.enteringroom) {
-			// @ts-expect-error enteringroom 是运行时挂在 _status 上的属性
 			_status.enteringroom = false;
 		}
-		// @ts-expect-error creatingroom 是运行时挂在 _status 上的属性
 		if (_status.creatingroom) {
-			// @ts-expect-error creatingroom 是运行时挂在 _status 上的属性
 			_status.creatingroom = false;
 		}
 		ui.window.classList.remove("shortcutpaused");
@@ -53,10 +50,8 @@ function clickContainer(container: HTMLDivElement, connectMenu: boolean) {
 			game.onresume2();
 		}
 		ui.arena.classList.remove("menupaused");
-		// @ts-expect-error historybar 是运行时挂在 ui 上的属性，TS 类型声明缺失
 		ui.historybar.classList.remove("menupaused");
 		ui.window.classList.remove("touchinfohidden");
-		// @ts-expect-error config2 是运行时挂在 ui 上的属性，TS 类型声明缺失
 		ui.config2.classList.remove("pressdown2");
 	}
 }
@@ -152,10 +147,8 @@ export function menu(connectMenu: boolean = false) {
 		ui.click.configMenu = function () {
 			ui.click.shortcut(false);
 			if (cacheMenuContainer.classList.contains("hidden")) {
-				// @ts-expect-error config2 是运行时挂在 ui 上的属性，TS 类型声明缺失
 				ui.config2.classList.add("pressdown2");
 				ui.arena.classList.add("menupaused");
-				// @ts-expect-error historybar 是运行时挂在 ui 上的属性，TS 类型声明缺失
 				ui.historybar.classList.add("menupaused");
 				ui.window.classList.add("touchinfohidden");
 				cacheMenuContainer.classList.remove("hidden");
@@ -168,7 +161,6 @@ export function menu(connectMenu: boolean = false) {
 		};
 	} else {
 		// 4b. 联机分支：ui.connectMenuContainer + ui.click.connectMenu
-		// @ts-expect-error connectMenuContainer 是运行时挂在 ui 上的属性，TS 类型声明缺失
 		ui.connectMenuContainer = cacheMenuContainer;
 		ui.click.connectMenu = function () {
 			if (cacheMenuContainer.classList.contains("hidden")) {
@@ -211,7 +203,6 @@ export function menu(connectMenu: boolean = false) {
 	// ExtensionMaker 以 v-if 挂载，未挂载窗口期经 menuBridge.pendingEditExtensionName
 	// 暂存，组件 onMounted 消费（替代旧版 ExtensionMaker onMounted 直接覆写
 	// game.editExtension —— 该引用随组件卸载失效，属不稳定挂载）。
-	// @ts-expect-error game.editExtension 是旧版外部 API，TS 类型声明缺失
 	game.editExtension = (name?: string) => {
 		menuBridge.setActiveLeftItem?.("扩展", "extension_maker");
 		if (menuBridge.openExtensionMaker) {

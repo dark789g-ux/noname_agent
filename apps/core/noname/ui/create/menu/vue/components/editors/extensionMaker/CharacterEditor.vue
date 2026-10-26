@@ -335,7 +335,11 @@ async function loadDieAudio(dieAudio: string) {
 		}
 	} else if (dieAudio.startsWith("db:")) {
 		try {
-			dieAudioArrayBuffer = await game.getDB("image", dieAudio.slice(3));
+			const storedAudio = await game.getDB("image", dieAudio.slice(3));
+			if (!(storedAudio instanceof ArrayBuffer)) {
+				throw new TypeError("The stored die audio must be an ArrayBuffer");
+			}
+			dieAudioArrayBuffer = storedAudio;
 		} catch {
 			console.warn(`未找到${dieAudio}阵亡配音`);
 		}

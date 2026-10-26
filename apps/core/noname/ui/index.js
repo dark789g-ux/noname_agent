@@ -3,20 +3,46 @@ import { derive as deriveLLMLogButtonState } from "@/llm/player-button-state.js"
 import { Click } from "./click/index.js";
 import { Create } from "./create/index.js";
 
+/**
+ * @typedef {Control & {
+ * 	stayleft?: boolean,
+ * 	currentLeft?: number,
+ * 	_offset?: number
+ * }} PositionedControl
+ */
+
+/**
+ * @param {Element} node
+ * @returns {node is Card}
+ */
+function isCardNode(node) {
+	return node instanceof lib.element.Card;
+}
+
+/**
+ * @param {Element} node
+ * @returns {node is PositionedControl}
+ */
+function isControlNode(node) {
+	return node instanceof lib.element.Control;
+}
+
 export class UI {
 	updates = [];
 	thrown = [];
 	touchlines = [];
 	todiscard = {};
+	/** @type {Record<string, HTMLElement>} */
+	_recycle = {};
 	/**
-	 * @type { HTMLStyleElement[] }
+	 * @type { string[] }
 	 */
 	playerPositions = [];
 	create = new Create();
 	click = new Click();
 	selected = {
 		/**
-		 * @type { Button[] }
+		 * @type { HTMLDivElement[] }
 		 */
 		buttons: [],
 		/**
@@ -41,7 +67,7 @@ export class UI {
 	 */
 	system;
 	/**
-	 * @type { HTMLDivElement }
+	 * @type {RuntimeArena}
 	 */
 	arena;
 	/**
@@ -49,7 +75,7 @@ export class UI {
 	 */
 	controls;
 	/**
-	 * @type { Control }
+	 * @type { HTMLDivElement }
 	 */
 	control;
 	/**
@@ -135,7 +161,7 @@ export class UI {
 	 */
 	wuxie;
 	/**
-	 * @type {HTMLDivElement}
+	 * @type {(Control & { _origin?: string }) | undefined}
 	 */
 	tempnowuxie;
 	/**
@@ -174,7 +200,7 @@ export class UI {
 	 * 	popnode: HTMLDivElement;
 	 * 	position: number;
 	 * 	set(text: string | number, percentage: number): void;
-	 * }) | undefined}
+	 * })}
 	 */
 	timer;
 	/**
@@ -230,8 +256,9 @@ export class UI {
 			nodes.push(thrown[i]);
 		}
 		for (i = 0; i < nodes.length; i++) {
-			if (!nodes[i].fixed) {
-				nodes[i].delete();
+			const node = nodes[i];
+			if (node instanceof HTMLDivElement && (!("fixed" in node) || !node.fixed)) {
+				node.delete();
 			}
 		}
 	}
@@ -241,9 +268,14 @@ export class UI {
 		}
 		var length = 0,
 			minoffset = -Infinity;
+		/** @type {PositionedControl[]} */
 		var controls = [];
 		var widths = [];
 		var leftwidths = [];
+		/**
+		 * @param {PositionedControl} node
+		 * @param {boolean} [first]
+		 */
 		var add = function (node, first) {
 			var thiswidth = parseInt(node.style.width);
 			if (thiswidth) {
@@ -269,20 +301,22 @@ export class UI {
 			}
 		};
 		widths = leftwidths.concat(widths);
+		/** @type {PositionedControl[]} */
 		var staylefts = [];
-		for (var i = 0; i < ui.control.childNodes.length; i++) {
-			if (ui.control.childNodes[i].classList.contains("removing")) {
+		for (const node of ui.control.children) {
+			if (!isControlNode(node) || node.classList.contains("removing")) {
 				continue;
 			}
-			if (lib.config.wuxie_right && ui.control.childNodes[i].stayleft) {
-				staylefts.push(ui.control.childNodes[i]);
+			if (lib.config.wuxie_right && node.stayleft) {
+				staylefts.push(node);
 			} else {
-				add(ui.control.childNodes[i]);
+				add(node);
 			}
 		}
 		if (staylefts.length) {
 			var fullwidth = 0;
-			var fullright = game.layout == "long" || game.layout == "long2" || game.chess || (game.layout != "nova" && parseInt(ui.arena.dataset.number) <= 5);
+			const playerCount = Number.parseInt(ui.arena.dataset.number || "", 10);
+			var fullright = game.layout == "long" || game.layout == "long2" || game.chess || (game.layout != "nova" && playerCount <= 5);
 			for (var i = 0; i < widths.length; i++) {
 				fullwidth += widths[i] + 6;
 				if (get.is.phoneLayout()) {
@@ -305,24 +339,28 @@ export class UI {
 			}
 			if (fullright) {
 				fullwidth += 124;
-				if ((game.layout == "long2" || game.layout == "nova") && ui.arena.dataset.number == "8" && get.mode() != "boss") {
-					fullwidth += game.me.getLeft();
+				if ((game.layout == "long2" || game.layout == "nova") && playerCount == 8 && get.mode() != "boss") {
+					fullwidth += game.getMe().getLeft();
 				}
 			} else {
 				fullwidth += 154;
 			}
 			for (var stayleft of staylefts) {
+				const controlLeft = stayleft.currentLeft;
+				if (typeof controlLeft != "number") {
+					continue;
+				}
 				if (game.layout != "default") {
 					var current_offset = stayleft._offset;
 					if (fullright) {
 						stayleft._offset = Math.ceil(-ui.arena.offsetWidth / 2) + 135;
-						if ((game.layout == "long2" || game.layout == "nova") && ui.arena.dataset.number == "8" && get.mode() != "boss") {
-							stayleft._offset += game.me.getLeft();
+						if ((game.layout == "long2" || game.layout == "nova") && playerCount == 8 && get.mode() != "boss") {
+							stayleft._offset += game.getMe().getLeft();
 						}
 					} else {
 						stayleft._offset = Math.ceil(-ui.arena.offsetWidth / 2) + 165;
 					}
-					stayleft._offset += stayleft.currentLeft;
+					stayleft._offset += controlLeft;
 
 					if (current_offset != stayleft._offset) {
 						stayleft.addTempClass("controlpressdownx", 500);
@@ -334,7 +372,9 @@ export class UI {
 			}
 			if (staylefts.length && controls.length) {
 				var last = staylefts[staylefts.length - 1];
-				minoffset = last._offset + last.offsetWidth + (get.is.phoneLayout() ? 18 : 12);
+				if (typeof last._offset == "number") {
+					minoffset = last._offset + last.offsetWidth + (get.is.phoneLayout() ? 18 : 12);
+				}
 			}
 		}
 		if (!controls.length) {
@@ -345,6 +385,9 @@ export class UI {
 			offset = minoffset;
 		}
 		var control = controls.shift();
+		if (!control) {
+			return;
+		}
 		if (control._offset != offset) {
 			control.addTempClass("controlpressdownx", 500);
 			control.style.transform = "translateX(" + offset + "px)";
@@ -353,6 +396,9 @@ export class UI {
 		while (controls.length) {
 			var control = controls.shift();
 			var width = widths.shift();
+			if (!control || typeof width != "number") {
+				break;
+			}
 			offset += width + 6;
 			if (get.is.phoneLayout()) {
 				offset += 6;
@@ -365,7 +411,7 @@ export class UI {
 		}
 	}
 	updatex() {
-		ui.update.apply(this, arguments);
+		ui.update();
 		ui.updatehl();
 		for (var i = 0; i < lib.onresize.length; i++) {
 			lib.onresize[i]();
@@ -436,36 +482,30 @@ export class UI {
 		if (!game.me) {
 			return;
 		}
-		if (!ui.handcards1Container || !ui.handcards2Container) {
+		const handcards1Container = ui.handcards1Container;
+		const handcards2Container = ui.handcards2Container;
+		if (!handcards1Container || !handcards2Container) {
 			return;
 		}
-		if (!ui.handcards1Container.childNodes.length) {
+		const handcards1 = handcards1Container.firstElementChild;
+		const handcards2 = handcards2Container.firstElementChild;
+		if (!(handcards1 instanceof HTMLDivElement) || !(handcards2 instanceof HTMLDivElement)) {
 			return;
 		}
-		var hs1 = [],
-			hs2 = [];
-		for (var i = 0; i < ui.handcards1Container.firstChild.childElementCount; i++) {
-			if (!ui.handcards1Container.firstChild.childNodes[i].classList.contains("removing")) {
-				hs1.push(ui.handcards1Container.firstChild.childNodes[i]);
-			}
-		}
-		for (var i = 0; i < ui.handcards2Container.firstChild.childElementCount; i++) {
-			if (!ui.handcards2Container.firstChild.childNodes[i].classList.contains("removing")) {
-				hs2.push(ui.handcards2Container.firstChild.childNodes[i]);
-			}
-		}
+		const hs1 = Array.from(handcards1.children).filter(isCardNode).filter(card => !card.classList.contains("removing"));
+		const hs2 = Array.from(handcards2.children).filter(isCardNode).filter(card => !card.classList.contains("removing"));
 		var offset1,
 			offset12 = 0;
 		if (!lib.config.fold_card) {
 			offset1 = 112;
-			ui.handcards1Container.classList.add("scrollh");
+			handcards1Container.classList.add("scrollh");
 		} else {
-			offset1 = Math.min(112, (ui.handcards1Container.offsetWidth - 128) / (hs1.length - 1));
+			offset1 = Math.min(112, (handcards1Container.offsetWidth - 128) / (hs1.length - 1));
 			if (hs1.length > 1 && offset1 < 32) {
 				offset1 = 32;
-				ui.handcards1Container.classList.add("scrollh");
+				handcards1Container.classList.add("scrollh");
 			} else {
-				ui.handcards1Container.classList.remove("scrollh");
+				handcards1Container.classList.remove("scrollh");
 			}
 		}
 		if (offset1 < 100) {
@@ -485,7 +525,10 @@ export class UI {
 			hs1[i].classList.remove("drawinghidden");
 			if (offset12 > 40) {
 				offset12 = 90 - hs1[i].node.info.offsetWidth;
-				hs1[i].node.info.querySelector("span").style.display = "none";
+				const infoSpan = hs1[i].node.info.querySelector("span");
+				if (infoSpan) {
+					infoSpan.style.display = "none";
+				}
 				if (hs1[i].node.name.classList.contains("long")) {
 					hs1[i].node.name.style.transform = "translateY(16px)  scale(0.85)";
 					hs1[i].node.name.style.transformOrigin = "top left";
@@ -494,26 +537,29 @@ export class UI {
 				}
 				hs1[i].node.info.style.transform = "translateX(-" + offset12 + "px) translateY(-3px)";
 			} else {
-				hs1[i].node.info.querySelector("span").style.display = "";
+				const infoSpan = hs1[i].node.info.querySelector("span");
+				if (infoSpan) {
+					infoSpan.style.display = "";
+				}
 				hs1[i].node.name.style.transform = "";
 				hs1[i].node.name.style.transformOrigin = "";
 				hs1[i].node.info.style.transform = "translateX(-" + offset12 + "px)";
 			}
 		}
-		ui.handcards1Container.firstChild.style.width = offset1 * (hs1.length - 1) + 118 + (spread1.spreadLeft + spread1.spreadRight) + "px";
+		handcards1.style.width = offset1 * (hs1.length - 1) + 118 + (spread1.spreadLeft + spread1.spreadRight) + "px";
 
 		var offset2,
 			offset22 = 0;
 		if (!lib.config.fold_card) {
 			offset2 = 112;
-			ui.handcards2Container.classList.add("scrollh");
+			handcards2Container.classList.add("scrollh");
 		} else {
-			offset2 = Math.min(112, (ui.handcards2Container.offsetWidth - 128) / (hs2.length - 1));
+			offset2 = Math.min(112, (handcards2Container.offsetWidth - 128) / (hs2.length - 1));
 			if (hs2.length > 1 && offset2 < 32) {
 				offset2 = 32;
-				ui.handcards2Container.classList.add("scrollh");
+				handcards2Container.classList.add("scrollh");
 			} else {
-				ui.handcards2Container.classList.remove("scrollh");
+				handcards2Container.classList.remove("scrollh");
 			}
 		}
 		if (offset2 < 100) {
@@ -533,7 +579,10 @@ export class UI {
 			hs2[i].classList.remove("drawinghidden");
 			if (offset22 > 40) {
 				offset22 = 90 - hs2[i].node.info.offsetWidth;
-				hs2[i].node.info.querySelector("span").style.display = "none";
+				const infoSpan = hs2[i].node.info.querySelector("span");
+				if (infoSpan) {
+					infoSpan.style.display = "none";
+				}
 				if (hs2[i].node.name.classList.contains("long")) {
 					hs2[i].node.name.style.transform = "translateY(16px)  scale(0.85)";
 					hs2[i].node.name.style.transformOrigin = "top left";
@@ -542,19 +591,24 @@ export class UI {
 				}
 				hs2[i].node.info.style.transform = "translateX(-" + offset22 + "px) translateY(-3px)";
 			} else {
-				hs2[i].node.info.querySelector("span").style.display = "";
+				const infoSpan = hs2[i].node.info.querySelector("span");
+				if (infoSpan) {
+					infoSpan.style.display = "";
+				}
 				hs2[i].node.name.style.transform = "";
 				hs2[i].node.name.style.transformOrigin = "";
 				hs2[i].node.info.style.transform = "translateX(-" + offset22 + "px)";
 			}
 		}
-		ui.handcards2Container.firstChild.style.width = offset2 * (hs2.length - 1) + 118 + (spread2.spreadLeft + spread2.spreadRight) + "px";
+		handcards2.style.width = offset2 * (hs2.length - 1) + 118 + (spread2.spreadLeft + spread2.spreadRight) + "px";
 	}
 	updateh(compute) {
 		if (!game.me) {
 			return;
 		}
-		if (!ui.handcards1Container) {
+		const handcards1Container = ui.handcards1Container;
+		const handcards2Container = ui.handcards2Container;
+		if (!handcards1Container || !handcards2Container) {
 			return;
 		}
 		if (lib.config.low_performance) {
@@ -565,8 +619,8 @@ export class UI {
 			return;
 		}
 		if (compute) {
-			ui.handcards1Container._handcardsWidth = ui.handcards1Container.offsetWidth;
-			ui.handcards2Container._handcardsWidth = ui.handcards2Container.offsetWidth;
+			handcards1Container._handcardsWidth = handcards1Container.offsetWidth;
+			handcards2Container._handcardsWidth = handcards2Container.offsetWidth;
 		}
 		ui.updatehx(game.me.node.handcards1);
 		ui.updatehx(game.me.node.handcards2);
@@ -690,9 +744,6 @@ export class UI {
 		}
 	}
 	recycle(node, key) {
-		if (!ui._recycle) {
-			ui._recycle = {};
-		}
 		if (typeof node == "string") {
 			return ui._recycle[node];
 		}
@@ -759,7 +810,7 @@ export class UI {
 	 */
 	updatePlayerPositions(numberOfPlayers) {
 		if (typeof numberOfPlayers != "number") {
-			numberOfPlayers = ui.arena.dataset.number;
+			numberOfPlayers = Number.parseInt(ui.arena.dataset.number || "", 10);
 		}
 		//当人数不超过8人时，还是用以前的布局
 		if (!numberOfPlayers || numberOfPlayers <= 8) {

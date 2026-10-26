@@ -2,7 +2,7 @@ import type { Component } from "vue";
 
 export interface LeftPaneItem {
 	/** 显示名 */
-	name: string;
+	name: string | undefined;
 	/** 数据标识，替代旧版 getAttribute("mode") */
 	key: string;
 	/** 附加属性（保留扩展能力，如 mode=favourite） */

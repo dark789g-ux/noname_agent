@@ -1,3 +1,4 @@
+import { handleImportDataButton, handleImportMusic } from "./optionsImportHandlers";
 import { markRaw, reactive } from "vue";
 import { ui, game, get, lib, _status } from "noname";
 import type { menuData, LeftPaneItem, RightPaneContext } from "../types";
@@ -129,132 +130,6 @@ let updateView: (() => void) | null = null;
 let updateAppearence: (() => void) | null = null;
 
 // ---------------------------------------------------------------------------
-// 特殊配置项的 onclick 处理
-// ---------------------------------------------------------------------------
-
-/**
- * import_data_button 的 onclick —— 数据导入
- * 对应旧版 362-415
- *
- * ui.import_data_button 无外部消费方（全仓检索已证）：旧版赋值 cfgnode 仅供菜单
- * 内部定位 file input，Vue 版由 OptionsRightPane 特殊渲染接管，数据层
- * （导入 → game.reload）已生效，无需保留该 DOM 引用。
- */
-function handleImportDataButton() {
-	let fileToLoad = this.files[0];
-	if (!fileToLoad) return;
-	let fileReader = new FileReader();
-	fileReader.onload = function (fileLoadedEvent) {
-		let data = fileLoadedEvent.target!.result as string;
-		if (!data) return;
-		try {
-			data = JSON.parse(lib.init.decode(data));
-			if (!data || typeof data != "object") {
-				throw new Error("err");
-			}
-			if (lib.db && (!data.config || !data.data)) {
-				throw new Error("err");
-			}
-		} catch (e) {
-			console.log(e);
-			alert("导入失败");
-			return;
-		}
-		alert("导入成功");
-		if (!lib.db) {
-			let noname_inited = localStorage.getItem("noname_inited");
-			let onlineKey = localStorage.getItem(lib.configprefix + "key");
-			localStorage.clear();
-			if (noname_inited) {
-				localStorage.setItem("noname_inited", noname_inited);
-			}
-			if (onlineKey) {
-				localStorage.setItem(lib.configprefix + "key", onlineKey);
-			}
-			for (let i in data) {
-				localStorage.setItem(i, data[i]);
-			}
-		} else {
-			for (let i in data.config) {
-				game.putDB("config", i, data.config[i]);
-				lib.config[i] = data.config[i];
-			}
-			for (let i in data.data) {
-				game.putDB("data", i, data.data[i]);
-			}
-		}
-		lib.init.background();
-		game.reload();
-	};
-	fileReader.readAsText(fileToLoad, "UTF-8");
-}
-
-/**
- * import_music 的 onclick —— 音乐导入
- * 对应旧版 416-474
- *
- * ui.background_music_setting 已数据驱动化：导入完成后写源配置项
- * （lib.configMenu.audio.config.background_music.item）并经
- * menuBridge.refreshOptionsConfig 刷新选项菜单，替代旧版对
- * ui.background_music_setting._link.menu 的 DOM 操作。
- */
-function handleImportMusic() {
-	if (_status.music_importing) return;
-	_status.music_importing = true;
-	let fileToLoad = this.files[0];
-	if (!fileToLoad) {
-		_status.music_importing = false;
-		return;
-	}
-	if (!lib.config.customBackgroundMusic) {
-		lib.config.customBackgroundMusic = {};
-	}
-	let name = fileToLoad.name;
-	if (name.includes(".")) {
-		name = name.slice(0, name.indexOf("."));
-	}
-	let link = (game.writeFile ? "cdv_" : "custom_") + name;
-	if (lib.config.customBackgroundMusic[link]) {
-		if (!confirm("已经存在文件名称相同的背景音乐，是否仍然要继续导入？")) {
-			_status.music_importing = false;
-			return;
-		}
-		for (let i = 1; i < 1000; i++) {
-			if (!lib.config.customBackgroundMusic[link + "_" + i]) {
-				link = link + "_" + i;
-				break;
-			}
-		}
-	}
-	let callback = function () {
-		let musicname = link.slice(link.indexOf("_") + 1);
-		game.prompt("###请输入音乐的名称###" + musicname, true, function (str: string) {
-			if (str) {
-				musicname = str;
-			}
-			lib.config.customBackgroundMusic[link] = musicname;
-			lib.config.background_music = link;
-			lib.config.all.background_music.add(link);
-			game.saveConfig("background_music", link);
-			game.saveConfig("customBackgroundMusic", lib.config.customBackgroundMusic);
-			_status.music_importing = false;
-			if (!_status._aozhan) {
-				game.playBackgroundMusic();
-			}
-			// 数据驱动：写源配置项后经 menuBridge 刷新选项菜单音乐列表
-			// （替代旧版 nodezz.item[link] = ... + ui.create.div + updatex 的 DOM 操作）
-			lib.configMenu.audio.config.background_music.item[link] = musicname;
-			menuBridge.refreshOptionsConfig?.("background_music");
-		});
-	};
-	if (game.writeFile) {
-		game.writeFile(fileToLoad, "audio/background", link + ".mp3", callback);
-	} else {
-		game.putDB("audio", link, fileToLoad, callback);
-	}
-}
-
-// ---------------------------------------------------------------------------
 // 构建 mode 对应的 SelectConfigData 列表
 // 对应旧版 createModeConfig 的配置遍历部分（112-518）
 // ---------------------------------------------------------------------------
@@ -319,8 +194,7 @@ function buildModeConfigs(mode: string): SelectConfigData[] {
 
 		// 特殊配置项 onclick 覆盖
 		if (j == "import_data_button") {
-			// ui.import_data_button 无外部消费方：旧版 cfgnode 引用仅供菜单内部定位，
-			// Vue 版由 OptionsRightPane 特殊渲染接管（file input change 事件触发）
+			// 文件输入由 OptionsRightPane 特殊渲染；该 clear 项本身没有点击行为。
 			cfg.onclick = function () {
 				// No-op in Vue: import_data_button is handled by OptionsRightPane's special rendering
 			};
@@ -329,12 +203,6 @@ function buildModeConfigs(mode: string): SelectConfigData[] {
 			// menuBridge.refreshOptionsConfig 刷新（见 handleImportMusic），无需 cfgnode 引用
 			cfg.onclick = function () {
 				// No-op in Vue: import_music is handled by OptionsRightPane's special rendering
-			};
-		} else if (j == "extension_source") {
-			// ui.extension_source 无外部消费方：旧版 cfgnode.updateInner 仅供菜单内部刷新，
-			// Vue 版数据层已生效（init/index.ts 直接写 lib.configMenu.general.config.extension_source.item）
-			cfg.onclick = function () {
-				// No-op in Vue: extension_source is handled by OptionsRightPane's special rendering
 			};
 		}
 
@@ -377,9 +245,20 @@ function getModeConfigs(mode: string): SelectConfigData[] {
  * 因此直接改缓存里的 cfg.item 即对当前显示与所有未来渲染生效，
  * 无需区分「选项页是否正在显示」。
  *
- * @param configName 配置项名（"background_music" / "aozhan_bgm"）
+ * @param configName 配置项名（"background_music" / "extension_source" / "aozhan_bgm"）
  */
 function refreshOptionsConfig(configName: string) {
+	if (configName === "extension_source") {
+		let source = lib.configMenu.general?.config?.extension_source;
+		let cfg = modeConfigsCache.get("general")?.find(c => c._name === "extension_source");
+		if (!source?.item || !cfg) {
+			return;
+		}
+		cfg.item = get.copy(source.item);
+		cfg.init = lib.config.extension_source;
+		(cfg.update as (() => void) | undefined)?.();
+		return;
+	}
 	if (configName !== "background_music") {
 		// aozhan_bgm 不在选项页渲染（在国战模式 startMenu，lib.mode.guozhan.config），
 		// 其 item 已由 game.add/removeBackgroundMusic 直接写源数据，
