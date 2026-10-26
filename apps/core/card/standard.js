@@ -4460,7 +4460,7 @@ export default {
 								return false;
 							}
 						} else {
-							if (trigger.getParent().directHit.includes(current)) {
+							if (trigger.getParent().directHit === true || trigger.getParent().directHit.includes(current)) {
 								return false;
 							}
 							if (game.checkMod(map.card, map.player, map.target, current, "unchanged", "wuxieEnabled", current) === false) {
@@ -4845,14 +4845,14 @@ export default {
 					event.respond_info=info;
 					var list=game.filterPlayer(function(current){
 						if(event.nowuxie) return false;
-						if(event.directHit&&event.directHit.includes(current)) return false;
+						if(event.directHit===true||(Array.isArray(event.directHit)&&event.directHit.includes(current))) return false;
 						if(event.triggername=='phaseJudge'){
 							if(game.checkMod(trigger.card,player,current,'unchanged','wuxieJudgeEnabled',current)==false) return false;
 							if(game.checkMod(trigger.card,player,current,'unchanged','wuxieJudgeRespondable',player)==false) return false;
 							if(event.stateplayer&&event.statecard&&(game.checkMod(event.statecard,event.stateplayer,player,current,'unchanged','wuxieRespondable',event.stateplayer)==false)) return false;
 						}
 						else{
-							if(!event.statecard&&trigger.getParent().directHit.includes(current)) return false;
+							if(!event.statecard&&(trigger.getParent().directHit===true||trigger.getParent().directHit.includes(current))) return false;
 							if(game.checkMod(trigger.card,player,trigger.target,current,'unchanged','wuxieEnabled',current)==false) return false;
 							if(game.checkMod(trigger.card,player,trigger.target,current,'unchanged','wuxieRespondable',player)==false) return false;
 							if(event.stateplayer&&event.statecard&&(game.checkMod(event.statecard,event.stateplayer,trigger.player,current,'unchanged','wuxieRespondable',event.stateplayer)==false)) return false;
