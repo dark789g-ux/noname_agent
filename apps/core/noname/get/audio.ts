@@ -1,29 +1,5 @@
+import type { logAudio, AudioInfo, SkillInfo, FormatedPlayer, AudioPlayerData, TextMap } from "./audioContracts.js";
 import { lib, get } from "noname";
-
-type logAudio = (...args: any[]) => AudioInfo;
-type AudioInfo = AudioInfo[] | string | number | boolean;
-type SkillInfo = {
-	audio?: AudioInfo;
-	audioname?: string[];
-	audioname2?: { [playerName: string]: AudioInfo };
-	logAudio?: logAudio;
-	logAudio2?: { [playerName: string]: logAudio };
-};
-type FormatedPlayer = {
-	name: string;
-	sex: Sex;
-	name1?: string;
-	name2?: string;
-	tempname: string[];
-	skin: { name?: string };
-};
-type TextMap = {
-	name: string;
-	file: string;
-	text: string | undefined;
-	type: string;
-};
-
 export class Audio {
 	static #audioCache: Record<string, TextMap[]> = {};
 
@@ -34,7 +10,7 @@ export class Audio {
 	 * @param info 使用指定的skillInfo/audioInfo
 	 * @param args
 	 */
-	static skill({ skill, player, info, args }: { skill: string; player: Player | string; info?: AudioInfo | SkillInfo; args?: any[] }): Audio {
+	static skill({ skill, player, info, args }: { skill: string; player: Player | string | AudioPlayerData; info?: AudioInfo | SkillInfo; args?: any[] }): Audio {
 		if (skill == void 0) {
 			throw new ReferenceError(`skill is not defined`);
 		}
@@ -57,7 +33,7 @@ export class Audio {
 	 * @param info 使用指定的audioInfo
 	 * @param args
 	 */
-	static die({ player, info, args }: { player: Player | string; info?: AudioInfo; args?: any[] }): Audio {
+	static die({ player, info, args }: { player: Player | string | AudioPlayerData; info?: AudioInfo; args?: any[] }): Audio {
 		if (player == void 0) {
 			throw new ReferenceError(`player is not defined`);
 		}
@@ -72,7 +48,7 @@ export class Audio {
 		return new Audio(new DieAudio(this.formatPlayer(player), formatedInfo), args);
 	}
 
-	static formatPlayer(player: Player | string): FormatedPlayer {
+	static formatPlayer(player: Player | string | AudioPlayerData): FormatedPlayer {
 		const formatedPlayer: FormatedPlayer = { name: "", sex: "male", tempname: [], skin: {} };
 		if (typeof player === "string") {
 			formatedPlayer.name = player;
@@ -113,7 +89,7 @@ export class Audio {
 		return this.#Audio.type;
 	}
 
-	#history: string[] = [];
+	#history: (string | undefined)[] = [];
 
 	#audioInfo: AudioInfo;
 	#audioList: TextMap[];
@@ -146,7 +122,7 @@ export class Audio {
 		}
 	}
 
-	constructor(audio: AudioBase, args?: any[], history: string[] = []) {
+	constructor(audio: AudioBase, args?: any[], history: (string | undefined)[] = []) {
 		this.#history = history.slice();
 		this.#Audio = audio;
 		const useDefaultInfo = !this.checkHistory();
@@ -170,7 +146,7 @@ export class Audio {
 		//deadlock
 		throw new RangeError(`${this.#Audio.name} in ${this.#history} forms a infinite recursion`);
 	}
-	parseAudio(name: string, audioInfo: AudioInfo): TextMap[] {
+	parseAudio(name: string | undefined, audioInfo: AudioInfo): TextMap[] {
 		if (Array.isArray(audioInfo)) {
 			//skill的屎山(不应该耦合但是没办法，悲)
 			if (this.type === "skill") {
@@ -248,10 +224,9 @@ export class Audio {
 		return [this.#Audio.textMap(path, ext, audioInfoString)];
 	}
 }
-
 interface AudioBase {
 	type: string;
-	name: string;
+	name: string | undefined;
 	isExist: (name: string) => boolean;
 	defaultPath: string;
 	defaultInfo: AudioInfo;
@@ -262,7 +237,6 @@ interface AudioBase {
 	textMap: (path: string, ext: string, name: string) => TextMap;
 	textMapWithIndex: (path: string, ext: string, index?: number) => TextMap;
 }
-
 class SkillAudio implements AudioBase {
 	type = "skill";
 	defaultPath = "skill/";
@@ -310,8 +284,8 @@ class SkillAudio implements AudioBase {
 		if (this.player) {
 			const rawName = this.player.name;
 			const skinName = this.player.skin.name;
-			if (skinName && lib.characterSubstitute[rawName]?.find(i => i[0] === skinName)) {
-				const skin = lib.characterSubstitute[rawName].find(i => i[0] === skinName);
+			const skin = skinName ? lib.characterSubstitute[String(rawName)]?.find(i => i[0] === skinName) : undefined;
+			if (skin) {
 				const tempCharacter = get.convertedCharacter(["", "", 0, [], skin[1]]);
 				// 如果配置的皮肤设置了tempname，会进行覆盖
 				if (tempCharacter.tempname.length) {
@@ -414,17 +388,16 @@ class SkillAudio implements AudioBase {
 		return this.textMap(path, ext, name);
 	}
 }
-
 class DieAudio implements AudioBase {
 	type = "die";
 	defaultPath = "die/";
 	defaultInfo: AudioInfo = true;
-	isExist(name: string): boolean {
+	isExist(name: string | undefined): boolean {
 		return !get.character(name).isNull;
 	}
 
 	player: FormatedPlayer;
-	name: string;
+	name: string | undefined;
 	info: any;
 
 	useCache = true;
@@ -461,10 +434,10 @@ class DieAudio implements AudioBase {
 			const skinName = player.skin.name;
 			if (!skinName || skinName === rawName) {
 				useDefaultInfo();
-			} else if (!lib.characterSubstitute[rawName]) {
+			} else if (!lib.characterSubstitute[String(rawName)]) {
 				useDefaultInfo();
 			} else {
-				const skin = lib.characterSubstitute[rawName].find(i => i[0] === skinName);
+				const skin = lib.characterSubstitute[String(rawName)].find(i => i[0] === skinName);
 				if (!skin) {
 					useDefaultInfo();
 				} else {
@@ -491,7 +464,7 @@ class DieAudio implements AudioBase {
 	getReferenceAudio(name: string, info?: AudioInfo): DieAudio {
 		return new DieAudio(Audio.formatPlayer(name), info != void 0 ? { dieAudios: info } : void 0);
 	}
-	textMap(path: string, ext: string, name: string): TextMap {
+	textMap(path: string, ext: string, name: string | number | undefined): TextMap {
 		const translatedPath = path.startsWith(this.defaultPath) ? path.slice(this.defaultPath.length) : path;
 		return {
 			name: translatedPath + name,
@@ -501,9 +474,9 @@ class DieAudio implements AudioBase {
 		};
 	}
 	textMapWithIndex(path: string, ext: string, index?: number): TextMap {
-		let name = this.name;
+		let name: string | number | undefined = this.name;
 		if (typeof index === "number") {
-			name += index;
+			name = typeof name === "string" ? name + index : Number(name) + index;
 		}
 		return this.textMap(path, ext, name);
 	}
