@@ -42,7 +42,12 @@ export class DynamicStyle {
 		cache.style = document.createElement("style");
 		cache.style.id = "game.dynamicStyle";
 		document.head.appendChild(cache.style);
-		cache.sheet = cache.style.sheet;
+		const sheet = cache.style.sheet;
+		if (!sheet) {
+			cache.style.remove();
+			throw new Error("DynamicStyle requires an available stylesheet");
+		}
+		cache.sheet = sheet;
 
 		this.#cache = cache;
 	}
@@ -111,7 +116,7 @@ export class DynamicStyle {
 	 * 通过给定的函数，获取符合要求的规则
 	 *
 	 * @param {FindCallback} fn 用于检查的函数
-	 * @returns {Rule}
+	 * @returns {Rule | undefined}
 	 */
 	find(fn) {
 		return this.#cache.rules.find(fn);
@@ -186,10 +191,11 @@ export class DynamicStyle {
 	 * @returns {boolean} 移除的结果，为`true`则移除成功，为`false`则移除失败
 	 */
 	removeStyles(name, styles) {
-		if (!this.has(name)) {
+		const rule = this.find(item => item[0] === name);
+		if (!rule) {
 			return false;
 		}
-		const style = this.get(name);
+		const style = rule[1];
 		styles.forEach(styleName => {
 			delete style[styleName];
 		});

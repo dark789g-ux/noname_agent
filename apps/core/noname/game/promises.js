@@ -30,12 +30,10 @@ export class GamePromises {
 	 * @returns { Promise<string> }
 	 *
 	 */
-	// @ts-expect-error ignore
 	prompt(alertOption, title, forced) {
 		return new Promise((resolve, reject) => {
 			if (alertOption !== "alert") {
-				// @ts-expect-error ignore
-				forced = title || false;
+			forced = title || false;
 				title = alertOption;
 				game.prompt(title, forced, resolve);
 			} else {
@@ -107,27 +105,25 @@ export class GamePromises {
 			game.createDir(directory, resolve, reject);
 		});
 	}
+	/** @returns {Promise<void>} */
 	removeFile(filename) {
-		return /** @type {Promise<void>} */ (
-			new Promise((resolve, reject) => {
-				// @ts-expect-error ignore
-				game.removeFile(filename, err => {
-					if (err) {
-						reject(err);
-					} else {
-						resolve();
-					}
-				});
-			})
-		);
+		return new Promise((resolve, reject) => {
+			// @ts-expect-error ignore
+			game.removeFile(filename, err => {
+				if (err) {
+					reject(err);
+				} else {
+					resolve();
+				}
+			});
+		});
 	}
+	/** @returns {Promise<void>} */
 	removeDir(directory) {
-		return /** @type {Promise<void>} */ (
-			new Promise((resolve, reject) => {
-				// @ts-expect-error ignore
-				game.removeDir(directory, resolve, reject);
-			})
-		);
+		return new Promise((resolve, reject) => {
+			// @ts-expect-error ignore
+			game.removeDir(directory, resolve, reject);
+		});
 	}
 
 	/**
@@ -149,7 +145,6 @@ export class GamePromises {
 	 * @param { string | boolean } [local]
 	 */
 	saveConfig(key, value, local) {
-		// @ts-expect-error ignore
 		if (_status.reloading) {
 			return Promise.resolve();
 		}
@@ -190,6 +185,9 @@ export class GamePromises {
 	 */
 	checkFile(fileName) {
 		return new Promise((resolve, reject) => {
+			if (!game.checkFile) {
+				throw new TypeError("The platform file-check API is not initialized");
+			}
 			game.checkFile(fileName, resolve, reject);
 		});
 	}
@@ -205,6 +203,9 @@ export class GamePromises {
 	 */
 	checkDir(dir) {
 		return new Promise((resolve, reject) => {
+			if (!game.checkDir) {
+				throw new TypeError("The platform directory-check API is not initialized");
+			}
 			game.checkDir(dir, resolve, reject);
 		});
 	}

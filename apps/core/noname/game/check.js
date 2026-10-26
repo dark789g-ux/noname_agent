@@ -1,6 +1,15 @@
 import { _status, get, lib, game, ui } from "noname";
 import { SelectionValidator } from "../library/selection/index.js";
 
+/**
+ * Legacy extension flag with no core producer. Preserve raw truthiness.
+ * @param {RuntimeGameEvent} event
+ * @returns {unknown}
+ */
+function readEventNoConfirm(event) {
+	return Reflect.get(event, "noconfirm");
+}
+
 export class Check {
 	processSelection({ type, items, event, useCache, isSelectable }) {
 		let ok = true,
@@ -229,7 +238,7 @@ export class Check {
 			ui.arena.classList.add("tempnoe");
 		}
 		game.countChoose();
-		if (!_status.noconfirm && !_status.event.noconfirm && (_status.mouseleft || !_status.mousedown)) {
+		if (!_status.noconfirm && !readEventNoConfirm(_status.event) && (_status.mouseleft || !_status.mousedown)) {
 			ui.create.confirm(confirm);
 		}
 	}

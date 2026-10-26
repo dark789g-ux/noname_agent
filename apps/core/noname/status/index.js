@@ -37,6 +37,7 @@ export class status {
 			everything: [],
 		},
 	];
+	/** @type {Record<string, string[]>} */
 	cardtag = {
 		yingbian_zhuzhan: [],
 		yingbian_kongchao: [],
@@ -91,7 +92,7 @@ export class status {
 	 */
 	roundStart = undefined;
 	/**
-	 * @type { boolean }
+	 * @type { boolean | undefined }
 	 */
 	roundSkipped;
 	/**
@@ -153,7 +154,7 @@ export class status {
 	}
 	/**
 	 * 当前回合角色
-	 * @type { Player }
+	 * @type { Player | undefined }
 	 */
 	currentPhase;
 	/**
@@ -163,7 +164,7 @@ export class status {
 	discarded = [];
 	/**
 	 * 当前武将牌堆
-	 * @type { string[] }
+	 * @type { (string | undefined)[] | undefined }
 	 */
 	characterlist;
 	/**

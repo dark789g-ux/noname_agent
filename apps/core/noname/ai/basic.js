@@ -3,11 +3,20 @@ import { CacheContext } from "@/library/cache/cacheContext.js";
 export class Basic {
 	/**
 	 * @param { (
-	 * 	button: Button,
-	 * 	buttons?: Button[]
-	 * ) => number } check
+	 * 	button: HTMLDivElement,
+	 * 	buttons?: HTMLDivElement[]
+	 * ) => number } [check]
 	 */
 	chooseButton(check) {
+		/**
+		 * @param {[button: HTMLDivElement, buttons?: HTMLDivElement[]]} args
+		 */
+		const score = (...args) => {
+			if (typeof check !== "function") {
+				throw new TypeError("button selection requires a check callback");
+			}
+			return check(...args);
+		};
 		const event = _status.event;
 		let i, j, range, buttons, buttons2;
 		let ok = false,
@@ -23,7 +32,7 @@ export class Basic {
 			if (range[1] <= -1) {
 				j = 0;
 				for (i = 0; i < ui.selected.buttons.length; i++) {
-					j += check(ui.selected.buttons[i]);
+				j += score(ui.selected.buttons[i]);
 				}
 				CacheContext.setInCacheEnvironment(false);
 				CacheContext.removeCacheContext();
@@ -37,9 +46,9 @@ export class Basic {
 			}
 			buttons2 = buttons.slice(0);
 			let ix = 0;
-			let checkix = check(buttons[0], buttons2);
+			let checkix = score(buttons[0], buttons2);
 			for (i = 1; i < buttons.length; i++) {
-				let checkixtmp = check(buttons[i], buttons2);
+				let checkixtmp = score(buttons[i], buttons2);
 				if (checkixtmp > checkix) {
 					ix = i;
 					checkix = checkixtmp;
@@ -48,7 +57,7 @@ export class Basic {
 			// buttons.sort(function(a,b){
 			// 	return check(b,buttons2)-check(a,buttons2);
 			// });
-			if (check(buttons[ix]) <= 0) {
+			if (score(buttons[ix]) <= 0) {
 				if (!forced || ok) {
 					CacheContext.setInCacheEnvironment(false);
 					CacheContext.removeCacheContext();
@@ -72,13 +81,22 @@ export class Basic {
 	 * @param { (
 	 * card?: Card,
 	 * cards?: Card[]
-	 * ) => number } check
+	 * ) => number | void } [check]
 	 * @returns { boolean | undefined }
 	 */
 	chooseCard(check) {
+		/**
+		 * @param {[card?: Card, cards?: Card[]]} args
+		 */
+		const score = (...args) => {
+			if (typeof check !== "function") {
+				throw new TypeError("card selection requires a check callback");
+			}
+			return Number(check(...args));
+		};
 		const event = _status.event;
 		if (event.filterCard == undefined) {
-			return check() > 0;
+			return score() > 0;
 		}
 		let i, j, range, cards, cards2, skills, effect;
 		let ok = false,
@@ -97,7 +115,7 @@ export class Basic {
 				CacheContext.setCacheContext(new CacheContext({ lib, game, get }));
 				CacheContext.setInCacheEnvironment(true);
 				for (i = 0; i < ui.selected.cards.length; i++) {
-					effect = check(ui.selected.cards[i]);
+					effect = score(ui.selected.cards[i]);
 					if (effect < 0) {
 						j -= Math.sqrt(-effect);
 					} else {
@@ -109,8 +127,11 @@ export class Basic {
 				return j > 0;
 			}
 			cards = get.selectableCards();
-			// @ts-expect-error ignore
-			if (!_status.event.player._noSkill) {
+			const player = _status.event.player;
+			if (!player) {
+				throw new TypeError("card selection requires an event player");
+			}
+			if (!player._noSkill) {
 				// @ts-expect-error ignore
 				cards = cards.concat(get.skills());
 			}
@@ -124,15 +145,15 @@ export class Basic {
 			var ix = 0;
 			CacheContext.setCacheContext(new CacheContext({ lib, game, get }));
 			CacheContext.setInCacheEnvironment(true);
-			var checkix = check(cards[0], cards2);
+			var checkix = score(cards[0], cards2);
 			for (i = 1; i < cards.length; i++) {
-				var checkixtmp = check(cards[i], cards2);
+				var checkixtmp = score(cards[i], cards2);
 				if (checkixtmp > checkix) {
 					ix = i;
 					checkix = checkixtmp;
 				}
 			}
-			if (check(cards[ix]) <= 0) {
+			if (score(cards[ix]) <= 0) {
 				if (!forced || ok) {
 					CacheContext.setInCacheEnvironment(false);
 					CacheContext.removeCacheContext();
@@ -143,6 +164,9 @@ export class Basic {
 			CacheContext.removeCacheContext();
 			if (typeof cards[ix] == "string") {
 				ui.click.skill(cards[ix]);
+				if (!event.skill) {
+					throw new TypeError("skill selection requires an event skill");
+				}
 				var info = get.info(event.skill);
 				if (info.filterCard) {
 					check = info.check || get.unuseful2;
@@ -167,12 +191,21 @@ export class Basic {
 	 * @param { (
 	 * target?: Player,
 	 * targets?: Player[]
-	 * ) => number } check
+	 * ) => number } [check]
 	 */
 	chooseTarget(check) {
+		/**
+		 * @param {[target?: Player, targets?: Player[]]} args
+		 */
+		const score = (...args) => {
+			if (typeof check !== "function") {
+				throw new TypeError("target selection requires a check callback");
+			}
+			return check(...args);
+		};
 		const event = _status.event;
 		if (event.filterTarget == undefined) {
-			return check() > 0;
+			return score() > 0;
 		}
 		let i, j, range, targets, targets2, effect;
 		let ok = false,
@@ -188,7 +221,7 @@ export class Basic {
 				CacheContext.setCacheContext(new CacheContext({ lib, game, get }));
 				CacheContext.setInCacheEnvironment(true);
 				for (i = 0; i < ui.selected.targets.length; i++) {
-					effect = check(ui.selected.targets[i]);
+				effect = score(ui.selected.targets[i]);
 					if (effect < 0) {
 						j -= Math.sqrt(-effect);
 					} else {
@@ -199,7 +232,7 @@ export class Basic {
 				CacheContext.removeCacheContext();
 				return j > 0;
 			} else if (range[1] == 0) {
-				return check() > 0;
+			return score() > 0;
 			}
 			targets = get.selectableTargets();
 			if (targets.length == 0) {
@@ -212,15 +245,15 @@ export class Basic {
 			let ix = 0;
 			CacheContext.setCacheContext(new CacheContext({ lib, game, get }));
 			CacheContext.setInCacheEnvironment(true);
-			let checkix = check(targets[0], targets2);
+			let checkix = score(targets[0], targets2);
 			for (i = 1; i < targets.length; i++) {
-				let checkixtmp = check(targets[i], targets2);
+				let checkixtmp = score(targets[i], targets2);
 				if (checkixtmp > checkix) {
 					ix = i;
 					checkix = checkixtmp;
 				}
 			}
-			if (check(targets[ix]) <= 0) {
+			if (score(targets[ix]) <= 0) {
 				if (!forced || ok) {
 					CacheContext.setInCacheEnvironment(false);
 					CacheContext.removeCacheContext();
