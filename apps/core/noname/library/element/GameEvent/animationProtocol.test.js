@@ -1,10 +1,14 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "../Player/testSource.js";
+
+const realContentSource = await contentTestSource();
 
 function source(path) {
-	return ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+	return path === "../player.js" ? playerTestSource() : ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
 }
 function evaluate(code, runtime) {
 	const javascript = ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext } }).outputText;
@@ -87,13 +91,13 @@ test("gain and expansion keep arbitrary legacy strings, copied positional arrays
 	}
 });
 
-const contentSource = source("../content.ts");
+const contentSource = realContentSource;
 const content = contentSource.statements.flatMap(node => (ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])).find(node => node.name.getText(contentSource) === "Content").initializer;
 function animationPhase(name, runtime) {
 	const entry = content.properties.find(node => node.name?.getText(contentSource) === name);
-	const stage = entry.initializer.elements.find(node => node.body.statements.some(statement => statement.getText(contentSource).startsWith("let animateTime:")));
+	const stage = entry.initializer.elements.find(node => node.body.statements.some(statement => statement.getText(contentSource).startsWith("let animateTime")));
 	const statements = [...stage.body.statements];
-	const start = statements.findIndex(statement => statement.getText(contentSource).startsWith("let animateTime:"));
+	const start = statements.findIndex(statement => statement.getText(contentSource).startsWith("let animateTime"));
 	assert.ok(start >= 0);
 	return evaluate(
 		`const callback = async (event, player, postAnimate, cards) => { ${statements

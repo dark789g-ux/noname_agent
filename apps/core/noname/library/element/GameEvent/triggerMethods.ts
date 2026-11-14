@@ -161,6 +161,9 @@ export const triggerMethods = {
 			_status.gameStarted = true;
 			game.showHistory();
 		}
+		if (name === "roundStart") {
+			lib.announce.publish("roundStart", { roundNumber: game.roundNumber });
+		}
 		if (!lib.hookmap[name]) {
 			return;
 		}

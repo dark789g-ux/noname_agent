@@ -1,0 +1,279 @@
+import { _status, game, get, lib } from "noname";
+import type { Player } from "../../index.js";
+import "../contracts/statusContract.js";
+
+export const friendsAndEnemiesMethods = {
+	getEnemies(this: Player, func?: ((target: Player) => boolean) | null, includeDie?: boolean): Player[] {
+		const player = this;
+		let targets!: Player[];
+		const mode = get.mode();
+		const method = includeDie ? "filterPlayer2" : "filterPlayer";
+		if (mode == "identity") {
+			if (_status.mode == "purple") {
+				switch (player.identity) {
+					case "bZhu":
+					case "bZhong":
+					case "rNei":
+						targets = game[method](function (target) {
+							if (func && !func(target)) {
+								return false;
+							}
+							return ["rZhu", "rZhong", "bNei"].includes(target.identity);
+						});
+						break;
+					case "rZhu":
+					case "rZhong":
+					case "bNei":
+						targets = game[method](function (target) {
+							if (func && !func(target)) {
+								return false;
+							}
+							return ["bZhu", "bZhong", "rNei"].includes(target.identity);
+						});
+						break;
+					case "rYe":
+					case "bYe":
+						targets = game[method](function (target) {
+							if (func && !func(target)) {
+								return false;
+							}
+							return !["rYe", "bYe"].includes(target.identity);
+						});
+						break;
+				}
+			} else {
+				const num = get.population("fan");
+				switch (player.identity) {
+					case "zhu":
+					case "zhong":
+					case "mingzhong":
+						targets = game[method](function (target) {
+							if (func && !func(target)) {
+								return false;
+							}
+							if (num >= 3) {
+								return target.identity == "fan";
+							}
+							return target.identity == "nei" || target.identity == "fan";
+						});
+						break;
+					case "nei":
+						targets = game[method](function (target) {
+							if (func && !func(target)) {
+								return false;
+							}
+							if (num >= 3) {
+								return target.identity == "fan";
+							}
+							if (game.players.length == 2) {
+								return target != player;
+							}
+							return target.identity == "zhong" || target.identity == "mingzhong" || target.identity == "fan";
+						});
+						break;
+					case "fan":
+						targets = game[method](function (target) {
+							if (func && !func(target)) {
+								return false;
+							}
+							return target.identity != "fan";
+						});
+						break;
+					case "commoner":
+						targets = game[method](function (target) {
+							if (func && !func(target)) {
+								return false;
+							}
+							if (num >= 3) {
+								return target.identity != "fan";
+							}
+							return target.identity == "fan";
+						});
+						break;
+				}
+			}
+		} else if (mode == "guozhan") {
+			if (player.identity == "ye") {
+				targets = game[method](function (target) {
+					if (func && !func(target)) {
+						return false;
+					}
+					return true;
+				});
+			} else {
+				const group = lib.character[String(player.name1)][1];
+				targets = game[method](function (target) {
+					if (func && !func(target)) {
+						return false;
+					}
+					return target.identity == "ye" || lib.character[String(target.name1)][1] != group;
+				});
+			}
+		} else if (mode == "doudizhu") {
+			targets = game[method](function (target) {
+				if (func && !func(target)) {
+					return false;
+				}
+				return target.identity != player.identity;
+			});
+		} else {
+			targets = game[method](function (target) {
+				if (func && !func(target)) {
+					return false;
+				}
+				return target.side != player.side;
+			});
+		}
+		targets.remove(player);
+		return targets;
+	},
+	getFriends(this: Player, func?: ((target: Player) => boolean) | boolean | null, includeDie?: boolean): Player[] {
+		const player = this;
+		let targets: Player[] = [];
+		const mode = get.mode();
+		let self = false;
+		let filterFn: ((target: Player) => boolean) | null | undefined;
+		if (func === true) {
+			filterFn = null;
+			self = true;
+		} else if (typeof func === "function") {
+			filterFn = func;
+		} else {
+			filterFn = null;
+		}
+		const method = includeDie ? "filterPlayer2" : "filterPlayer";
+		if (mode == "identity") {
+			if (_status.mode == "purple") {
+				switch (player.identity) {
+					case "rZhu":
+					case "rZhong":
+					case "bNei":
+						targets = game[method](function (target) {
+							if (filterFn && !filterFn(target)) {
+								return false;
+							}
+							return ["rZhu", "rZhong", "bNei"].includes(target.identity);
+						});
+						break;
+					case "bZhu":
+					case "bZhong":
+					case "rNei":
+						targets = game[method](function (target) {
+							if (filterFn && !filterFn(target)) {
+								return false;
+							}
+							return ["bZhu", "bZhong", "rNei"].includes(target.identity);
+						});
+						break;
+					case "rYe":
+					case "bYe":
+						targets = game[method](function (target) {
+							if (filterFn && !filterFn(target)) {
+								return false;
+							}
+							return ["rYe", "bYe"].includes(target.identity);
+						});
+						break;
+				}
+			} else {
+				switch (player.identity) {
+					case "zhu":
+					case "zhong":
+					case "mingzhong":
+						targets = game[method](function (target) {
+							if (filterFn && !filterFn(target)) {
+								return false;
+							}
+							return ["zhu", "zhong", "mingzhong"].includes(target.identity);
+						});
+						break;
+					case "nei":
+						targets = [];
+						break;
+					case "fan":
+						targets = game[method](function (target) {
+							if (filterFn && !filterFn(target)) {
+								return false;
+							}
+							return target.identity == "fan";
+						});
+						break;
+					case "commoner":
+						targets = game[method](function (target) {
+							if (filterFn && !filterFn(target)) {
+								return false;
+							}
+							return true;
+						});
+						break;
+				}
+			}
+		} else if (mode == "guozhan") {
+			if (player.identity == "ye") {
+				targets = [];
+			} else {
+				const group = lib.character[String(player.name1)][1];
+				targets = game[method](function (target) {
+					if (filterFn && !filterFn(target)) {
+						return false;
+					}
+					return target.identity != "ye" && lib.character[String(target.name1)][1] == group;
+				});
+			}
+		} else if (mode == "doudizhu") {
+			targets = game[method](function (target) {
+				if (filterFn && !filterFn(target)) {
+					return false;
+				}
+				return target.identity == player.identity;
+			});
+		} else {
+			targets = game[method](function (target) {
+				if (filterFn && !filterFn(target)) {
+					return false;
+				}
+				return target.side == player.side;
+			});
+		}
+		if (self) {
+			targets.add(player);
+		} else {
+			targets.remove(player);
+		}
+		return targets;
+	},
+	isEnemyOf(this: Player): boolean {
+		// eslint-disable-next-line prefer-rest-params
+		return !this.isFriendOf.apply(this, arguments as any);
+	},
+	isFriendOf(this: Player, player: Player): boolean {
+		if (get.mode() == "guozhan") {
+			if (this == player) {
+				return true;
+			}
+			if (this.getStorage("yexinjia_friend").includes(player) || player.getStorage("yexinjia_friend").includes(this)) {
+				return true;
+			}
+			if (this.identity == "unknown" || this.identity == "ye") {
+				return false;
+			}
+			if (player.identity == "unknown" || player.identity == "ye") {
+				return false;
+			}
+			return this.identity == player.identity;
+		}
+		if (get.mode() == "doudizhu") {
+			return this.identity == player.identity;
+		}
+		if (this.side != undefined && typeof player.side == "boolean") {
+			return this.side == player.side;
+		}
+		return this == player;
+	},
+	isFriendsOf(this: Player, player: Player, includeDie?: boolean): boolean {
+		return player.getFriends(true, includeDie).includes(this);
+	},
+	isEnemiesOf(this: Player, player: Player, includeDie?: boolean): boolean {
+		return player.getEnemies(null, includeDie).includes(this);
+	},
+};

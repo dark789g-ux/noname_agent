@@ -1,9 +1,14 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "./testSource.js";
+
+const realContentSource = await contentTestSource();
 
 function readSource(path) {
+	if (path === "../player.js") return playerTestSource();
 	const text = readFileSync(new URL(path, import.meta.url), "utf8");
 	const scriptKind = path.endsWith(".ts") ? ts.ScriptKind.TS : ts.ScriptKind.JS;
 	return ts.createSourceFile(path, text, ts.ScriptTarget.ESNext, true, scriptKind);
@@ -127,7 +132,7 @@ test("card usability and attack range retain undefined and unchanged initial mod
 });
 
 test("chooseToEnable and chooseToDisable require source only for an actual choice", async () => {
-	const source = readSource("../content.ts");
+	const source = realContentSource;
 	const get = {
 		cnNumber: value => String(value),
 		is: { mountCombined: () => false },

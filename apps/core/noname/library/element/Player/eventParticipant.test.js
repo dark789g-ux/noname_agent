@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 import { gameEventTestSource } from "../GameEvent/testSource.js";
+import { playerTestSource } from "./testSource.js";
 
-function readClass(path, name) {
-	const source = name === "GameEvent" ? gameEventTestSource() : ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+function readClass(_path, name) {
+	const source = name === "GameEvent" ? gameEventTestSource() : playerTestSource();
 	const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === name);
 	assert.ok(declaration);
 	return { source, declaration };

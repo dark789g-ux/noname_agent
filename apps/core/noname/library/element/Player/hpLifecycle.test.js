@@ -1,9 +1,12 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "./testSource.js";
 
-const source = ts.createSourceFile("player.js", readFileSync(new URL("../player.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const realContentSource = await contentTestSource();
+
+const source = playerTestSource();
 const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Player");
 function method(name, dependencies = {}) {
 	const node = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === name);
@@ -27,7 +30,8 @@ test("HP fields preserve own undefined initialization and native cleanup", () =>
 });
 
 test("getHp and damaged HP preserve raw undefined, NaN, negative and infinite values", () => {
-	const getHp = method("getHp"), getDamagedHp = method("getDamagedHp");
+	const getHp = method("getHp"),
+		getDamagedHp = method("getDamagedHp");
 	for (const hp of [undefined, NaN, -2, 0, 3, Infinity]) {
 		for (const maxHp of [undefined, NaN, 0, 4, Infinity]) {
 			const player = { hp, maxHp, getHp };
@@ -42,7 +46,8 @@ test("getHp and damaged HP preserve raw undefined, NaN, negative and infinite va
 });
 
 test("HP comparisons keep undefined non-orderable rather than assuming zero", () => {
-	const isDamaged = method("isDamaged"), isHealthy = method("isHealthy");
+	const isDamaged = method("isDamaged"),
+		isHealthy = method("isHealthy");
 	for (const hp of [undefined, NaN, 0, 3, Infinity]) {
 		for (const maxHp of [undefined, NaN, 0, 4, Infinity]) {
 			const player = { hp, maxHp, storage: { nohp: false } };
@@ -54,11 +59,27 @@ test("HP comparisons keep undefined non-orderable rather than assuming zero", ()
 
 test("update broadcasts raw HP and rereads after extension hooks", () => {
 	let broadcast, observed;
-	const run = method("update", { _status: {}, game: {
-		broadcast(fn, player, ...values) { broadcast = values; },
-		callHook(name, [player]) { assert.equal(name, "checkUpdate"); delete player.hp; delete player.maxHp; },
-	} });
-	const player = { hp: 5, maxHp: 4, hujia: undefined, $update() { observed = [this.hp, this.maxHp]; } };
+	const run = method("update", {
+		_status: {},
+		game: {
+			broadcast(fn, player, ...values) {
+				broadcast = values;
+			},
+			callHook(name, [player]) {
+				assert.equal(name, "checkUpdate");
+				delete player.hp;
+				delete player.maxHp;
+			},
+		},
+	});
+	const player = {
+		hp: 5,
+		maxHp: 4,
+		hujia: undefined,
+		$update() {
+			observed = [this.hp, this.maxHp];
+		},
+	};
 	run.call(player);
 	assert.deepEqual(broadcast, [4, 4, undefined]);
 	assert.deepEqual(observed, [undefined, undefined]);
@@ -77,7 +98,7 @@ test("HP DOM display retains undefined text and raw equality condition", () => {
 });
 
 test("changeHp preserves existing NaN normalization and post-update HP rereads", async () => {
-	const content = ts.createSourceFile("content.ts", readFileSync(new URL("../content.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+	const content = realContentSource;
 	let node;
 	function visit(current) {
 		if (ts.isMethodDeclaration(current) && current.name.getText(content) === "changeHp") node = current;
@@ -89,9 +110,26 @@ test("changeHp preserves existing NaN normalization and post-update HP rereads",
 	const history = [];
 	const run = new Function("game", "_status", `${text}; return methods.changeHp;`)({ getGlobalHistory: () => ({ changeHp: history }) }, { dying: [] });
 	for (const hp of [undefined, NaN, -2, 3]) {
-		let atUpdate, triggered = 0;
-		const player = { hp, maxHp: 4, getHp: method("getHp"), update() { atUpdate = this.hp; delete this.hp; } };
-		const event = { num: 2, originalHp: hp, popup: false, async trigger(name) { assert.equal(name, "changeHp"); triggered++; } };
+		let atUpdate,
+			triggered = 0;
+		const player = {
+			hp,
+			maxHp: 4,
+			getHp: method("getHp"),
+			update() {
+				atUpdate = this.hp;
+				delete this.hp;
+			},
+		};
+		const event = {
+			num: 2,
+			originalHp: hp,
+			popup: false,
+			async trigger(name) {
+				assert.equal(name, "changeHp");
+				triggered++;
+			},
+		};
 		await run(event, {}, player);
 		const sum = hp + 2;
 		assert.equal(atUpdate, isNaN(sum) ? 0 : Math.min(4, sum));
@@ -103,9 +141,16 @@ test("changeHp preserves existing NaN normalization and post-update HP rereads",
 	const parent = { name: "damage" };
 	const event = { num: -3, originalHp: 4, popup: false, getParent: () => parent, async trigger() {} };
 	const player = {
-		hp: 4, maxHp: 4, hujia: 2, getHp: method("getHp"),
-		hasSkillTag() { event.num = -8; return false; },
-		changeHujia: () => ({}), update() {},
+		hp: 4,
+		maxHp: 4,
+		hujia: 2,
+		getHp: method("getHp"),
+		hasSkillTag() {
+			event.num = -8;
+			return false;
+		},
+		changeHujia: () => ({}),
+		update() {},
 	};
 	await run(event, {}, player);
 	assert.equal(event.num, -6);
@@ -115,7 +160,13 @@ test("changeHp preserves existing NaN normalization and post-update HP rereads",
 test("recoverTo forwards the numeric difference without replacing undefined by a default", () => {
 	const run = method("recoverTo");
 	let seen;
-	const player = { getHp: () => undefined, recover(...args) { seen = args; return args; } };
+	const player = {
+		getHp: () => undefined,
+		recover(...args) {
+			seen = args;
+			return args;
+		},
+	};
 	run.call(player, undefined);
 	assert.equal(Number.isNaN(seen[0].num), true);
 });

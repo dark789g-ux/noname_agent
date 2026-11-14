@@ -194,6 +194,7 @@ export const weiAndShuSkills = {
 		},
 	},
 	qingguo: {
+		selectionSpec: true,
 		mod: {
 			aiValue(player, card, num) {
 				if (get.name(card) != "shan" && get.color(card) != "black") {
@@ -257,6 +258,7 @@ export const weiAndShuSkills = {
 		},
 	},
 	rende: {
+		selectionSpec: true,
 		audio: 2,
 		enable: "phaseUse",
 		filterCard: true,
@@ -376,6 +378,7 @@ export const weiAndShuSkills = {
 		},
 	},
 	jijiang: {
+		selectionSpec: true,
 		audio: "jijiang1",
 		audioname: ["liushan", "re_liubei", "re_liushan", "ol_liushan"],
 		audioname2: {

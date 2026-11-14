@@ -1,13 +1,17 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "./testSource.js";
+
+const realContentSource = await contentTestSource();
 
 function read(path) {
-	return ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+	return path === "../player.js" ? playerTestSource() : ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
 }
 const playerSource = read("../player.js");
-const contentSource = read("../content.ts");
+const contentSource = realContentSource;
 const getSource = read("../../../get/index.js");
 function method(source, name) {
 	let found;
@@ -52,11 +56,23 @@ test("changeHujia keeps the existing cap behavior including uninitialized armor"
 
 test("armor changes preserve undefined-to-NaN, clamping, logs and updates", async () => {
 	const logs = [];
-	const run = compile(contentSource, method(contentSource, "changeHujia"), { game: { log(...args) { logs.push(args); } }, get: { cnNumber: String } });
+	const run = compile(contentSource, method(contentSource, "changeHujia"), {
+		game: {
+			log(...args) {
+				logs.push(args);
+			},
+		},
+		get: { cnNumber: String },
+	});
 	for (const hujia of [undefined, 0, 2, NaN]) {
 		for (const requested of [-4, 3]) {
 			let updates = 0;
-			const player = { hujia, update() { updates++; } };
+			const player = {
+				hujia,
+				update() {
+					updates++;
+				},
+			};
 			const event = { num: requested, type: "lose" };
 			const actual = requested < 0 && -requested > hujia ? -hujia : requested;
 			await run(event, {}, player);
@@ -76,7 +92,17 @@ test("armor absorption rereads after skill callbacks instead of retaining stale 
 	const parent = { name: "damage" };
 	const event = { num: -3, getParent: () => parent };
 	let changed;
-	const player = { hujia: 2, hasSkillTag() { delete this.hujia; return false; }, changeHujia(value) { changed = value; return {}; } };
+	const player = {
+		hujia: 2,
+		hasSkillTag() {
+			delete this.hujia;
+			return false;
+		},
+		changeHujia(value) {
+			changed = value;
+			return {};
+		},
+	};
 	run(-3, player, event);
 	assert.equal(Number.isNaN(event.hujia), true);
 	assert.equal(Number.isNaN(event.num), true);
@@ -93,9 +119,23 @@ test("armor absorption keeps the parent-chain reads around skill checks and writ
 	const writtenParent = { name: "damage" };
 	const parents = [firstParent, secondParent, writtenParent];
 	let reads = 0;
-	const event = { num: -3, getParent() { return parents[reads++]; } };
+	const event = {
+		num: -3,
+		getParent() {
+			return parents[reads++];
+		},
+	};
 	let changed;
-	const player = { hujia: 2, hasSkillTag() { return false; }, changeHujia(value) { changed = value; return {}; } };
+	const player = {
+		hujia: 2,
+		hasSkillTag() {
+			return false;
+		},
+		changeHujia(value) {
+			changed = value;
+			return {};
+		},
+	};
 	run(-3, player, event);
 	assert.equal(reads, 3);
 	assert.equal(event.hujia, 2);
@@ -113,8 +153,23 @@ test("armor absorption does not consult skill tags when the first parent is not 
 	const run = new Function("num", "player", "event", branch.getText(contentSource));
 	let skillTagChecks = 0;
 	let parentReads = 0;
-	const event = { num: -3, getParent() { parentReads++; return { name: "recover" }; } };
-	const player = { hujia: 2, hasSkillTag() { skillTagChecks++; return false; }, changeHujia() { throw new Error("armor must not absorb"); } };
+	const event = {
+		num: -3,
+		getParent() {
+			parentReads++;
+			return { name: "recover" };
+		},
+	};
+	const player = {
+		hujia: 2,
+		hasSkillTag() {
+			skillTagChecks++;
+			return false;
+		},
+		changeHujia() {
+			throw new Error("armor must not absorb");
+		},
+	};
 	run(-3, player, event);
 	assert.equal(parentReads, 1);
 	assert.equal(skillTagChecks, 0);

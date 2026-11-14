@@ -1,10 +1,13 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import { gameEventTestSource } from "./testSource.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
-const source = ts.createSourceFile("content.ts", readFileSync(new URL("../content.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const realContentSource = await contentTestSource();
+
+const source = realContentSource;
 const gameEventSource = gameEventTestSource();
 const callbacks = [];
 function collect(node) {
@@ -72,7 +75,10 @@ function createTriggerBuilder() {
 	if (start < 0 || end < start) {
 		throw new Error("Missing trigger player todo builder bounds");
 	}
-	const body = loop.statement.statements.slice(start, end + 1).map(statement => statement.getText(gameEventSource)).join("\n");
+	const body = loop.statement.statements
+		.slice(start, end + 1)
+		.map(statement => statement.getText(gameEventSource))
+		.join("\n");
 	return new Function("player", "firstDo", "lastDo", "playerMap", "event", "name", "roles", "lib", "requireRegisteredSkill", "get", `let allbool = false; const doingList = []; ${transpile(body)} return { allbool, doingList };`);
 }
 
@@ -97,18 +103,7 @@ test("trigger todo builder keeps recursive deduplication and does not expose tem
 		["beta", {}],
 	]);
 	const builder = createTriggerBuilder();
-	const result = builder(
-		player,
-		firstDo,
-		lastDo,
-		[player],
-		{},
-		"test",
-		["player", "global"],
-		{ hook: { globalskill: { player_test: ["alpha", ["alpha", "beta"]] } } },
-		(_registry, skill) => skills.get(skill),
-		{ priority: skill => (skill === "beta" ? 2 : 1) }
-	);
+	const result = builder(player, firstDo, lastDo, [player], {}, "test", ["player", "global"], { hook: { globalskill: { player_test: ["alpha", ["alpha", "beta"]] } } }, (_registry, skill) => skills.get(skill), { priority: skill => (skill === "beta" ? 2 : 1) });
 
 	assert.equal(result.allbool, true);
 	assert.equal(result.doingList.length, 1);
@@ -129,11 +124,7 @@ test("GameEvent skill is initially present, restored from backup, then removed",
 		throw new Error("Missing GameEvent class");
 	}
 	const classText = classNode.getText(gameEventSource).replace("export class", "class");
-	const GameEvent = new Function("get", "_status", "game", `${transpile(classText)}; return GameEvent;`)(
-		{ info: () => ({}) },
-		{ eventManager: {} },
-		{ online: true, globalEventHandlers: { addHandlerToEvent() {} } }
-	);
+	const GameEvent = new Function("get", "_status", "game", `${transpile(classText)}; return GameEvent;`)({ info: () => ({}) }, { eventManager: {} }, { online: true, globalEventHandlers: { addHandlerToEvent() {} } });
 	const event = new GameEvent("choose", false, {});
 
 	assert.equal(Object.hasOwn(event, "skill"), true);
@@ -150,11 +141,7 @@ test("backup restores selection state identities and removes only fields that we
 		throw new Error("Missing GameEvent class");
 	}
 	const classText = classNode.getText(gameEventSource).replace("export class", "class");
-	const GameEvent = new Function("get", "_status", "game", `${transpile(classText)}; return GameEvent;`)(
-		{ info: () => ({}) },
-		{ eventManager: {} },
-		{ online: true, globalEventHandlers: { addHandlerToEvent() {} } }
-	);
+	const GameEvent = new Function("get", "_status", "game", `${transpile(classText)}; return GameEvent;`)({ info: () => ({}) }, { eventManager: {} }, { online: true, globalEventHandlers: { addHandlerToEvent() {} } });
 	const event = new GameEvent("choose", false, {});
 	const filterButton = () => true;
 	const filterCard = () => true;
@@ -307,7 +294,11 @@ function createTriggerFixture(nextSkill) {
 		info(skill) {
 			return skills.get(skill);
 		},
-		is: { locked() { return false; } },
+		is: {
+			locked() {
+				return false;
+			},
+		},
 		prompt() {
 			return "";
 		},
@@ -317,13 +308,22 @@ function createTriggerFixture(nextSkill) {
 
 test("createTrigger rereads a changed skill after awaited cost while retaining the original skill callbacks", async () => {
 	const fixture = createTriggerFixture("player_when_b");
-	const createTrigger = createTriggerRunner()(fixture.game, fixture.get, fixture.lib, (_registry, skill) => fixture.get.info(skill), value => value);
+	const createTrigger = createTriggerRunner()(
+		fixture.game,
+		fixture.get,
+		fixture.lib,
+		(_registry, skill) => fixture.get.info(skill),
+		value => value
+	);
 
 	await createTrigger(fixture.event, {}, fixture.player);
 
 	assert.equal(fixture.getCostCalls(), 1);
 	assert.equal(fixture.getContentCalls(), 1);
-	assert.deepEqual(fixture.created.map(event => event.name), ["skill_a_cost", "player_when_b"]);
+	assert.deepEqual(
+		fixture.created.map(event => event.name),
+		["skill_a_cost", "player_when_b"]
+	);
 	assert.equal(fixture.logged[0], "player_when_b");
 	assert.deepEqual(fixture.removed, ["player_when_b"]);
 	assert.deepEqual(fixture.broadcasts, ["player_when_b"]);
@@ -331,10 +331,19 @@ test("createTrigger rereads a changed skill after awaited cost while retaining t
 
 test("createTrigger rejects a missing skill when it is reread after awaited cost", async () => {
 	const fixture = createTriggerFixture(undefined);
-	const createTrigger = createTriggerRunner()(fixture.game, fixture.get, fixture.lib, (_registry, skill) => fixture.get.info(skill), value => value);
+	const createTrigger = createTriggerRunner()(
+		fixture.game,
+		fixture.get,
+		fixture.lib,
+		(_registry, skill) => fixture.get.info(skill),
+		value => value
+	);
 
 	await assert.rejects(createTrigger(fixture.event, {}, fixture.player), /createTrigger requires an event skill/);
 	assert.equal(fixture.getCostCalls(), 1);
 	assert.equal(fixture.logged.length, 0);
-	assert.deepEqual(fixture.created.map(event => event.name), ["skill_a_cost"]);
+	assert.deepEqual(
+		fixture.created.map(event => event.name),
+		["skill_a_cost"]
+	);
 });

@@ -52,7 +52,7 @@
 					<!-- TODO: 缓存已挂载的右栏 app，切换左栏时复用而非重建（待实现） -->
 				</div>
 				<!-- 启动按钮（联机 waitingForPlayer 时文本为 "设"，由 updateWaitingForPlayer 数据驱动） -->
-				<div class="menubutton round highlight" ref="startButtonRef" @click="onStartClick">{{ startButtonText }}</div>
+				<div v-show="activeTab === tabNames[0]" class="menubutton round highlight" ref="startButtonRef" @click="onStartClick">{{ startButtonText }}</div>
 			</div>
 		</div>
 	</div>

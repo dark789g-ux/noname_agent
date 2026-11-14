@@ -18,16 +18,14 @@ export const start = async (event, trigger, player) => {
 		localStorage.removeItem(lib.configprefix + "playback");
 
 		// 读取录像信息
-		// @ts-expect-error type error
-		const store = lib.db.transaction(["video"], "readwrite").objectStore("video");
-		store.get(parseInt(playback)).onsuccess = function (e) {
-			if (e.target.result) {
-				game.playVideoContent(e.target.result.video);
+		game.getDB("video", parseInt(playback), function (video) {
+			if (video) {
+				game.playVideoContent(video.video);
 			} else {
 				alert("播放失败：找不到录像");
 				game.reload();
 			}
-		};
+		});
 
 		// 录像或许需要对乱斗模式进行特殊的处理
 		_status.mode = get.config("guozhan_mode");

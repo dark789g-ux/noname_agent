@@ -2,6 +2,7 @@ export interface ToolCallLike {
 	id: string;
 	name: string;
 	reason?: string;
+	reasoningContent?: string;
 	arguments: Record<string, any>;
 }
 
@@ -61,7 +62,9 @@ export function remainingTimeoutSec(timeoutSec: number, deadline: number, now = 
 
 export function assistantToolMessage(call: ToolCallLike): Record<string, any> {
 	const argumentsWithReason = call.reason === undefined ? call.arguments : { ...call.arguments, reason: call.reason };
-	return { role: "assistant", content: null, tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(argumentsWithReason) } }] };
+	const message: Record<string, any> = { role: "assistant", content: null, tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: JSON.stringify(argumentsWithReason) } }] };
+	if (call.reasoningContent !== undefined) message.reasoning_content = call.reasoningContent;
+	return message;
 }
 
 export function materializeDirectShape(kind: string, values: { cards?: any[]; targets?: any[]; buttons?: any[]; control?: any; controls?: any[]; numbers?: number[] }): any {

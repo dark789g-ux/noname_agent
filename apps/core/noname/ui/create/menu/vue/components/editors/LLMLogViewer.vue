@@ -123,6 +123,7 @@
 					<div class="llm-log-section-body">
 						<div class="llm-log-field"><span class="llm-log-label">enabled:</span> {{ view.entry.meta.enabled }}</div>
 						<div class="llm-log-field"><span class="llm-log-label">configured:</span> {{ view.entry.meta.configured }}</div>
+						<div class="llm-log-field"><span class="llm-log-label">backend:</span> {{ view.entry.meta.providerLabel || view.entry.meta.backend || 'openai' }}</div>
 						<div class="llm-log-field"><span class="llm-log-label">model:</span> {{ view.entry.meta.model || '(未设置)' }}</div>
 					</div>
 				</div>
@@ -155,7 +156,8 @@
 				<div v-if="view.entry.status === 'success' && view.entry.response" class="llm-log-section">
 					<div class="llm-log-section-title">响应结果</div>
 					<div class="llm-log-section-body">
-						<LLMLogContent v-if="view.entry.response.toolCall" :key="`${view.entry.id}-tool-call`" :value="view.entry.response.toolCall" mode="json" :default-expanded="true" label="tool_call" />
+						<LLMLogContent v-if="view.entry.response.toolCall?.reasoningContent" :key="`${view.entry.id}-reasoning-content`" :value="view.entry.response.toolCall.reasoningContent" mode="auto" :default-expanded="true" label="reasoning_content" />
+						<LLMLogContent v-if="view.entry.response.toolCall" :key="`${view.entry.id}-tool-call`" :value="stripToolCallReasoning(view.entry.response.toolCall)" mode="json" :default-expanded="true" label="tool_call" />
 						<LLMLogContent v-if="view.entry.response.translatedResult != null" :key="`${view.entry.id}-translated-result`" :value="view.entry.response.translatedResult" mode="auto" :default-expanded="true" label="translatedResult" />
 					</div>
 				</div>
@@ -209,7 +211,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { llmLogger, type LogEntry, type GameSession } from "@/llm/logger.js";
-import { getLLMLogStatusDetail, getLLMLogStatusPresentation } from "./llmLogStatus.js";
+import { getLLMLogStatusDetail, getLLMLogStatusPresentation, stripToolCallReasoning } from "./llmLogStatus.js";
 import LLMLogContent from "./LLMLogContent.vue";
 
 type View =

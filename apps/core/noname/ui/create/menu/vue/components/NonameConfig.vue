@@ -76,6 +76,7 @@ import type { SelectConfigData } from "./../../../../../../typings/type";
 import { doToggle, doMenuItem } from "../utils/configInteract";
 import { openPopup, closePopup, setNoclose } from "../utils/popupHost";
 import NonameToggle from "./NonameToggle.vue";
+import { initLLMTextInput } from "../../../../../llm/config-input.js";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -403,8 +404,14 @@ function initInputOnblur(input: HTMLDivElement, config: SelectConfigData) {
 			game.saveConfig("hall_ip", input.innerHTML, "connect");
 		};
 	} else {
-		input.innerHTML = config.init;
-		input.onblur = config.onblur;
+		const plainText = initLLMTextInput(input, config);
+		if (!plainText) input.innerHTML = config.init;
+		const onblur = config.onblur;
+		input.onblur = function (event) {
+			onblur?.call(this, event);
+			// 配置列表会被缓存；同步校验后的文本，防止重建输入框时恢复旧值。
+			config.init = plainText ? (input.textContent ?? "") : input.innerHTML;
+		};
 	}
 }
 

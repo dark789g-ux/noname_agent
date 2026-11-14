@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 import { gameEventTestSource } from "../GameEvent/testSource.js";
+import { playerTestSource } from "./testSource.js";
 
-const playerText = readFileSync(new URL("../player.js", import.meta.url), "utf8");
-const playerFile = ts.createSourceFile("player.js", playerText, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+const playerFile = playerTestSource();
 const gameEventFile = gameEventTestSource();
 const gameEventText = gameEventFile.text;
 const gameText = readFileSync(new URL("../../../game/index.js", import.meta.url), "utf8");

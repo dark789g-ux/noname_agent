@@ -1,28 +1,15 @@
+import { runtime as modules, field } from "./testing/fixtures.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const library = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Library");
-assert.ok(library);
 const gameSource = ts.createSourceFile("game/index.js", readFileSync(new URL("../game/index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const gameClass = gameSource.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Game");
 assert.ok(gameClass);
 
-function declaration(name) {
-	const node = source.statements.find(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === name);
-	assert.ok(node, name);
-	return node.getText(source);
-}
-
-const guards = new Function(`${declaration("isNodePlatformRuntime")}; ${declaration("isNodeServerRuntime")}; return { isNodePlatformRuntime, isNodeServerRuntime };`)();
-
 function method(name) {
-	const node = library.members.find(member => ts.isMethodDeclaration(member) && member.name.getText(source) === name);
-	assert.ok(node, name);
-	const parameters = node.parameters.map(parameter => parameter.getText(source)).join(",");
-	return new Function("isNodePlatformRuntime", "isNodeServerRuntime", `return function(${parameters}) ${node.body.getText(source)}`)(guards.isNodePlatformRuntime, guards.isNodeServerRuntime);
+	return modules.Library.prototype[name];
 }
 
 function runtime(node) {
@@ -42,18 +29,7 @@ function gameMethod(name, dependencies) {
 }
 
 function clientMessage(name, dependencies) {
-	let property;
-	const visit = node => {
-		if (property || !ts.isPropertyAssignment(node) || node.name.getText(source) !== name || !ts.isFunctionExpression(node.initializer)) return;
-		property = node;
-	};
-	ts.forEachChild(source, function walk(node) {
-		visit(node);
-		ts.forEachChild(node, walk);
-	});
-	assert.ok(property, name);
-	const parameters = property.initializer.parameters.map(parameter => parameter.getText(source)).join(",");
-	return new Function(...Object.keys(dependencies), `return function(${parameters}) ${property.initializer.body.getText(source)}`)(...Object.values(dependencies));
+	return field("message", dependencies).client[name];
 }
 
 test("node runtime distinguishes absent platform, reset object and initialized platform", () => {

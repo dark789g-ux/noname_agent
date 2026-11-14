@@ -61,9 +61,9 @@
 | `ui.create.players(numberOfPlayers)` | L3740-3779 | 创建 N 个 Player DOM，循环链接 previous/next/nextSeat/previousSeat |
 | `ui.create.me()` | L3780-3811 | 创建底部 `#mebg`/`#me`，绑定 `#handcards1`/`#handcards2`，设 `game.me = game.players[0]` |
 
-## 5. identity 配置块（library/index.js:5773-6676）
+## 5. identity 配置块（library/configuration/modes/identity.ts）
 
-定义位置：`apps/core/noname/library/index.js` 的 `lib.mode.identity` 块 **L5773-6676**（约 900 行）。
+定义位置：`apps/core/noname/library/configuration/modes/identity.ts`，由同名子目录中的 `connect.ts`、`config.ts` 和配置分组共同组成。
 
 > **注意**：该配置块实际到 L6676 结束，中间 L6224-6676 含 `change_identity`/`ban_identity`/`ai_strategy`/`difficulty`/`choice_zhu`/`limit_zhu`/`enable_mingcha` 等配置项，约 450 行不可遗漏。
 
@@ -103,7 +103,7 @@
 |--------|------|------|
 | `enable_mingcha` | L6668 | 明察机制开关 |
 
-> 完整配置项清单建议直接读 `library/index.js:5773-6676`；上表为高频使用项。
+> 完整配置项清单建议直接读 `library/configuration/modes/identity.ts`；上表为高频使用项。
 
 ## 6. 动态注入的 CSS
 
@@ -113,7 +113,7 @@
 
 ## 修改指引
 
-- **加新配置项**：在 `library/index.js:5773-6676` 的 identity 配置块内新增（参考现有项的 `name`/`init`/`intro`/`item`/`onblur` 字段）；如需运行时映射到 LLMConfig 等结构，同步相应 index.ts
+- **加新配置项**：在 `library/configuration/modes/identity.ts` 的 identity 配置块内新增（参考现有项的 `name`/`init`/`intro`/`item`/`onblur` 字段）；如需运行时映射到 LLMConfig 等结构，同步相应 index.ts
 - **加新布局主题**：在 `apps/core/layout/` 下新建目录 + layout.css；同步 `lib.init.layout()`（L413-533）的分支处理
 - **改座位排布算法**：编辑 `ui/index.js:759-796` 的 `updatePlayerPositions()`，注意 ≤8 人走 CSS、>8 人走 dynamicStyle 的分流
 - **调整 identity 配置块边界**：如新增/删除大段配置，注意更新本文档的 L5773-6676 行号

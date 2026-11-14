@@ -181,7 +181,7 @@ CSS：`.damage.dieidentity`（`apps/core/layout/default/layout.css:2575-2581`）
 需改动 3 处：
 
 1. `mode/identity.js`：start 数组分流 + chooseCharacter 变体 + checkResult 分支
-2. `library/index.js`：`identity_mode` 配置项
+2. `library/configuration/modes/identity/config/visibility.ts`：`identity_mode` 配置项
 3. 新身份颜色 CSS（见上条）
 
 ### 调整身份猜测

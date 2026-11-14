@@ -9,7 +9,8 @@
         "serve": "pnpm -F @noname/fs dev --dirname=../../dist",
         "start": "pnpm build && pnpm serve",
         "generateTestPack": "pnpm build && tsx scripts/generateTestPack.ts",
-        "lint": "pnpm -r lint"
+        "lint": "pnpm -r lint",
+        "test:storage": "pnpm -F @noname/fs test:storage && pnpm -F noname test:storage"
     },
     "devDependencies": {
         "@eslint/js": "^9.39.2",

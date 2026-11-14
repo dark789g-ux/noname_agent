@@ -8,7 +8,7 @@ let statements;
 function visit(node) {
 	if (ts.isBlock(node)) {
 		const start = node.statements.findIndex(statement => statement.getText(source).startsWith("let modecharacters ="));
-		const end = node.statements.findIndex(statement => statement.getText(source) === "lib.videos.unshift(newvid);");
+		const end = node.statements.findIndex(statement => statement.getText(source) === "newvid.video = structuredClone(newvid.video);");
 		if (start >= 0 && end > start) statements = node.statements.slice(start, end);
 	}
 	ts.forEachChild(node, visit);

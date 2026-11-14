@@ -1,6 +1,6 @@
 # 架构：调度、触发与应用
 
-本份覆盖 LLM 模块的三层架构：`decide.ts` 是调度核心，串联候选收集→上下文构造→API 调用→结果翻译；上游 `content.ts` 在 4 个 AI 决策点触发 `tryLLMDecide`；下游 `apply.ts` 将 LLM 返回的 tool_call 翻译为引擎可消费的 Result 对象。
+本份覆盖 LLM 模块的三层架构：`decide.ts` 是调度核心，串联候选收集→上下文构造→API 调用→结果翻译；上游 `content/` 在 17 种 AI 选择事件触发 `tryLLMDecide`；下游 `apply.ts` 将 LLM 返回的 tool_call 翻译为引擎可消费的 Result 对象。
 
 ## 入口与调度（`llm/decide.ts`）
 
@@ -44,27 +44,22 @@ catch (e: any)                                    decide.ts:54
   引擎回退到 ai.basic.* 传统 AI
 ```
 
-## 上游：触发点（`library/element/content.ts`）
+## 上游：事件组合入口与选择模块
 
-`content.ts` 中 4 个决策点在 `event.result == "ai"` 时调用 `tryLLMDecide`，返回 `handled:false` 时继续走传统 AI 分支。
+`library/element/content.ts` 保留原注册路径与顺序，实现位于 `content/`。`selectionResults.ts` 的 `applyLLMDecision` 只在有完整结果时替换当前选择；失败保留原生 AI 分支。
 
-导入位于 `content.ts:8`：`import { tryLLMDecide } from "@/llm/index.js"`
+| 模块 | 直接接入事件 |
+| --- | --- |
+| `chooseToUse.ts`、`chooseToRespond.ts` | 使用／响应 |
+| `chooseToGive.ts` | 给牌与弃牌 |
+| `discoverCard.ts` | 按钮 |
+| `chooseCard.ts` | 选牌、目标、牌与目标、按钮与目标 |
+| `chooseControl.ts` | 选项、是否发动 |
+| `emptyEvent.ts` | 数值 |
+| `choosePlayerCard.ts`、`gainPlayerCard.ts` | 选择、弃置、获得他人区域牌 |
+| `chooseToMove.ts`、`chooseToMove_new.ts` | 已审核的移动、分堆与排序 |
 
-| 决策点 | file:line | 触发条件 | 例子场景 |
-|--------|-----------|----------|----------|
-| `chooseToUse` | `content.ts:5186` | `event.result != "ai"` 时跳过 | 出牌阶段选牌/使用技能/跳过 |
-| `chooseToRespond` | `content.ts:5471` | `event.result != "ai"` 时跳过 | 被杀时选择出闪/跳过 |
-| `chooseToDiscard` | `content.ts:5983` | `event.result == "ai"` | 弃牌阶段选择弃置手牌 |
-| `chooseBool` | `content.ts:8361` | `event.result == "ai"` | 技能触发时的"是/否"选择 |
-
-所有 4 个调用点的回退模式一致：
-
-```text
-llmResult = await tryLLMDecide(event)
-  ├─ llmResult.handled && llmResult.result
-  │     → event.result = llmResult.result; game.uncheck(); return
-  └─ 否则 → 继续执行 ai.basic.* 传统 AI 逻辑
-```
+`chooseUseTarget`、`chooseDrawRecover`、`chooseToGuanxing` 及集合选择继续通过实际子事件接入。真人和远端控制分支不额外请求模型。范围与测试见 [skill-support.md](skill-support.md)。
 
 ## 下游：结果应用（`llm/apply.ts`）
 
@@ -82,19 +77,19 @@ llmResult = await tryLLMDecide(event)
 
 未知 tool name 抛出 `stage:"translate"` 错误（`apply.ts:40-44`），被 `decide.ts` catch 后降级。
 
-## 无 UI 选择会话（多轮协议）
+## 无 UI 选择与通用桥接（多轮协议）
 
-选择规则由 `library/selection/` 的 `SelectionContext`、`SelectionSession`、`SelectionStep` 与 `SelectionValidator` 共同执行；它们不读取 `ui.selected` 或 `_status.event`。LLM 的牌、目标和按钮引用只在会话内有效，每一轮都会按实时事件重新验证。
+选择规则优先使用显式 `SelectionSpec` 无 UI 会话（`library/selection/`）；当 `selectionSpec === undefined` 时由 `generic-skill-plan.ts` 推导步骤，并由 `legacy-bridge.ts` 的 `withVirtualSelection` 在单个同步求值窗口内临时桥接 `ui.selected`、`_status.event` 与 `event._backup`（`finally` 恢复，不泄漏全局状态）。LLM 的牌、目标和按钮引用只在会话内有效，每一轮都会按实时事件重新验证；可恢复的选择验证错误可通过 `checkpoint()` / `rollback()` 回滚会话状态，并在剩余 `maxTurns` 与 `deadline` 预算内借助 `appendRejectedHistory` 让模型重试一次修正参数。
 
 ```text
 tool_call(use_skill/use_card)
-  -> DecisionSession 归一化短引用并校验
+  -> DecisionSession 归一化短引用并校验（checkpoint + 预算内 rollback 重试可恢复错误）
   -> complete: materialize Result
   -> pending: select_{button|card|target|control|number}(step_id, *_refs)
-  -> invalid/unsupported/timeout: { handled:false } -> 原生 AI
+  -> TOCTOU/unsupported/budget exhausted/explicit-spec error: { handled:false } -> 原生 AI
 ```
 
-`content.ts` 通过同一个 `tryLLMDecide(event)` 接入 `chooseToUse`、`chooseToRespond`、`chooseToDiscard`、`chooseBool`、`chooseCard`、`chooseTarget`、`chooseButton`、`chooseToGive`、`chooseCardTarget`、`chooseButtonTarget`、`chooseControl` 与 `chooseNumbers` 的非本地、非联机 AI 分支。`choose*OL` 及涉及私有信息的流程不接入。
+`content.ts` 通过同一个 `tryLLMDecide(event)` 接入 `chooseToUse`、`chooseToRespond`、`chooseToDiscard`、`chooseBool`、`chooseCard`、`chooseTarget`、`chooseButton`、`chooseToGive`、`chooseCardTarget`、`chooseButtonTarget`、`chooseControl` 与 `chooseNumbers` 的非本地、非联机 AI 分支。集合选择通过其标准子事件间接接入；私有信息按当前决策角色与实际查看权限隔离。
 
 ## 日志持久化与异常恢复
 

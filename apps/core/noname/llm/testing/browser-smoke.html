@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<title>LLM 技能浏览器冒烟</title>
+		<style>
+			body {
+				max-width: 900px;
+				margin: 40px auto;
+				font: 18px/1.7 system-ui;
+				background: #f6f8fa;
+				color: #182433;
+			}
+			pre {
+				white-space: pre-wrap;
+				padding: 24px;
+				border: 1px solid #ccd5df;
+				background: white;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>LLM 技能浏览器冒烟</h1>
+		<p>真实技能模块、选择校验器、工具协议及 OpenAI SDK；响应在本页模拟，无外部模型请求。</p>
+		<pre id="result" role="status">正在加载真实模块…</pre>
+		<script type="module" src="./browser-smoke.ts"></script>
+	</body>
+</html>

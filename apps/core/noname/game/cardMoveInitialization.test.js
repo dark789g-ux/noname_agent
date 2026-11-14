@@ -1,8 +1,12 @@
+import { contentTestSource } from "../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "../library/element/Player/testSource.js";
 import { itemType } from "../library/experimental/symbol.js";
+
+const realContentSource = await contentTestSource();
 
 const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Game");
@@ -188,7 +192,7 @@ test("pile legacy options write flags before binding and perform immediate movem
 });
 
 test("both loss producers preserve insert flags and legacy positional array copies", () => {
-	const source = ts.createSourceFile("player.js", readFileSync(new URL("../library/element/player.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+	const source = playerTestSource();
 	const playerClass = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Player");
 	for (const name of ["lose", "loseToDiscardpile"]) {
 		const runtime = harness();
@@ -216,7 +220,7 @@ test("both loss producers preserve insert flags and legacy positional array copi
 });
 
 test("pile content rereads trigger-only after its wash hook and waits for that hook", async () => {
-	const contentSource = ts.createSourceFile("content.ts", readFileSync(new URL("../library/element/content.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+	const contentSource = realContentSource;
 	const statement = contentSource.statements.find(node => ts.isVariableStatement(node) && node.declarationList.declarations.some(item => item.name.getText(contentSource) === "Content"));
 	const contentObject = statement.declarationList.declarations.find(item => item.name.getText(contentSource) === "Content").initializer;
 	const callback = contentObject.properties.find(node => node.name?.getText(contentSource) === "cardsGotoPile");

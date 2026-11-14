@@ -8,8 +8,9 @@ import { CacheContext } from "@/library/cache/cacheContext.js";
 import { importCardPack, importCharacterPack, importExtension, importMode } from "./import.js";
 import { loadCard, loadCardPile, loadCharacter, loadExtension, loadMode, loadPlay } from "./loading.js";
 import * as loadErrors from "./loadErrors.js";
-import { createRetryingDatabaseResolver, llmLogDatabaseName, openLLMLogDatabase, openMainDatabase } from "./database-schema.js";
+import { openPersistence, storageInitializing } from "../storage/open.js";
 import { registerLLMLogDatabase } from "@/llm/logger-store.js";
+import { migrateLLMTextConfig } from "@/llm/config.js";
 
 // 无名杀，启动！
 async function bootImpl() {
@@ -29,7 +30,10 @@ async function bootImpl() {
 	// 设定游戏加载时间，超过时间未加载就提醒
 	const configLoadTime = parseInt(localStorage.getItem(lib.configprefix + "loadtime") || "10000");
 	// 现在不暴露到全局变量里了，直接传给onload
-	const resetGameTimeout = setTimeout(lib.init.reset, configLoadTime);
+	let resetGameTimeout = setTimeout(function checkStartup() {
+		if (storageInitializing) resetGameTimeout = setTimeout(checkStartup, configLoadTime);
+		else lib.init.reset();
+	}, configLoadTime);
 
 	setBackground();
 
@@ -855,20 +859,9 @@ async function loadConfig() {
 	lib.config = await lib.init.promises.json(lib.assetURL + "game/config.json");
 	lib.configOL = {};
 
-	if (!window.indexedDB) {
-		throw new Error("您的环境不支持indexedDB，无法保存配置");
-	}
-
-	// LLM schema upgrades live in a separate database and therefore cannot block configuration loading.
-	lib.db = await openMainDatabase(window.indexedDB, `${lib.configprefix}data`);
-	lib.db.onversionchange = () => {
-		lib.db.close();
-		console.warn("IndexedDB was upgraded in another window; reload to continue using persisted data");
-	};
-	registerLLMLogDatabase(
-		lib.db,
-		createRetryingDatabaseResolver(() => openLLMLogDatabase(window.indexedDB, llmLogDatabaseName(lib.db.name)))
-	);
+	const persistence = await openPersistence(lib.configprefix);
+	lib.db = persistence.main;
+	registerLLMLogDatabase(lib.db, persistence.logs);
 
 	let result;
 	// 懒人包配置
@@ -923,6 +916,8 @@ async function loadConfig() {
 			config.set(name, result[name]);
 		}
 	}
+
+	migrateLLMTextConfig(lib.config, (key, value) => game.saveConfig(key, value), document);
 
 	config.get("all").characters = [];
 	config.get("all").cards = [];
@@ -1016,9 +1011,7 @@ function setWindowListener() {
 						if (onlineKey) {
 							localStorage.setItem(lib.configprefix + "key", onlineKey);
 						}
-						if (indexedDB) {
-							indexedDB.deleteDatabase(lib.configprefix + "data");
-						}
+						for (const store of ["config", "data", "video", "image", "audio"]) game.deleteDB(store);
 						game.reload();
 						return;
 					}
@@ -1071,9 +1064,7 @@ function setWindowListener() {
 						if (onlineKey) {
 							localStorage.setItem(lib.configprefix + "key", onlineKey);
 						}
-						if (indexedDB) {
-							indexedDB.deleteDatabase(lib.configprefix + "data");
-						}
+						for (const store of ["config", "data", "video", "image", "audio"]) game.deleteDB(store);
 						game.reload();
 						return;
 					}

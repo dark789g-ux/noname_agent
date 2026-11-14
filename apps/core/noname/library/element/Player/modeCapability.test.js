@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "./testSource.js";
 
 function readSource(path) {
+	if (path === "../player.js") return playerTestSource();
 	const text = readFileSync(new URL(path, import.meta.url), "utf8");
 	return ts.createSourceFile(path, text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
 }

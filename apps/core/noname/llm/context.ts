@@ -4,6 +4,8 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
 import type { DecisionCandidateSnapshot } from "./action-candidates.js";
 import { buildDecisionSnapshot, cleanPromptText, collectPromptPlayers, formatPlayerProfiles, promptTranslation, selectPromptDescription, translatePromptValue, type PromptRuntime } from "./prompt-format.js";
+import { formatPileOverview, formatRoundHistory } from "./prompt-history.js";
+import { getCurrentRoundNumber, getDiscardPileCount, getDrawPileCount, getPromptHistorySnapshot, getShuffleCount } from "./round-history.js";
 
 /** 决策点的人类可读描述映射。 */
 const DECISION_DESCRIPTIONS: Record<string, string> = {
@@ -17,31 +19,48 @@ const DECISION_DESCRIPTIONS: Record<string, string> = {
  * 构造发送给 LLM 的上下文消息。
  * 返回 { messages } 数组，包含 system prompt 和 user message（场面快照）。
  */
-export function buildContext(
-	event: any,
-	candidates: DecisionCandidateSnapshot | { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] },
-): { messages: ChatCompletionMessageParam[] } {
+export function buildContext(event: any, candidates: DecisionCandidateSnapshot | { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] }, options?: { canInspectDiscard?: boolean }): { messages: ChatCompletionMessageParam[] } {
 	const decisionPoint = event.name || "unknown";
 	const runtime = createPromptRuntime();
 	const referencedPlayers = "targetPool" in candidates ? candidates.targetPool.map(target => target.player) : undefined;
 	const snapshot = collectPromptPlayers(runtime, event.player, referencedPlayers);
 	const states = "targetPool" in candidates ? snapshot.states.map((state, index) => ({ ...state, ref: candidates.targetPool[index]?.ref })) : snapshot.states;
+	const historySnapshot = getPromptHistorySnapshot();
+	const roundNumber = historySnapshot.currentRound || getCurrentRoundNumber();
+	const pileOverviewText = formatPileOverview({
+		roundNumber,
+		drawPileCount: getDrawPileCount(),
+		discardPileCount: getDiscardPileCount(),
+		shuffleNumber: getShuffleCount(),
+		canInspectDiscard: options?.canInspectDiscard,
+	});
+	const roundHistoryText = formatRoundHistory(historySnapshot);
 	return {
 		messages: [
 			{
 				role: "system",
-				content: `你是三国杀的 AI 玩家。根据当前场面从可用 tools 中选择最优动作。只返回一个 tool_call。\n\n${formatPlayerProfiles(snapshot.profiles)}`,
+				content: `你是三国杀的 AI 玩家。根据当前场面从可用工具中选择最优动作，只返回一个工具调用。重要要求：你的整个内部思考过程（reasoning_content）与工具参数中的原因说明（reason），除了必要的短引用代号与工具名外，必须全程使用简体中文。\n\n${formatPlayerProfiles(snapshot.profiles)}`,
 			},
 			{
 				role: "user",
-				content: buildDecisionSnapshot(decisionPoint, event, {
-					...candidates,
-					targets: "targetPool" in candidates && candidates.actions.length ? candidates.targetPool : (candidates as any).targets,
-				}, states, {
-					decisionDescriptions: DECISION_DESCRIPTIONS,
-					getSkillName: skillName,
-					getSkillDescription: skill => engineSkillDescription(skill, undefined),
-				}),
+				content: `${buildDecisionSnapshot(
+					decisionPoint,
+					event,
+					{
+						...candidates,
+						targets: "targetPool" in candidates && candidates.actions.length ? candidates.targetPool : (candidates as any).targets,
+					},
+					states,
+					{
+						decisionDescriptions: DECISION_DESCRIPTIONS,
+						getSkillName: skillName,
+						getSkillDescription: skill => engineSkillDescription(skill, undefined),
+						getCardLabel: card => `${get.translation(card)} ${get.suit(card)} ${get.number(card)}`,
+						getPlayerLabel: player => displayText(get.translation(player) || player.name),
+						pileOverviewText,
+						roundHistoryText,
+					}
+				)}\n\n请务必全程使用简体中文进行内部思考（reasoning_content）并填写中文原因（reason）。`,
 			},
 		],
 	};
@@ -56,6 +75,8 @@ function createPromptRuntime(): PromptRuntime {
 		getSkillName: skillName,
 		getSkillDescription: engineSkillDescription,
 		getSkillMeta: skill => getRegisteredSkill(lib.skill, skill),
+		isZhuanhuanji: (skill, player) => Boolean(get.is?.zhuanhuanji?.(skill, player)),
+		isCardKnown: (card, observer) => Boolean(card?.isKnownBy?.(observer)),
 		getEquipmentSkills: card => Array.from(get.skillsFromEquips?.([card]) || []),
 		isEquipmentCard: card => get.info(card, false)?.type === "equip",
 		getCardName: card => displayText(get.translation(card) || translateId(viewAsName(card) || card.name)),

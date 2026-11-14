@@ -9,42 +9,10 @@ import type {
 	ChatCompletionTool,
 } from "openai/resources/chat/completions.js";
 import type { LLMConfig } from "./index.js";
+import { assertLLMURL } from "./config.js";
+import { parseToolCallResult, type ToolCallResult } from "./tool-call-parser.js";
 
-export interface ToolCallResult {
-	id: string;
-	name: string;
-	reason: string;
-	arguments: Record<string, any>;
-}
-
-/** 解析并校验 function arguments，供流式与非流式响应共用。 */
-export function parseToolCallResult(id: string, name: string, rawArgs: unknown): ToolCallResult {
-	let parsed: unknown;
-	try {
-		parsed = typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
-	} catch {
-		throwParseError(`Bad tool_call arguments JSON: ${rawArgs}`);
-	}
-	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throwParseError("tool_call arguments must be a non-null object");
-	}
-	try {
-		const values = parsed as Record<string, any>;
-		if (!Object.hasOwn(values, "reason") || typeof values.reason !== "string") {
-			throwParseError("tool_call arguments.reason must be a string");
-		}
-		const reason = values.reason.trim();
-		const reasonLength = [...reason].length;
-		if (reasonLength < 1 || reasonLength > 200) {
-			throwParseError("tool_call arguments.reason must contain 1 to 200 characters");
-		}
-		const argumentsWithoutReason = Object.fromEntries(Object.entries(values).filter(([key]) => key !== "reason"));
-		return { id, name, reason, arguments: argumentsWithoutReason };
-	} catch (error: any) {
-		if (error?.stage === "parse") throw error;
-		throwParseError("Unable to read tool_call arguments");
-	}
-}
+export { parseToolCallResult, type ToolCallResult };
 
 export interface StreamCallbacks {
 	onChunk?: (partialArgs: string) => void;
@@ -62,6 +30,7 @@ export async function callLLMWithTimeout(
 	tools: ChatCompletionTool[],
 	config: LLMConfig,
 ): Promise<ToolCallResult> {
+	assertLLMURL(config.url);
 	const client = new OpenAI({
 		baseURL: config.url,
 		apiKey: config.apikey,
@@ -99,7 +68,7 @@ export async function callLLMWithTimeout(
 		}
 
 		const rawArgs = tc.function.arguments ?? "";
-		return parseToolCallResult(tc.id, tc.function.name, rawArgs);
+		return parseToolCallResult(tc.id, tc.function.name, rawArgs, extractReasoningText(msg));
 	} catch (e: any) {
 		// 内部已带 stage 的错误透传（parse 错误）
 		if (e?.stage) throw e;
@@ -151,6 +120,7 @@ export async function callLLMStream(
 	callbacks: StreamCallbacks = {},
 	signal?: AbortSignal,
 ): Promise<ToolCallResult> {
+	assertLLMURL(config.url);
 	const client = new OpenAI({
 		baseURL: config.url,
 		apiKey: config.apikey,
@@ -188,6 +158,7 @@ export async function callLLMStream(
 		let functionName = "";
 		let toolCallId = "";
 		let argumentsBuffer = "";
+		let reasoningBuffer = "";
 		let firstChunkReported = false;
 		let firstTokenReported = false;
 
@@ -196,11 +167,17 @@ export async function callLLMStream(
 				firstChunkReported = true;
 				notify("onFirstChunk");
 			}
-			const calls = chunk.choices?.[0]?.delta?.tool_calls;
 			const deltaMessage = chunk.choices?.[0]?.delta;
+			const calls = deltaMessage?.tool_calls;
 			if (!firstTokenReported && hasTokenDelta(deltaMessage)) {
 				firstTokenReported = true;
 				notify("onFirstToken");
+			}
+			const reasoningDelta = extractReasoningText(deltaMessage);
+			let streamUpdated = false;
+			if (reasoningDelta) {
+				reasoningBuffer += reasoningDelta;
+				streamUpdated = true;
 			}
 			if (calls?.length > 1 || calls?.some((call: any) => (call.index ?? 0) !== 0)) {
 				throwErr("parse", "LLM stream returned multiple tool_calls");
@@ -214,15 +191,18 @@ export async function callLLMStream(
 			}
 			if (delta?.function?.arguments) {
 				argumentsBuffer += delta.function.arguments;
-				notify("onChunk", argumentsBuffer);
+				streamUpdated = true;
+			}
+			if (streamUpdated) {
+				notify("onChunk", formatStreamPreview(reasoningBuffer, argumentsBuffer));
 			}
 		}
 
 		if (!functionName || !toolCallId) {
-				throwErr("parse", "LLM stream ended without a complete tool_call");
-			}
+			throwErr("parse", "LLM stream ended without a complete tool_call");
+		}
 
-			return parseToolCallResult(toolCallId, functionName, argumentsBuffer);
+		return parseToolCallResult(toolCallId, functionName, argumentsBuffer, reasoningBuffer);
 	} catch (e: any) {
 		// 内部已带 stage 的错误透传（parse 错误）
 		if (e?.stage) {
@@ -290,14 +270,21 @@ export async function callLLMStream(
 	}
 }
 
+function extractReasoningText(message: any): string {
+	if (typeof message?.reasoning_content === "string" && message.reasoning_content.length > 0) return message.reasoning_content;
+	if (typeof message?.reasoning === "string" && message.reasoning.length > 0) return message.reasoning;
+	return "";
+}
+
+function formatStreamPreview(reasoningBuffer: string, argumentsBuffer: string): string {
+	if (!reasoningBuffer) return argumentsBuffer;
+	if (!argumentsBuffer) return reasoningBuffer;
+	return `${reasoningBuffer}\n\n[tool_call]\n${argumentsBuffer}`;
+}
+
 function hasTokenDelta(delta: any): boolean {
+	if (extractReasoningText(delta).length > 0) return true;
 	if (typeof delta?.content === "string" && delta.content.length > 0) return true;
 	if (typeof delta?.function_call?.arguments === "string" && delta.function_call.arguments.length > 0) return true;
 	return delta?.tool_calls?.some((call: any) => typeof call?.function?.arguments === "string" && call.function.arguments.length > 0) || false;
-}
-
-function throwParseError(message: string): never {
-	const error: any = new Error(message);
-	error.stage = "parse";
-	throw error;
 }

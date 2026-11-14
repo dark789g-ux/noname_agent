@@ -1,6 +1,9 @@
 dist
 output
 node_modules
+.pnpm-store/
+/data/
+/goals/
 package-lock.json
 
 # IDE

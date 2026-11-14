@@ -149,8 +149,7 @@ export class GamePromises {
 			return Promise.resolve();
 		}
 
-		// @ts-expect-error ignore
-		return new Promise(resolve => game.saveConfig(key, value, local, resolve));
+		return Promise.resolve(game.saveConfig(key, value, local));
 	}
 	/**
 	 * @param { string } key

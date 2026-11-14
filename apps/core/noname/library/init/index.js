@@ -2,6 +2,7 @@ import { rootURL, get, lib, game, _status, ui } from "noname";
 import { LibInitPromises } from "./promises.js";
 import { ContentCompiler } from "@/library/element/gameEvent.js";
 import { security } from "@/util/sandbox.js";
+import { usesSqliteStorage, resetSqliteMain } from "../../storage/open.js";
 
 /**
  * @param {HTMLStyleElement} style
@@ -22,10 +23,10 @@ export class LibInit {
 	}
 
 	/**
-	 * 完整重置：清 localStorage（保留 noname_inited 和联机 key）+ 删 indexedDB data 库 + reload。
-	 * 行为与改造前桌面端分支一致，确保零回归。
+	 * 完整重置：清 localStorage（保留 noname_inited 和联机 key），清理当前主存储后 reload。
+	 * 浏览器清理 SQLite 的主库数据，原 IndexedDB 迁移副本保留；原生客户端继续清理 IndexedDB。
 	 */
-	doFullReset() {
+	async doFullReset() {
 		var onlineKey = localStorage.getItem(lib.configprefix + "key");
 		var nonameInited = localStorage.getItem("noname_inited");
 		localStorage.clear();
@@ -35,7 +36,9 @@ export class LibInit {
 		if (onlineKey) {
 			localStorage.setItem(lib.configprefix + "key", onlineKey);
 		}
-		if (indexedDB) {
+		if (usesSqliteStorage()) {
+			await resetSqliteMain();
+		} else if (indexedDB) {
 			indexedDB.deleteDatabase(lib.configprefix + "data");
 		}
 		setTimeout(function () {
@@ -89,21 +92,7 @@ export class LibInit {
 				.catch(function () {
 					// 对话框模块加载失败（极端情况），回退到原始 confirm 行为
 					if (confirm("游戏似乎未正常载入，是否重置游戏？")) {
-						var onlineKey = localStorage.getItem(lib.configprefix + "key");
-						var nonameInited = localStorage.getItem("noname_inited");
-						localStorage.clear();
-						if (nonameInited) {
-							localStorage.setItem("noname_inited", nonameInited);
-						}
-						if (onlineKey) {
-							localStorage.setItem(lib.configprefix + "key", onlineKey);
-						}
-						if (indexedDB) {
-							indexedDB.deleteDatabase(lib.configprefix + "data");
-						}
-						setTimeout(function () {
-							window.location.reload();
-						}, 200);
+						self.doFullReset();
 					}
 				});
 	}

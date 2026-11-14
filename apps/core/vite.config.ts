@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
 const port = {
-	client: 8081,
+	client: 8080,
 	server: 8089,
 };
 
@@ -22,8 +22,11 @@ export default defineConfig({
 		port: port.client,
 		fs: {
 			allow: ["../.."],
+			deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "**/data/noname.sqlite*"],
 		},
 		proxy: {
+			"/_llm": "http://127.0.0.1:" + port.server,
+			"/_storage": "http://127.0.0.1:" + port.server,
 			"/checkFile": "http://127.0.0.1:" + port.server,
 			"/checkDir": "http://127.0.0.1:" + port.server,
 			"/readFile": "http://127.0.0.1:" + port.server,

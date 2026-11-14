@@ -27,6 +27,7 @@ export const variantSupportSkills = {
 		},
 	},
 	xinfu_jijie: {
+		selectionSpec: true,
 		enable: "phaseUse",
 		usable: 1,
 		audio: 2,

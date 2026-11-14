@@ -177,3 +177,94 @@ test("决策快照保留 cards、skills、targets 和弃牌段落", () => {
 	assert.match(snapshot, /## 当前可选目标：/);
 	assert.match(snapshot, /## 弃牌要求：最少 1 张，最多 2 张/);
 });
+
+test("采集并格式化玩家标记、x/s 扩展区隐私边界及转换技/限定技/觉醒技状态", () => {
+	const publicCard = { name: "public_sha", isKnownBy: () => true };
+	const selfSecretCard = { name: "secret_peach", isKnownBy: (viewer: any) => viewer?.id === "self" };
+	const enemySecretCard = { name: "secret_peach", isKnownBy: (viewer: any) => viewer?.id === "enemy" };
+	const self: any = {
+		id: "self",
+		seat: 1,
+		name: "observer",
+		identity: "zhu",
+		group: "shu",
+		sex: "male",
+		marks: { kuangfeng: {}, ghujia: {} },
+		storage: { kuangfeng: 2, zhuan_skill: true },
+		awakenedSkills: ["limit_used"],
+		getSeatNum: () => 1,
+		getHp: () => 3,
+		maxHp: 4,
+		hujia: 1,
+		getSkills: () => ["zhuan_skill", "limit_used", "wake_unawakened", "hidden_wake"],
+		hiddenSkills: ["hidden_wake"],
+		getCards: (zone: string) => (zone === "x" ? [selfSecretCard] : zone === "s" ? [publicCard] : []),
+		getKnownCards: () => [],
+	};
+	const enemy: any = {
+		id: "enemy",
+		seat: 2,
+		name: "target",
+		identity: "fan",
+		group: "wei",
+		sex: "male",
+		marks: { tian: {} },
+		storage: { tian: ["a", "b", "c"], zhuan_skill: false },
+		awakenedSkills: [],
+		getSeatNum: () => 2,
+		getHp: () => 4,
+		maxHp: 4,
+		getSkills: () => ["zhuan_skill", "limit_unused"],
+		getCards: (zone: string) => (zone === "x" ? [enemySecretCard, publicCard] : []),
+		getKnownCards: () => [],
+	};
+	const names: Record<string, string> = {
+		kuangfeng: "狂风",
+		tian: "田",
+		public_sha: "杀",
+		secret_peach: "桃",
+		observer: "观察者",
+		target: "敌将",
+	};
+	const skillMeta: Record<string, any> = {
+		zhuan_skill: { zhuanhuanji: true },
+		limit_used: { limited: true },
+		limit_unused: { limited: true },
+		wake_unawakened: { juexingji: true },
+		hidden_wake: { juexingji: true },
+	};
+	const skillNames: Record<string, string> = {
+		zhuan_skill: "转换",
+		limit_used: "已用限定",
+		limit_unused: "未用限定",
+		wake_unawakened: "未觉醒",
+		hidden_wake: "隐藏觉醒",
+	};
+	const runtime: any = {
+		players: [self, enemy],
+		globalSkills: [],
+		translate: (v: unknown) => names[String(v)] || String(v || "未知"),
+		getPlayerName: (p: any) => names[p.name] || p.name,
+		getSkillName: (s: string) => skillNames[s] || s,
+		getSkillDescription: () => "描述",
+		getSkillMeta: (s: string) => skillMeta[s],
+		getEquipmentSkills: () => [],
+		isEquipmentCard: () => false,
+		getCardName: (c: any) => names[c.name] || c.name,
+		getCardProperties: () => ({ suit: "红桃", number: 1, color: "红色" }),
+		getCardDescription: () => "",
+		getViewedAsDescription: () => "",
+	};
+	const { states } = collectPromptPlayers(runtime, self);
+	const text = formatPlayerStates(states);
+	assert.match(text, /标记：狂风\(2\)/);
+	assert.doesNotMatch(text, /ghujia/);
+	assert.match(text, /武将牌上\(x区\)：桃/);
+	assert.match(text, /特殊区\(s区\)：杀/);
+	assert.match(text, /技能状态：转换\[阴\]、已用限定\[已发动\]、未觉醒\[未觉醒\]/);
+	assert.doesNotMatch(text, /隐藏觉醒/);
+	assert.match(text, /标记：田\(3\)/);
+	assert.match(text, /武将牌上\(x区\)：杀、暗置 1 张/);
+	assert.doesNotMatch(text, /武将牌上\(x区\)：桃、杀/);
+	assert.match(text, /技能状态：转换\[阳\]、未用限定\[未发动\]/);
+});

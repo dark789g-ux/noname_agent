@@ -15,6 +15,11 @@
 				/>
 			</template>
 
+			<!-- mode="llm" 时渲染多后端与分座位分配编辑器 -->
+			<template v-else-if="currentMode === 'llm'">
+				<LLMConfigEditor />
+			</template>
+
 			<!-- mode != "skill" 的标准配置列表 -->
 			<template v-else>
 				<NonameConfig
@@ -51,6 +56,7 @@ import { registerOptionsMenuLifecycle } from "../utils/optionsMenuLifecycle";
 import NonameConfig from "./NonameConfig.vue";
 import BanSkillEditor from "./editors/BanSkillEditor.vue";
 import FileManager from "./editors/FileManager.vue";
+import LLMConfigEditor from "./editors/LLMConfigEditor.vue";
 
 interface Props {
 	ctx: RightPaneContext;

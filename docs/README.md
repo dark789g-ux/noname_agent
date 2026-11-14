@@ -22,6 +22,8 @@
 
 - **[how-to-start.md](./how-to-start.md)** — 《如何运行无名杀》：Node.js 与 pnpm 环境要求、`pnpm install` / `pnpm dev` / `pnpm build` / `pnpm lint` 等常用命令、Electron 本地打包与本地联机服务器的 Q&A。新贡献者第一篇阅读。
 
+本地浏览器的数据存储与迁移说明：[sqlite-storage.md](./sqlite-storage.md)。
+
 ## 技能开发
 
 三篇配合阅读：字段速查 → async 写法入门 → 旧写法迁移手册。
@@ -59,9 +61,11 @@
 ## UI
 
 - **[menu-dialog.md](./menu-dialog.md)** — 《菜单对话框代码索引》：主菜单弹窗（开始/选项/武将/卡牌/扩展/其它六 tab，Vue 3 实现）的代码地图。`ui.create.menu()` 调用链、装配层与 `MenuView.vue`、右栏布局 CSS 契约、`menuData` 数据契约与 tab 注册表、组件清单与修改指引。改动主菜单前必读。
-- **[identity-ui/](./identity-ui/index.md)** —— 《身份场游戏界面代码索引》：身份场（mode=identity）UI 相关代码的子目录（5 份文档）。启动链路（MenuView → switchMode → identity.start）、Player DOM 结构（buildNode/buildExtra 子节点）、身份牌渲染与 4 子模式差异（标准/明忠/谋攻/3v3v2，含 25 个 data-color 颜色全表）、布局主题与 identity 配置块（L5773-6676）。改身份场 UI 前必读。
+- **[identity-ui/](./identity-ui/index.md)** —— 《身份场游戏界面代码索引》：身份场（mode=identity）UI 相关代码的子目录（5 份文档）。启动链路（MenuView → switchMode → identity.start）、Player DOM 结构（buildNode/buildExtra 子节点）、身份牌渲染与 4 子模式差异（标准/明忠/谋攻/3v3v2，含 25 个 data-color 颜色全表）、布局主题与 identity 配置模块。改身份场 UI 前必读。
 
 ## 备注
 
 - 仓库根目录的 [AGENTS.md](../AGENTS.md) 引用了其中 8 篇作为「修改玩法前必读」：lib-skill-format、async-guide、step-to-async-guide、game-event 的 content/lifecycle/trigger、game-startup-flow、audio-guide、skin-guide。
 - 各文档时效性不同：如发现文档与代码不一致，以代码为准并欢迎提 PR 修正。
+
+- [Library 模块职责与验证](library-modules.md)：`library/` 入口、领域组合、兼容边界与检查命令。

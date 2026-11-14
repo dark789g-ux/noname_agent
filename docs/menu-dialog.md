@@ -114,7 +114,7 @@ ui.create.menu()                 (ui/create/index.js:3101 / 3109，挂在 lib.on
 
 ### 三类陷阱（均由契约吸收）
 
-1. **`nodeEl._link` 在 Vue 路径下为 undefined**：游戏源 `library/index.js` 的 onclick 有 40+ 处用 `this._link.config.mode`。`doToggle` / `doMenuItem` 开头**兜底** `if (!nodeEl._link) nodeEl._link = { config }`，为 Vue 路径补齐该字段。命令式路径下 `_link` 已存在，兜底不触发。
+1. **`nodeEl._link` 在 Vue 路径下为 undefined**：游戏源 `library/configuration/modes/` 中的 onclick 有 40+ 处用 `this._link.config.mode`。`doToggle` / `doMenuItem` 开头**兜底** `if (!nodeEl._link) nodeEl._link = { config }`，为 Vue 路径补齐该字段。命令式路径下 `_link` 已存在，兜底不触发。
 
 2. **DOM 操作会被 Vue 响应式覆盖**：直接 `nodeEl.lastChild.innerHTML = ...`（switcher）或 `classList.toggle("on")`（toggle）在 Vue 路径下会被下次重渲染按旧 `config.init` 回写，导致**显示回退**。因此 `doToggle` / `doMenuItem` 改为**数据驱动**：始终更新 `config.init`，DOM 操作用 `isReactive(config)` 分叉——
    - Vue 路径（`isReactive === true`）：**跳过所有 DOM 操作**，由 `NonameConfig.vue` 的 `choosingText` / `isToggleOn` computed 响应 `config.init` 自动重绘。
@@ -133,7 +133,7 @@ ui.create.menu()                 (ui/create/index.js:3101 / 3109，挂在 lib.on
 
 > **归属权衡**：本节描述的是配置值离开菜单后的**下游消费行为**，严格说属于 LLM 模块（`apps/core/noname/llm/`）而非菜单对话框本身。因其配置项从本菜单「选项-AI/LLM」消费，紧接上文契约节作为"值最终去了哪里"的实例参考收入。LLM 模块的完整行为以该模块代码为准。
 
-「思考深度」（`llm_thinking_effort`，`library/index.js:5195-5204`，switcher 形态）的四个取值会被原样映射为 OpenAI 兼容 Chat Completions 接口的 `reasoning_effort` 字段。链路仅 3 个文件、无任何中间转换：
+「思考深度」（`llm_thinking_effort`，`library/configuration/options/llm.ts`，switcher 形态）的四个取值会被原样映射为 OpenAI 兼容 Chat Completions 接口的 `reasoning_effort` 字段。链路仅 3 个文件、无任何中间转换：
 
 ```
 菜单选项 → lib.config.llm_thinking_effort → getLLMConfig().thinkingEffort → client.ts 构造 body → openai SDK client.chat.completions.create
@@ -163,7 +163,7 @@ ui.create.menu()                 (ui/create/index.js:3101 / 3109，挂在 lib.on
 
 ### `llm_url` 语义（baseURL，非完整 endpoint）
 
-> **破坏性变更**：`llm_url`（`library/index.js:5168-5176`，input 形态）的语义已从"完整 endpoint"改为"OpenAI 兼容 baseURL"。此变更源于 LLM 模块引入官方 openai SDK（`llm/client.ts:26-32`），SDK 以 `baseURL` 初始化 `new OpenAI({ baseURL })` 后，内部自动拼接 `/chat/completions`、`/responses` 等路径。
+> **破坏性变更**：`llm_url`（`library/configuration/options/llm.ts`，input 形态）的语义已从"完整 endpoint"改为"OpenAI 兼容 baseURL"。此变更源于 LLM 模块引入官方 openai SDK（`llm/client.ts:26-32`），SDK 以 `baseURL` 初始化 `new OpenAI({ baseURL })` 后，内部自动拼接 `/chat/completions`、`/responses` 等路径。
 
 #### 正确 vs 错误示例
 
@@ -179,7 +179,7 @@ ui.create.menu()                 (ui/create/index.js:3101 / 3109，挂在 lib.on
 
 #### CORS
 
-浏览器模式需自建代理（CORS 限制），Electron 模式可直接使用——此限制与旧版一致（`library/index.js:5172` intro 文本）。
+浏览器模式需自建代理（CORS 限制），Electron 模式可直接使用——此限制与旧版一致（`library/configuration/options/llm.ts` intro 文本）。
 
 ## 数据层（`menu/vue/types.ts` + `menu/vue/data/`）
 

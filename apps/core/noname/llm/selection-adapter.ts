@@ -4,16 +4,21 @@ export interface HeadlessSelectionStep {
 	id?: string;
 	type: HeadlessSelectionType;
 	select?: any;
-	items?: any[];
+	items?: any[] | ((context: any) => any[]);
 	filter?: Function;
 	required?: boolean;
 	selectionMode?: "set" | "sequential";
+	deferredFromCards?: boolean;
+	instruction?: string;
 }
 
 export interface HeadlessSelectionSpec {
 	steps?: HeadlessSelectionStep[];
 	viewAs?: any;
 	finalPredicate?: (context: any, event: any, player: any) => boolean;
+	/** Audited replacement of legacy selection flags, never inferred. */
+	orderedTargets?: boolean;
+	move?: "guanxing" | "xunxun" | "gongxin";
 }
 
 export function resolveSelectionSpec(selectionSpec: any, event: any, player: any): HeadlessSelectionSpec | undefined {
@@ -68,32 +73,80 @@ export function numberStepDefinitions(event: any, selectedNumbers: () => number[
 	}));
 }
 
-export function directSelectionDefinition(event: any, eventSpec: HeadlessSelectionSpec | undefined, callbacks: {
-	isCardOwned: (card: any) => boolean;
-	isTargetCurrent: (target: any) => boolean;
-	selectedCard: () => any;
-	selectedNumbers: () => number[];
-}): { kind: string; steps: any[]; filterOk?: () => boolean } | undefined {
-	const player = event.player;
-	const card: any = { type: "card", select: event.selectCard, required: event.cardRequired ? true : undefined, filter: (value: any) => callbacks.isCardOwned(value) && event.filterCard?.(value, player) !== false };
-	const target: any = { type: "target", select: event.selectTarget, required: event.targetRequired ? true : undefined, filter: (value: any) => callbacks.isTargetCurrent(value) && event.filterTarget?.(callbacks.selectedCard(), player, value) !== false };
-	let steps = eventSpec?.steps?.slice();
-	if (!steps?.length) switch (event.name) {
-		case "chooseCard": steps = [card]; break;
-		case "chooseTarget": steps = [target]; break;
-		case "chooseCardTarget": steps = [card, target]; break;
-		case "chooseToGive": steps = [card]; break;
-		case "chooseButton": steps = [{ type: "button", select: event.selectButton, items: dialogButtons(event), filter: (button: any) => event.filterButton?.(button, player) !== false }]; break;
-		case "chooseButtonTarget": steps = [{ type: "button", select: event.selectButton, items: dialogButtons(event), filter: (button: any) => event.filterButton?.(button, player) !== false }, target]; break;
-		case "chooseControl": steps = [{ type: "control", select: 1, items: Array.isArray(event.controls) ? event.controls : [] }]; break;
-		case "chooseNumbers": return { kind: event.name, steps: numberStepDefinitions(event, callbacks.selectedNumbers), filterOk: () => event.filterOk?.({ ...event, numbers: callbacks.selectedNumbers() }) !== false };
-		default: return undefined;
+export function directSelectionDefinition(
+	event: any,
+	eventSpec: HeadlessSelectionSpec | undefined,
+	callbacks: {
+		isCardOwned: (card: any) => boolean;
+		isTargetCurrent: (target: any) => boolean;
+		selectedCard: () => any;
+		selectedNumbers: () => number[];
 	}
+): { kind: string; steps: any[]; filterOk?: () => boolean } | undefined {
+	if (event?.selectionSpec === false) return undefined;
+	const player = event.player;
+	const cardMode = event.complexSelect || event.complexCard ? "sequential" : undefined;
+	const targetMode = event.complexSelect || event.complexTarget ? "sequential" : undefined;
+	const card: any = { type: "card", selectionMode: cardMode, select: event.selectCard, required: event.cardRequired ? true : undefined, filter: (value: any) => callbacks.isCardOwned(value) && event.filterCard?.(value, player) !== false };
+	const target: any = { type: "target", selectionMode: targetMode, select: event.selectTarget, required: event.targetRequired ? true : undefined, filter: (value: any) => callbacks.isTargetCurrent(value) && event.filterTarget?.(callbacks.selectedCard(), player, value) !== false };
+	let steps = eventSpec?.steps?.slice();
+	if (!steps?.length)
+		switch (event.name) {
+			case "chooseCard":
+				steps = [card];
+				break;
+			case "chooseTarget":
+				steps = [target];
+				break;
+			case "chooseCardTarget":
+				steps = [card, target];
+				break;
+			case "chooseToGive":
+				steps = [card];
+				break;
+			case "chooseButton":
+				steps = [{ type: "button", selectionMode: event.complexSelect ? "sequential" : undefined, select: event.selectButton, items: dialogButtons(event), filter: (button: any) => event.filterButton?.(button, player) !== false }];
+				break;
+			case "choosePlayerCard":
+			case "gainPlayerCard":
+			case "discardPlayerCard":
+				steps = [
+					{
+						type: "button",
+						selectionMode: event.complexSelect ? "sequential" : undefined,
+						select: event.selectButton,
+						items: dialogButtons(event),
+						filter: (button: any) => {
+							const target = event.getTarget();
+							const cards = event.name === "gainPlayerCard" ? target.getGainableCards(player, event.position) : event.name === "discardPlayerCard" ? target.getDiscardableCards(player, event.position) : target.getCards(event.position);
+							return callbacks.isTargetCurrent(target) && cards.includes(button.link) && event.dialog.buttons.includes(button) && event.filterButton?.(button, player) !== false;
+						},
+					},
+				];
+				break;
+			case "chooseButtonTarget":
+				steps = [{ type: "button", selectionMode: event.complexSelect ? "sequential" : undefined, select: event.selectButton, items: dialogButtons(event), filter: (button: any) => event.filterButton?.(button, player) !== false }, target];
+				break;
+			case "chooseControl":
+				steps = [{ type: "control", select: 1, items: Array.isArray(event.controls) ? event.controls : [] }];
+				break;
+			case "chooseNumbers":
+				return { kind: event.name, steps: numberStepDefinitions(event, callbacks.selectedNumbers), filterOk: () => event.filterOk?.({ ...event, numbers: callbacks.selectedNumbers() }) !== false };
+			default:
+				return undefined;
+		}
 	return { kind: event.name, steps: steps || [] };
 }
 
 export function labelFor(value: any, translate?: (value: any) => string): string {
-	try { return translate?.(value) || value?.name || String(value); } catch { return String(value); }
+	if (value?.classList?.contains("blank")) return "未知牌（匿名引用）";
+	if (value && typeof value === "object" && "link" in value) return labelFor(value.link, translate);
+	try {
+		const label = translate?.(value) || value?.name || String(value);
+		return value && typeof value === "object" && typeof value.suit === "string" ? `${label} ${value.suit} ${value.number ?? ""}`.trim() : label;
+	} catch {
+		return String(value);
+	}
 }
 
 export function shortRefPrefix(type: HeadlessSelectionType): string {

@@ -1,14 +1,18 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "../Player/testSource.js";
+
+const realContentSource = await contentTestSource();
 
 function source(path) {
-	return ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+	return path === "../player.js" ? playerTestSource() : ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
 }
 const playerSource = source("../player.js");
 const playerClass = playerSource.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Player");
-const contentSource = source("../content.ts");
+const contentSource = realContentSource;
 const content = contentSource.statements.flatMap(node => (ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])).find(node => node.name.getText(contentSource) === "Content").initializer;
 
 function javascript(code) {

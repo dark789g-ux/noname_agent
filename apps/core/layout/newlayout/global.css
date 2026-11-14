@@ -425,6 +425,13 @@
 .player.linked > .marks {
 	transform: rotate(90deg) translateX(10px);
 }
+.player.linked > .llm-log-btn {
+	left: auto;
+	right: -10px;
+	top: 26px;
+	transform: rotate(90deg);
+	transform-origin: center center;
+}
 #arena[data-target_shake="shake"] .linked.target {
 	transform: rotate(-93deg);
 }

@@ -1,3 +1,4 @@
+import { field } from "./testing/fixtures.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -7,12 +8,6 @@ function readSource(path) {
 	return ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 }
 
-const librarySource = readSource("./index.js");
-const library = librarySource.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Library");
-assert.ok(library);
-const field = library.members.find(node => ts.isPropertyDeclaration(node) && node.name.getText(librarySource) === "commonArea");
-assert.ok(field?.initializer);
-
 test("common areas keep async handlers and register hidden poker piles without changing metadata", () => {
 	const cards = [];
 	const updates = [];
@@ -21,14 +16,14 @@ test("common areas keep async handlers and register hidden poker piles without c
 			assert.equal(value, cards);
 		},
 	};
-	const areas = new Function("_status", "game", `return ${field.initializer.getText(librarySource)}`)(
-		{ renku },
-		{
+	const areas = field("commonArea", {
+		_status: { renku },
+		game: {
 			updateRenku() {
 				updates.push("renku");
 			},
-		}
-	);
+		},
+	});
 	const entry = areas.get("renku");
 	assert.equal(entry.isUnseen, undefined);
 	assert.equal(entry.areaStatusName, "renku");

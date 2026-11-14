@@ -5,14 +5,16 @@ import test from "node:test";
 import { callLLMStream, callLLMWithTimeout, parseToolCallResult } from "./client.js";
 import type { LLMConfig } from "./index.js";
 import { assistantToolMessage } from "./protocol.js";
+import { submitRoundSummaryTool } from "./prompt-history.js";
 import { buildTools, type SelectionToolType } from "./tools.js";
 
 test("all function tools require a bounded reason", () => {
 	const groups = [
-		buildTools("chooseToUse", { cards: [], skills: ["skill"] }),
+		buildTools("chooseToUse", { cards: [], skills: ["skill"] }, undefined, false, { allowInspectDiscard: true }),
 		buildTools("chooseToRespond", { cards: [], skills: [] }),
 		buildTools("chooseToDiscard", { cards: [], skills: [] }),
 		buildTools("chooseBool", { cards: [], skills: [] }),
+		[submitRoundSummaryTool()],
 		...(["button", "card", "target", "control", "number"] as SelectionToolType[]).map(type => buildTools("selection", { cards: [], skills: [] }, { id: "step_1", type })),
 	];
 	for (const tools of groups) {
@@ -73,9 +75,12 @@ test("shared tool-call parser rejects inherited, polluted, and throwing reason a
 
 test("multi-turn assistant history restores top-level reason without mutating arguments", () => {
 	const arguments_ = { step_id: "step_1", target_refs: ["p0"], reason: "残留原因" };
-	const message = assistantToolMessage({ id: "call_1", name: "select_targets", reason: "选择敌方目标", arguments: arguments_ });
-	assert.deepEqual(JSON.parse(message.tool_calls[0].function.arguments), { step_id: "step_1", target_refs: ["p0"], reason: "选择敌方目标" });
+	const withoutReasoning = assistantToolMessage({ id: "call_1", name: "select_targets", reason: "选择敌方目标", arguments: arguments_ });
+	assert.deepEqual(JSON.parse(withoutReasoning.tool_calls[0].function.arguments), { step_id: "step_1", target_refs: ["p0"], reason: "选择敌方目标" });
+	assert.equal(Object.hasOwn(withoutReasoning, "reasoning_content"), false);
 	assert.deepEqual(arguments_, { step_id: "step_1", target_refs: ["p0"], reason: "残留原因" });
+	const withReasoning = assistantToolMessage({ id: "call_2", name: "select_targets", reason: "选择敌方目标", reasoningContent: "先分析局势", arguments: arguments_ });
+	assert.equal(withReasoning.reasoning_content, "先分析局势");
 });
 
 test("LLM client entry points parse valid non-streaming and streaming responses", async () => {
@@ -154,6 +159,57 @@ test("stream telemetry marks empty and malformed chunks without hiding their tok
 			assert.equal(tokensSeen, expectedTokens);
 		});
 	}
+});
+
+test("stream and non-streaming responses capture reasoning_content and count reasoning as first token", async () => {
+	const events: string[] = [];
+	await withMockServer(streamingChunks([
+		{ choices: [{ delta: { role: "assistant", reasoning_content: "" } }] },
+		{ choices: [{ delta: { reasoning_content: "思考第一段" } }] },
+		{ choices: [{ delta: { reasoning: "，继续思考" } }] },
+		{ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "pass", arguments: '{"reason":"完成"}' } }] } }] },
+	]), async url => {
+		const result = await callLLMStream([], [], config(url), {
+			onFirstChunk: () => events.push("chunk"),
+			onFirstToken: () => events.push("token"),
+			onChunk: partial => events.push(`stream:${partial}`),
+		});
+		assert.deepEqual(result, {
+			id: "call_1",
+			name: "pass",
+			reason: "完成",
+			reasoningContent: "思考第一段，继续思考",
+			arguments: {},
+		});
+	});
+	assert.deepEqual(events, [
+		"chunk",
+		"token",
+		"stream:思考第一段",
+		"stream:思考第一段，继续思考",
+		'stream:思考第一段，继续思考\n\n[tool_call]\n{"reason":"完成"}',
+	]);
+
+	await withMockServer(response => {
+		response.writeHead(200, { "content-type": "application/json" });
+		response.end(JSON.stringify({
+			choices: [{
+				message: {
+					role: "assistant",
+					reasoning_content: "非流式思考内容",
+					tool_calls: [{ id: "call_2", type: "function", function: { name: "pass", arguments: JSON.stringify({ reason: "直接响应" }) } }],
+				},
+			}],
+		}));
+	}, async url => {
+		assert.deepEqual(await callLLMWithTimeout([], [], config(url)), {
+			id: "call_2",
+			name: "pass",
+			reason: "直接响应",
+			reasoningContent: "非流式思考内容",
+			arguments: {},
+		});
+	});
 });
 
 function assertParseError(operation: () => unknown): void {

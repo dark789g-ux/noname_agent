@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { SqliteDatabase } from "../storage/database.js";
 
 const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Game");
@@ -14,7 +15,7 @@ function loadMethod(name, lib, status, game) {
 	const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === name);
 	assert.ok(method);
 	const parameters = method.parameters.map(node => node.getText(source)).join(",");
-	return new Function("lib", "_status", "game", `return function(${parameters}) ${method.body.getText(source)}`)(lib, status, game);
+	return new Function("lib", "_status", "game", "SqliteDatabase", `return function(${parameters}) ${method.body.getText(source)}`)(lib, status, game, SqliteDatabase);
 }
 
 function loadInitMethod(name, lib, game, get, status, document) {

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "./testSource.js";
 
-const source = ts.createSourceFile("player.js", readFileSync(new URL("../player.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const source = playerTestSource();
 const playerClass = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Player");
 const useCard = playerClass.members.find(node => node.name?.getText(source) === "useCard");
 const branch = useCard.body.statements.find(node => ts.isIfStatement(node) && node.expression.getText(source).includes('typeof this.logAi == "function"'));

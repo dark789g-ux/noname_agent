@@ -1,9 +1,12 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 import ts from "typescript";
 import { isImportModePayload, isSelectionResultObject, normalizeSelectionResult } from "./resultBoundary.js";
+
+const realContentSource = await contentTestSource();
 
 class TestCard {}
 class TestPlayer {}
@@ -34,7 +37,7 @@ function createSelectableDiv(link) {
 }
 
 const getSource = ts.createSourceFile("get/index.js", readFileSync(new URL("../../../get/index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
-const contentSource = ts.createSourceFile("content.ts", readFileSync(new URL("../content.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const contentSource = realContentSource;
 
 test("production selection boundary accepts plain divs without inventing a link", () => {
 	let predicate;
@@ -67,15 +70,38 @@ test("chooseToDiscard precontent consumes only a selection skill name and preser
 	const calls = [];
 	const skillInfo = { precontent() {} };
 	const lib = { skill: {} };
-	const child = { setContent(value) { calls.push(["content", value]); }, set(key, value) { calls.push([key, value]); } };
-	const game = { online: false, createEvent(name) { calls.push(["create", name]); return child; } };
-	const get = { info(name) { calls.push(["info", name]); return skillInfo; } };
+	const child = {
+		setContent(value) {
+			calls.push(["content", value]);
+		},
+		set(key, value) {
+			calls.push([key, value]);
+		},
+	};
+	const game = {
+		online: false,
+		createEvent(name) {
+			calls.push(["create", name]);
+			return child;
+		},
+	};
+	const get = {
+		info(name) {
+			calls.push(["info", name]);
+			return skillInfo;
+		},
+	};
 	const javascript = ts.transpileModule(`const stage = ${stage.getText(contentSource)};`, { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText;
 	const run = new Function("lib", "game", "get", `${javascript}; return stage;`)(lib, game, get);
 	const player = {};
 	const sentSkill = {};
 	const result = { skill: "selected", _sendskill: ["registered", sentSkill] };
-	const event = { result, resume() { calls.push(["resume"]); } };
+	const event = {
+		result,
+		resume() {
+			calls.push(["resume"]);
+		},
+	};
 	await run(event, {}, player);
 	assert.equal(event.result, result);
 	assert.equal(lib.skill.registered, sentSkill);
@@ -171,7 +197,10 @@ function getChooseToGuanxingConsumerText() {
 	if (start < 1 || end < start) {
 		throw new Error("Missing chooseToGuanxing card consumer");
 	}
-	return statements.slice(start - 1, end + 1).map(statement => statement.getText(contentSource)).join("\n");
+	return statements
+		.slice(start - 1, end + 1)
+		.map(statement => statement.getText(contentSource))
+		.join("\n");
 }
 
 function transpile(source) {
@@ -216,19 +245,7 @@ test("selection result rejects malformed documented fields but permits explicit 
 	assert.equal(isSelectionResultObject(inheritedCards, runtime), false);
 	assert.equal(isSelectionResultObject(throwingAccessor, runtime), false);
 
-	const malformedResults = [
-		{ cards: [new TestVCard()] },
-		{ targets: [new TestCard()] },
-		{ buttons: [{ link: "not-a-div" }] },
-		{ numbers: [1, "two"] },
-		{ card: { name: 1 } },
-		{ card: { cards: [new TestVCard()] } },
-		{ cost_data: [] },
-		{ bool: "true" },
-		{ confirm: 1 },
-		{ buttons: [Object.defineProperty({}, "hidden", { value: true })] },
-		{ buttons: [{ [Symbol("hidden")]: true }] },
-	];
+	const malformedResults = [{ cards: [new TestVCard()] }, { targets: [new TestCard()] }, { buttons: [{ link: "not-a-div" }] }, { numbers: [1, "two"] }, { card: { name: 1 } }, { card: { cards: [new TestVCard()] } }, { cost_data: [] }, { bool: "true" }, { confirm: 1 }, { buttons: [Object.defineProperty({}, "hidden", { value: true })] }, { buttons: [{ [Symbol("hidden")]: true }] }];
 	for (const result of malformedResults) {
 		assert.equal(isSelectionResultObject(result, runtime), false);
 	}
@@ -268,7 +285,11 @@ test("chooseToGuanxing does not move cards when its matrix is not entity cards",
 	const guards = createContentEntityGuards();
 	const consumer = new Function("result", "game", "event", "isCardMatrix", `return (async () => { ${transpile(getChooseToGuanxingConsumerText())} })();`);
 	const calls = [];
-	const game = { cardsGotoPile(...args) { calls.push(args); } };
+	const game = {
+		cardsGotoPile(...args) {
+			calls.push(args);
+		},
+	};
 
 	await consumer({ moved: [[new TestVCard()]] }, game, {}, guards.isCardMatrix);
 	assert.equal(calls.length, 0);

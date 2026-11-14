@@ -94,16 +94,15 @@ export default () => {
 				ui.system.style.display = "none";
 				_status.playback = playback;
 				localStorage.removeItem(lib.configprefix + "playback");
-				var store = lib.db.transaction(["video"], "readwrite").objectStore("video");
-				store.get(parseInt(playback)).onsuccess = function (e) {
-					if (e.target.result) {
-						event.video = e.target.result.video;
+				game.getDB("video", parseInt(playback), function (video) {
+					if (video) {
+						event.video = video.video;
 						game.resume();
 					} else {
 						alert("播放失败：找不到录像");
 						game.reload();
 					}
-				};
+				});
 			}
 			_status.mylist = [];
 			_status.enemylist = [];

@@ -1,10 +1,13 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "./testSource.js";
 
-const sourceText = readFileSync(new URL("../player.js", import.meta.url), "utf8");
-const sourceFile = ts.createSourceFile("player.js", sourceText, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+const realContentSource = await contentTestSource();
+
+const sourceFile = playerTestSource();
 
 function findPlayerClass() {
 	const playerClass = sourceFile.statements.find(statement => ts.isClassDeclaration(statement) && statement.name?.text === "Player");
@@ -157,7 +160,7 @@ test("showing a vice character keeps the missing-main TypeError after video and 
 });
 
 test("returning names to the character pool keeps missing-name failure after registry lookup", () => {
-	const content = ts.createSourceFile("content.ts", readFileSync(new URL("../content.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+	const content = realContentSource;
 	let branch;
 	function visit(node) {
 		if (ts.isIfStatement(node) && node.expression.getText(content) === "_status.characterlist && !event.reserveOut") branch = node;

@@ -14,8 +14,8 @@ import { menuBridge } from "../utils/menuBridge";
  */
 export function handleImportDataButton(fileToLoad: File) {
 	let fileReader = new FileReader();
-	fileReader.onload = function (fileLoadedEvent) {
-		let data = fileLoadedEvent.target?.result;
+	fileReader.onload = async function (fileLoadedEvent) {
+		let data: any = fileLoadedEvent.target?.result;
 		if (typeof data !== "string" || !data) return;
 		try {
 			data = JSON.parse(lib.init.decode(data));
@@ -30,7 +30,6 @@ export function handleImportDataButton(fileToLoad: File) {
 			alert("导入失败");
 			return;
 		}
-		alert("导入成功");
 		if (!lib.db) {
 			let noname_inited = localStorage.getItem("noname_inited");
 			let onlineKey = localStorage.getItem(lib.configprefix + "key");
@@ -46,13 +45,14 @@ export function handleImportDataButton(fileToLoad: File) {
 			}
 		} else {
 			for (let i in data.config) {
-				game.putDB("config", i, data.config[i]);
+				await game.putDB("config", i, data.config[i]);
 				lib.config[i] = data.config[i];
 			}
 			for (let i in data.data) {
-				game.putDB("data", i, data.data[i]);
+				await game.putDB("data", i, data.data[i]);
 			}
 		}
+		alert("导入成功");
 		lib.init.background();
 		game.reload();
 	};

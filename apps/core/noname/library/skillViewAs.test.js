@@ -1,25 +1,29 @@
+import { field } from "./testing/fixtures.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import test from "node:test";
-import ts from "typescript";
 
-const source = ts.createSourceFile("library.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
-let filter;
-function visit(node) {
-	if (ts.isMethodDeclaration(node) && node.name.getText(source) === "filterEnable") filter = node;
-	ts.forEachChild(node, visit);
-}
-visit(source);
-assert.ok(filter);
+import test from "node:test";
 
 function fixture(info) {
 	const calls = [];
 	const player = { getSkills: () => ["skill"], storage: {} };
-	const event = { type: "phase", name: "chooseToUse", filterCard(card, actualPlayer, actualEvent) { calls.push(["filter", card, actualPlayer, actualEvent]); return true; } };
-	const get = { info: () => info, autoViewAs(card, mode) { calls.push(["auto", card, mode]); return card; } };
+	const event = {
+		type: "phase",
+		name: "chooseToUse",
+		filterCard(card, actualPlayer, actualEvent) {
+			calls.push(["filter", card, actualPlayer, actualEvent]);
+			return true;
+		},
+	};
+	const get = {
+		info: () => info,
+		autoViewAs(card, mode) {
+			calls.push(["auto", card, mode]);
+			return card;
+		},
+	};
 	const game = { expandSkills: skills => skills };
 	const lib = { skill: { global: [] } };
-	const run = new Function("get", "game", "lib", `return ({${filter.getText(source)}}).filterEnable;`)(get, game, lib);
+	const run = field("filter", { get, game, lib }).filterEnable;
 	return { calls, player, event, run: () => run(event, player, "skill") };
 }
 
@@ -27,14 +31,23 @@ test("a string skill viewAs is interpreted as a name only at the skill consumer"
 	const info = { enable: "phaseUse", viewAs: "sha" };
 	const { run, calls, player, event } = fixture(info);
 	assert.equal(run(), true);
-	assert.deepEqual(calls, [["auto", { name: "sha" }, "unsure"], ["filter", { name: "sha" }, player, event]]);
+	assert.deepEqual(calls, [
+		["auto", { name: "sha" }, "unsure"],
+		["filter", { name: "sha" }, player, event],
+	]);
 	assert.equal(info.viewAs, "sha");
 });
 
 test("object viewAs retains identity and the original getter read count", () => {
 	const descriptor = { name: "shan", storage: { source: "skill" } };
 	let reads = 0;
-	const info = { enable: "phaseUse", get viewAs() { reads++; return descriptor; } };
+	const info = {
+		enable: "phaseUse",
+		get viewAs() {
+			reads++;
+			return descriptor;
+		},
+	};
 	const { run, calls } = fixture(info);
 	assert.equal(run(), true);
 	assert.equal(calls[0][1], descriptor);

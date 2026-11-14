@@ -1,9 +1,24 @@
 import { lib, _status, ui } from "noname";
+import {
+	hasAnyConfiguredBackend,
+	readBackendsFromRawConfig,
+	resolveBackendDisplayName,
+	resolvePlayerBackend,
+	type BackendsConfigFields,
+	type CLIBackendSettings,
+	type ExternalBackendKind,
+	type LLMBackendKind,
+	type ResolvedBackend,
+	type SeatBackendChoice,
+} from "./backends.js";
 import { llmLogger } from "./logger.js";
 import { end, reset, start, type PlayerButtonLogEntry } from "./player-button-state.js";
+import { normalizeLLMText } from "./config.js";
+import { initRoundHistoryHooks, resetRoundHistory } from "./round-history.js";
 
-export interface LLMConfig {
+export interface LLMConfig extends BackendsConfigFields {
 	enabled: boolean;
+	controlSelf: boolean;
 	url: string;
 	apikey: string;
 	model: string;
@@ -18,8 +33,10 @@ export interface LLMConfig {
 type LLMGameStatus = {
 	llmConfigAtGameStart?: Readonly<LLMConfig>;
 	llmEnabledAtGameStart?: boolean;
+	llmSelfControlledAtGameStart?: boolean;
 	llmGameId?: string;
 	llmMultiTurnUnsupported?: boolean;
+	llmMultiTurnUnsupportedByBackend?: Record<string, boolean>;
 };
 
 export function getLLMConfig(): Readonly<LLMConfig> {
@@ -27,18 +44,30 @@ export function getLLMConfig(): Readonly<LLMConfig> {
 }
 
 function readLLMConfig(): LLMConfig {
-	const multiTurn = !!lib.config.llm_multi_turn;
+	const enabled = !!lib.config.llm_enabled;
+	const extra: BackendsConfigFields =
+		typeof readBackendsFromRawConfig === "function"
+			? readBackendsFromRawConfig(lib.config, globalThis.document)
+			: {
+					defaultBackend: "openai",
+					openaiDisplayName: "",
+					agy: { displayName: "agy", command: "agy", model: "", thinkingEffort: "default", timeoutSec: 60, extraArgs: "" },
+					codex: { displayName: "codex", command: "codex", model: "", thinkingEffort: "default", timeoutSec: 60, extraArgs: "" },
+					seatBackends: {},
+				};
 	return {
-		enabled: !!lib.config.llm_enabled,
-		url: String(lib.config.llm_url || ""),
-		apikey: String(lib.config.llm_apikey || ""),
-		model: String(lib.config.llm_model || ""),
+		enabled,
+		controlSelf: enabled && !!lib.config.llm_control_self,
+		url: normalizeLLMText(lib.config.llm_url, globalThis.document),
+		apikey: normalizeLLMText(lib.config.llm_apikey, globalThis.document),
+		model: normalizeLLMText(lib.config.llm_model, globalThis.document),
 		thinkingEffort: (lib.config.llm_thinking_effort as LLMConfig["thinkingEffort"]) || "medium",
 		maxRetries: Number(lib.config.llm_max_retries) || 0,
 		timeoutSec: Number(lib.config.llm_timeout) || 30,
-		multiTurn,
-		maxTurns: multiTurn ? clampNumber(lib.config.llm_max_turns, 4, 1, 8) : 1,
+		multiTurn: enabled,
+		maxTurns: clampNumber(lib.config.llm_max_turns, 4, 1, 8),
 		decisionTimeoutSec: clampNumber(lib.config.llm_decision_timeout, 60, 10, 300),
+		...extra,
 	};
 }
 
@@ -52,13 +81,19 @@ export function llmEnabled(): boolean {
 	return getLLMConfig().enabled;
 }
 
+export function llmSelfControlled(): boolean {
+	const config = getLLMConfig();
+	return config.enabled && config.controlSelf;
+}
+
 export function llmConfigured(): boolean {
 	const c = getLLMConfig();
-	return !!(c.url && c.apikey && c.model);
+	return hasAnyConfiguredBackend(c);
 }
 
 export { tryLLMDecide } from "./decide.js";
 export { llmLogger } from "./logger.js";
+export { resolveBackendDisplayName, resolvePlayerBackend, type CLIBackendSettings, type ExternalBackendKind, type LLMBackendKind, type ResolvedBackend, type SeatBackendChoice };
 
 // ---------------------------------------------------------------------------
 // gameStart 钩子：开局快照 LLM 启用状态 + 生成 gameId
@@ -75,6 +110,7 @@ export function initLLMGameHooks(): void {
 	if (gameHooksInitialized) return;
 	gameHooksInitialized = true;
 
+	initRoundHistoryHooks();
 	if (typeof lib !== "undefined" && lib.announce?.subscribe) {
 		lib.announce.subscribe("gameStart", onGameStart);
 		lib.announce.subscribe("llm_log_start", onLLMLogStart);
@@ -82,15 +118,51 @@ export function initLLMGameHooks(): void {
 	}
 }
 
+function activateLLMSelfControl(): void {
+	if (!_status.auto && typeof ui?.click?.auto === "function") {
+		ui.click.auto("forced");
+	} else {
+		_status.auto = true;
+		ui?.auto?.classList?.add?.("glow");
+		ui?.arena?.classList?.add?.("auto");
+	}
+	ui?.auto?.classList?.add?.("forcehide");
+	ui?.wuxie?.classList?.add?.("forcehide");
+	ui?.shortcut?.autobutton?.classList?.add?.("forcehide");
+	ui?.auto?.hide?.();
+	ui?.wuxie?.hide?.();
+}
+
+function clearLLMSelfControlLock(): void {
+	ui?.auto?.classList?.remove?.("forcehide");
+	ui?.wuxie?.classList?.remove?.("forcehide");
+	ui?.shortcut?.autobutton?.classList?.remove?.("forcehide");
+}
+
 function onGameStart(): void {
 	const status = _status as LLMGameStatus;
 	reset();
+	resetRoundHistory();
 	delete status.llmConfigAtGameStart;
-	const snapshot = Object.freeze({ ...readLLMConfig() });
+	const raw = readLLMConfig();
+	const snapshot = Object.freeze({
+		...raw,
+		agy: Object.freeze({ ...raw.agy }),
+		codex: Object.freeze({ ...raw.codex }),
+		seatBackends: Object.freeze({ ...raw.seatBackends }),
+	});
 	status.llmConfigAtGameStart = snapshot;
 	status.llmGameId = `game_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 	status.llmEnabledAtGameStart = snapshot.enabled;
+	const selfControlled = snapshot.enabled && snapshot.controlSelf;
+	status.llmSelfControlledAtGameStart = selfControlled;
 	delete status.llmMultiTurnUnsupported;
+	delete status.llmMultiTurnUnsupportedByBackend;
+	if (selfControlled) {
+		activateLLMSelfControl();
+	} else {
+		clearLLMSelfControlLock();
+	}
 	ui.updateLLMLogButtons();
 }
 

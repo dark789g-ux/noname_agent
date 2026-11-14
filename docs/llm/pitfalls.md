@@ -22,7 +22,7 @@
 
 需改动 2 个文件：
 
-1. **library/index.js**：在 `llm` 配置分组（`index.js:5160-5231`）添加新配置项。
+1. **library/configuration/options/llm.ts**：在 `llm` 配置分组（`configuration/options/llm.ts`）添加新配置项。
 2. **llm/index.ts**：在 `LLMConfig` 接口（`index.ts:3-11`）添加新字段，在 `getLLMConfig()`（`index.ts:13-23`）添加映射。
 
 ### 换 LLM 厂商
@@ -41,9 +41,9 @@
 
 `chooseToUse` / `chooseToRespond` 不再向模型提供全局“当前可选目标”，而是提供动作级候选。直接实体牌与经技能转换同一实体牌是不同动作，材料牌、目标范围和 `pN` 子集不得合并。`pN` 在整次决策中稳定；事件允许死亡目标时才将死亡角色加入目标池。
 
-`selectionSpec` 缺失的技能是正常不支持，应从动作列表排除。已声明 headless 支持却遇到 UI-only `filterOk`、无法解析的范围、过滤器异常或同一步顺序依赖，属于 `translate/action-resolution` 错误，整次调用回退原生 AI，不能把异常静默当作“不可选”。步骤的集合/顺序语义只能通过 `selectionMode: "set" | "sequential"` 声明，禁止根据过滤函数的参数个数猜测；`sequential` 当前不支持。`complexSelect`、`complexTarget`、`filterAddedTarget`、`changeTarget` 等 legacy 目标标志当前必须无条件严格回退，即使存在普通 target step 也不能视为覆盖；只有未来新增无歧义的 headless 契约及 addedTarget/changeTarget 专用 materializer 后才能支持。动态动作必须能够在前一步完成后生成有限、精确的下一步；pending 后必须追加 assistant tool message、tool result 和新的 user stage 描述。自动选择由 `DecisionSession` 内部推进，不向模型额外暴露空 `select_targets` 轮。
+`selectionSpec: false` 显式禁止进入动作列表；显式声明 `selectionSpec` 仍走严格契约，遇到不合法声明、过滤器异常或范围冲突时直接抛错并整次退回原生 AI。`selectionSpec === undefined` 进入通用引擎路径：单个技能或卡牌的异常会隔离记录到 `skippedActions` 而不阻断其它合法动作；通过 `withVirtualSelection` 同步填充的 `ui.selected`、`_status.event` 与 `_backup` 必须在 `finally` 内恢复原引用，严禁异步跨越或修改真实玩家可见区。预算内重试点（`DecisionSelection` / `MoveDecisionSession`）只回滚未提交的会话状态并保留错误上下文；`revalidate()` 发现实体所有权/状态变更（TOCTOU）、网络/解析错误或配置缺失时不得重试。步骤的顺序语义在显式声明时以 `selectionMode` 为准，在通用路径处理 `complexSelect` / `complexTarget` / `changeTarget` / `singleCard + filterAddedTarget` 时通过动态步进逐轮按真实过滤函数推进，禁止缓存猜测。
 
-技能步骤只能由共享 planner 推导。不要用“存在前序选牌”作为动态目标的判断条件，也不要遗漏 `selectionSpec: true` 的 `viewAs` 隐式目标步骤。普通 `chooseToRespond` 的实体牌没有目标；若事件确实需要响应后选目标，必须以显式 headless 目标步骤声明，并在选牌成功后才初始化该 pending。目标范围必须包含 `event.selectTarget` 和 `selectTarget` mod；`raw.items` 中的 Card/Player 要按对象身份反查快照引用，禁止在局部步骤重新生成 `cN/pN`。每轮 inspection 还需与当前动作的材料/目标子集取交集，并只输出实时 `available`。
+技能步骤只能由共享 planner 推导。不要用“存在前序选牌”作为动态目标的判断条件，也不要遗漏 `selectionSpec: true` 的 `viewAs` 隐式目标步骤。普通 `chooseToRespond` 的实体牌没有目标；若事件确实需要响应后选目标，必须以显式 headless 目标步骤声明，并在选牌成功后才初始化该 pending。目标范围必须包含 `event.selectTarget` 和 `selectTarget` mod；`raw.items` 可以是数组或延后求值的函数，其中 Card/Player 要按对象身份反查快照引用，禁止在局部步骤重新生成 `cN/pN`。每轮 inspection 还需与当前动作的材料/目标子集取交集，并只输出实时 `available`。
 
 ### ⚠ 提示词快照、全知身份与私有信息边界
 
@@ -51,7 +51,7 @@
 
 system 中的场上信息仅来自 `game.players`，按座位号排序，未分配座位排末尾；它包含真实 `player.identity`，不检查 `identityShown`。此全知信息只供 LLM 决策使用，绝不能反向改变 UI、联机同步或真人玩家的信息可见性。
 
-user 中手牌披露继续遵循调用者视角：只保留本人手牌与 `getKnownCards(player)` 已知的他人手牌。不得因为身份全知或提示词增强而输出未知手牌。
+user 中手牌及扩展区披露继续遵循调用者视角：只保留本人手牌与 `getKnownCards(observer)` 已知的他人手牌；`x`/`s` 区卡牌必须以 `card.isKnownBy(observer)` 为边界，未知牌仅输出 `暗置 N 张`。玩家可见标记（`marks`）与公开技能状态（`zhuanhuanji`、`limited`、`juexingji`）同样排除 `hiddenSkills`、`globalSkills` 与内部子技能，不得因提示词增强而泄露未公开牌面或隐藏技能。
 
 当前有效技能应覆盖武将、临时、额外和装备技能，同时排除隐藏、内部辅助和全局规则技能；技能描述以及判定牌描述移除 HTML 和多余空白后必须完整保留，不得为了控制 token 截断。判定牌有 `viewAs` 时，描述以生效牌为准，并保留必要的原始牌名。
 
@@ -60,7 +60,7 @@ user 中手牌披露继续遵循调用者视角：只保留本人手牌与 `getK
 `llm_url` 是 **baseURL**（不含 `/chat/completions`），openai SDK 内部自动拼接。老存档中保存的完整 endpoint 会失效。
 
 - SDK 初始化：`new OpenAI({ baseURL: config.url, ... })`（`client.ts:26-32`）
-- 配置项定义：`library/index.js:5168-5175`
+- 配置项定义：`library/configuration/options/llm.ts`
 
 | 状态 | 值 | 说明 |
 |------|----|------|
@@ -107,8 +107,8 @@ if (e instanceof APIConnectionError) {         // 后父类
 
 浏览器直连 OpenAI 会被 CORS 拦截，需自建代理；Electron 模式可直接使用。此限制与旧版一致。
 
-- `library/index.js:5166`（`llm_enabled` intro）
-- `library/index.js:5172`（`llm_url` intro）
+- `library/configuration/options/llm.ts`（`llm_enabled` intro）
+- `library/configuration/options/llm.ts`（`llm_url` intro）
 
 ### ⚠ 降级链是设计契约
 

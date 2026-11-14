@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<base href="/" />
+		<meta name="viewport" content="user-scalable=no, viewport-fit=cover" />
+		<title>身份启动冒烟</title>
+		<link rel="icon" href="data:," />
+		<script type="module">
+			import { lib, _status } from "/noname.js";
+			const nativeFetch = window.fetch;
+			window.fetch = (input, init) => {
+				const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+				if (url.includes("/chat/completions")) throw new Error("模型请求已在启动冒烟页面屏蔽");
+				return nativeFetch(input, init);
+			};
+			// Keep this test page offline for models while asynchronous boot reads
+			// stored settings. Nothing is saved; navigation discards this interval.
+			setInterval(() => {
+				if (lib.config) lib.config.llm_enabled = false;
+				_status.llmEnabledAtGameStart = false;
+				delete _status.llmConfigAtGameStart;
+			}, 100);
+			await import("/noname/entry.ts");
+		</script>
+	</head>
+</html>

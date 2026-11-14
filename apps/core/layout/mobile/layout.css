@@ -197,6 +197,13 @@
 #arena:not(.chess) .player[data-position="0"]:not(.minskin) > .marks {
 	pointer-events: auto;
 }
+#arena:not(.chess) .player[data-position="0"] > .llm-log-btn {
+	left: 8px;
+	right: auto;
+	top: -22px;
+	max-width: 108px;
+	pointer-events: auto;
+}
 #arena:not(.chess) .player[data-position="0"]:not(.minskin) > .equips {
 	left: calc(100% - 120px);
 }
@@ -295,6 +302,12 @@
 }
 
 #arena:not(.chess) .player[data-position="0"].linked {
+	transform: none;
+}
+#arena:not(.chess) .player[data-position="0"].linked > .llm-log-btn {
+	left: 8px;
+	right: auto;
+	top: -22px;
 	transform: none;
 }
 #arena:not(.chess) .player[data-position="0"].linked .avatar,

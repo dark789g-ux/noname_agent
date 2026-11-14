@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "./testSource.js";
 
-const playerSource = ts.createSourceFile("player.js", readFileSync(new URL("../player.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const playerSource = playerTestSource();
 const gameSource = ts.createSourceFile("game.js", readFileSync(new URL("../../../game/index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 
 class Names extends Array {

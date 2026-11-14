@@ -1,5 +1,5 @@
 import { lib, game, get, _status } from "noname";
-import { derive as deriveLLMLogButtonState } from "@/llm/player-button-state.js";
+import { resolvePlayerButtonState } from "@/llm/player-button-state.js";
 import { Click } from "./click/index.js";
 import { Create } from "./create/index.js";
 
@@ -872,20 +872,12 @@ export class UI {
 		const button = player?.node?.llmLogBtn;
 		if (!button) return;
 		const playerName = player.getName();
-		const state = deriveLLMLogButtonState(
-			{
-				gameId: /** @type {{ llmGameId?: string }} */ (_status).llmGameId,
-				playerName,
-				playerSeatNum: player.getSeatNum(),
-			},
-			{
-				enabled: !!lib.config.llm_enabled,
-				isUnderControl: player.isUnderControl(),
-			}
-		);
+		const state = resolvePlayerButtonState(player, _status, lib.config);
+		const label = state.label || "AI";
+		button.textContent = label;
 		button.style.display = state.visible ? "" : "none";
 		button.classList.toggle("llm-log-btn-active", state.highlighted);
-		button.title = state.active ? `${playerName} 正在调用 LLM；点击查看日志` : `查看 ${playerName} 的 LLM 日志`;
+		button.title = state.active ? `${playerName}（${label}）正在思考；点击查看日志` : `查看 ${playerName}（${label}）的 AI 日志`;
 	}
 	}
 

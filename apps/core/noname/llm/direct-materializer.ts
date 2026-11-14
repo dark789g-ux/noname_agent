@@ -33,6 +33,10 @@ export function materializeDirectResult(options: DirectMaterializerOptions): any
 			return materializeDirectShape(kind, { cards });
 		case "chooseButton":
 			return materializeDirectShape(kind, { buttons });
+		case "choosePlayerCard":
+		case "gainPlayerCard":
+		case "discardPlayerCard":
+			return { ...materializeDirectShape("chooseButton", { buttons }), cards: buttons.map(button => button.link) };
 		case "chooseButtonTarget":
 			targets.forEach(target => assertTarget(target, buttons[0]?.link));
 			return materializeDirectShape(kind, { buttons, targets });

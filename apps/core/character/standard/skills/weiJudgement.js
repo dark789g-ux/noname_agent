@@ -1,3 +1,4 @@
+import { guicaiCostSpec } from "./selectionSpecs.js";
 import { lib, game, ui, get, ai, _status } from "noname";
 
 /** @satisfies {Pick<NonNullable<importCharacterConfig["skill"]>, "guicai" | "ganglie" | "ganglie_three" | "tuxi" | "luoyi" | "luoyi2" | "tiandu">} */
@@ -47,6 +48,7 @@ export const weiJudgementSkills = {
 						return -result - val;
 					},
 				})
+				.set("selectionSpec", guicaiCostSpec)
 				.set("judging", trigger.player.judging[0])
 				.setHiddenSkill(event.skill)
 				.forResult();

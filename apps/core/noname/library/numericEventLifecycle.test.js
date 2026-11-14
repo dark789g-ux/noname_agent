@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "./element/Player/testSource.js";
 import { zhanfaTestSource } from "./zhanfaEffects/testSource.js";
 
 const zhanfa = zhanfaTestSource();
@@ -79,7 +79,7 @@ test("indexed draw callbacks return the original count, including undefined", ()
 });
 
 test("damage filterStop rereads a changed count for comparison, history and zero cancellation", () => {
-	const source = ts.createSourceFile("player.js", readFileSync(new URL("./element/player.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+	const source = playerTestSource();
 	let damage;
 	function visit(node) {
 		if (ts.isMethodDeclaration(node) && node.name.getText(source) === "damage") damage = node;

@@ -1,3 +1,4 @@
+import { liuliCostSpec } from "./selectionSpecs.js";
 import { lib, game, ui, get, ai, _status } from "noname";
 
 /** @satisfies {Pick<NonNullable<importCharacterConfig["skill"]>, "jizhi" | "qicai" | "zhiheng" | "jiuyuan" | "qixi" | "keji" | "kurou" | "yingzi" | "fanjian" | "guose" | "liuli" | "qianxun" | "lianying">} */
@@ -32,6 +33,7 @@ export const wuTacticsSkills = {
 		},
 	},
 	zhiheng: {
+		selectionSpec: true,
 		audio: 2,
 		audioname: ["gz_jun_sunquan"],
 		audioname2: {
@@ -99,6 +101,7 @@ export const wuTacticsSkills = {
 		},
 	},
 	qixi: {
+		selectionSpec: true,
 		audio: 2,
 		audioname: ["re_ganning"],
 		audioname2: { re_heqi: "duanbing_heqi" },
@@ -142,6 +145,7 @@ export const wuTacticsSkills = {
 		},
 	},
 	kurou: {
+		selectionSpec: true,
 		audio: 2,
 		enable: "phaseUse",
 		prompt: "失去1点体力并摸两张牌",
@@ -186,6 +190,7 @@ export const wuTacticsSkills = {
 		},
 	},
 	fanjian: {
+		selectionSpec: true,
 		audio: 2,
 		enable: "phaseUse",
 		usable: 1,
@@ -254,6 +259,7 @@ export const wuTacticsSkills = {
 		},
 	},
 	guose: {
+		selectionSpec: true,
 		audio: 2,
 		filter(event, player) {
 			return player.hasCards("hes", { suit: "diamond" });
@@ -324,6 +330,7 @@ export const wuTacticsSkills = {
 					source: trigger.player,
 					card: trigger.card,
 				})
+				.set("selectionSpec", liuliCostSpec)
 				.setHiddenSkill(event.name.slice(0, -5))
 				.forResult();
 		},

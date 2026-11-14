@@ -1,16 +1,26 @@
 //@ts-nocheck
+import { showStorageFailure } from "../storage/transport.js";
 export default async function browserReady({ lib, game }) {
 	lib.path = (await import("path-browserify-esm")).default;
 
-	try {
-		await fetch(`/checkFile?fileName=noname.js`)
-			.then(response => response.json())
-			.then(result => {
-				if (!result?.success) throw new Error(result.errorMsg);
-			});
-	} catch (e) {
-		console.error("文件读写函数初始化失败:", e);
-		return;
+	while (true) {
+		try {
+			const controller = new AbortController();
+			const timeout = setTimeout(() => controller.abort(), 15000);
+			try {
+				await fetch(`/checkFile?fileName=noname.js`, { signal: controller.signal })
+					.then(response => response.json())
+					.then(result => {
+						if (!result?.success) throw new Error(result.errorMsg);
+					});
+			} finally {
+				clearTimeout(timeout);
+			}
+			break;
+		} catch (e) {
+			console.error("文件读写函数初始化失败:", e);
+			await showStorageFailure(e instanceof Error ? e : new Error(String(e)));
+		}
 	}
 
 	game.export = function (data, name) {
@@ -166,10 +176,7 @@ export default async function browserReady({ lib, game }) {
 					method: "post",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
-						data:
-							typeof data == "string"
-								? data
-								: Array.prototype.slice.call(new Uint8Array(data)),
+						data: typeof data == "string" ? data : Array.prototype.slice.call(new Uint8Array(data)),
 						path: filePath,
 					}),
 				})
@@ -218,11 +225,7 @@ export default async function browserReady({ lib, game }) {
 		game.createDir(pathArray.join("/"), callback, console.error);
 	};
 
-	game.createDir = function createDir(
-		directory,
-		successCallback = () => {},
-		errorCallback = () => {}
-	) {
+	game.createDir = function createDir(directory, successCallback = () => {}, errorCallback = () => {}) {
 		fetch(`/createDir?dir=${directory}`)
 			.then(response => response.json())
 			.then(result => {
@@ -234,11 +237,7 @@ export default async function browserReady({ lib, game }) {
 			})
 			.catch(errorCallback);
 	};
-	game.removeDir = function removeDir(
-		directory,
-		successCallback = () => {},
-		errorCallback = () => {}
-	) {
+	game.removeDir = function removeDir(directory, successCallback = () => {}, errorCallback = () => {}) {
 		fetch(`/removeDir?dir=${directory}`)
 			.then(response => response.json())
 			.then(result => {

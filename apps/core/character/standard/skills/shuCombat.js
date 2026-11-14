@@ -85,6 +85,7 @@ export const shuCombatSkills = {
 		},
 	},
 	wusheng: {
+		selectionSpec: true,
 		audio: 2,
 		audioname2: {
 			old_guanzhang: "wusheng_old_guanzhang",
@@ -303,6 +304,7 @@ export const shuCombatSkills = {
 				},
 			},
 			sha: {
+				selectionSpec: true,
 				audio: 2,
 				audioname: ["re_zhaoyun"],
 				audioname2: { old_zhaoyun: "longdan_sha_re_zhaoyun" },
@@ -341,6 +343,7 @@ export const shuCombatSkills = {
 				},
 			},
 			shan: {
+				selectionSpec: true,
 				audio: "longdan_sha",
 				audioname: ["re_zhaoyun"],
 				audioname2: { old_zhaoyun: "longdan_sha_re_zhaoyun" },

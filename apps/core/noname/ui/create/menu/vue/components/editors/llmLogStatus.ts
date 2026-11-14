@@ -28,3 +28,9 @@ export function getLLMLogStatusDetail(status: string, fallbackReason?: string): 
 	}
 	return fallbackReason;
 }
+
+/** 剥离单独展示的 reasoningContent，避免 tool_call JSON 块重复显示长思考文本。 */
+export function stripToolCallReasoning<T extends Record<string, any>>(toolCall: T): Omit<T, "reasoningContent"> {
+	const { reasoningContent: _reasoningContent, ...rest } = toolCall;
+	return rest;
+}

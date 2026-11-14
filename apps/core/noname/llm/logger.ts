@@ -33,7 +33,7 @@ function attemptKey(turnIndex: number, attemptIndex: number): string {
  * the background. Every persisted value is converted to plain JSON first.
  */
 export class LLMLogger {
-	private readonly store = new LLMLogStore({ getDatabase: () => lib?.db as IDBDatabase | undefined });
+	private readonly store = new LLMLogStore({ getDatabase: () => lib?.db });
 	private readonly persistence = new LLMLogPersistenceQueue({ reclaimQuota: () => this.store.reclaimQuota(), report: (operation, error) => this.announcePersistenceError(operation, error) });
 	private lease?: LLMLogLease;
 	private activeLogs = new Map<string, InternalActiveLog>();
@@ -177,9 +177,14 @@ export class LLMLogger {
 		if (entry) entry.request = plainLogValue({ messages, tools });
 	}
 
-	logResponse(id: string, toolCall: { name: string; reason: string; arguments: any }, translatedResult?: any): void {
+	logResponse(id: string, toolCall: { name: string; reason: string; reasoningContent?: string; arguments: any }, translatedResult?: any): void {
 		const entry = this.getActive(id);
 		if (entry) entry.response = plainLogValue({ toolCall, translatedResult });
+	}
+
+	logAutomaticResponse(id: string, translatedResult: any): void {
+		const entry = this.getActive(id);
+		if (entry) entry.response = plainLogValue({ execution: "automatic", translatedResult });
 	}
 
 	logError(id: string, stage: ErrorStage, message: string, httpStatus?: number): void {
@@ -297,7 +302,13 @@ export class LLMLogger {
 	private retryPendingFinals(): void {
 		if (this.pendingRetryScheduled || !shouldRetryPendingLogWrites(this.pendingActives.size, this.pendingFinals.size)) return;
 		this.pendingRetryScheduled = true;
-		this.enqueue("checkpoint_pending", () => retryPendingActiveCheckpoints(this.pendingActives, id => this.activeLogs.has(id), active => this.store.putActive(active)));
+		this.enqueue("checkpoint_pending", () =>
+			retryPendingActiveCheckpoints(
+				this.pendingActives,
+				id => this.activeLogs.has(id),
+				active => this.store.putActive(active)
+			)
+		);
 		this.enqueue("finalize_pending", async () => {
 			try {
 				for (const [id, pending] of Array.from(this.pendingFinals)) {

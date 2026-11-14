@@ -1,5 +1,9 @@
-import { game, get, lib } from "noname";
+import { _status, game, get, lib, ui } from "noname";
 import { getRegisteredSkill } from "../library/skillRegistry.js";
+import { matchesSelectionFilter } from "./selection-filter.js";
+import { resolveSelectionSpec } from "./selection-adapter.js";
+import { evaluateSelectionSpec } from "./generic-skill-plan.js";
+import { withVirtualSelection } from "./legacy-bridge.js";
 
 export interface CandidateCard {
 	card: any;
@@ -24,21 +28,44 @@ export interface CandidateTarget {
  */
 export function getCandidateCards(event: any, player: any, skills: string[] = []): CandidateCard[] {
 	const records = new Map<any, { cardAction: boolean; skills: string[] }>();
-	for (const card of player.getCards(event.position || "hs")) {
-		if (event.filterCard?.(card, player) === true) records.set(card, { cardAction: true, skills: [] });
-	}
+	const eventSpec = resolveSelectionSpec(event.selectionSpec, event, player);
+	const eventFilter = eventSpec?.steps?.find(step => step.type === "card")?.filter ?? event.filterCard;
+	withVirtualSelection({ ui, status: _status }, { event, player, cards: [], targets: [], buttons: [] }, () => {
+		for (const card of player.getCards(event.position || "hs")) {
+			if (eventFilter != null && matchesSelectionFilter(eventFilter, card, player, event, value => get.filter(value), event)) records.set(card, { cardAction: true, skills: [] });
+		}
+	});
 	for (const skill of skills) {
 		const info = getRegisteredSkill(lib.skill, skill);
-		for (const card of player.getCards(info?.position || event.position || "hs")) {
-			const filterCard = info?.filterCard;
-			if (filterCard != null && filterCard !== true && typeof filterCard !== "function") {
-				throw new TypeError("Headless card candidates require a callable filterCard or true");
+		if (!info) continue;
+		const evaluated = evaluateSelectionSpec(info.selectionSpec, event, player, skill, message => {
+			throw new Error(message);
+		});
+		if (evaluated.mode === "disabled") continue;
+		const step = evaluated.spec?.steps?.find((item: any) => item.type === "card");
+		const collectSkillCards = () => {
+			for (const card of player.getCards(info.position || event.position || "hs")) {
+				const filterCard = step?.filter ?? info.filterCard;
+				const eligible = filterCard != null && matchesSelectionFilter(filterCard, card, player, info, value => get.filter(value), event);
+				if (!eligible) continue;
+				const record = records.get(card) || { cardAction: false, skills: [] };
+				record.skills.push(skill);
+				records.set(card, record);
 			}
-			const eligible = filterCard === true || filterCard?.call(info, card, player) === true;
-			if (!eligible) continue;
-			const record = records.get(card) || { cardAction: false, skills: [] };
-			record.skills.push(skill);
-			records.set(card, record);
+		};
+		const runWithBridge = () =>
+			withVirtualSelection(
+				{ ui, status: _status },
+				{ event, player, skill, cards: [], targets: [], buttons: [], synthesizeBackup: true },
+				collectSkillCards
+			);
+		if (evaluated.mode === "explicit") runWithBridge();
+		else {
+			try {
+				runWithBridge();
+			} catch {
+				// 通用推理技能的 filterCard 异常时单条隔离，避免拖垮其他候选。
+			}
 		}
 	}
 	return Array.from(records, ([card, scopes], index) => ({ card, ref: `c${index}`, id: cardToId(card), name: get.translation(card), ...scopes }));
@@ -54,9 +81,26 @@ export function getCandidateSkills(event: any, player: any): string[] {
 	return skills.filter((skill: string) => !excluded.some(item => typeof item === "string" && item === skill) && isSkillEligible(event, player, skill));
 }
 
-/** 与 UI game.check 使用同一个引擎权威入口，并限制为已声明 headless 契约的技能。 */
+/** 与 UI game.check 使用同一个引擎权威入口；未声明 selectionSpec 时进入通用推理，selectionSpec: false 显式排除。 */
 export function isSkillEligible(event: any, player: any, skill: string): boolean {
-	return !!getRegisteredSkill(lib.skill, skill)?.selectionSpec && lib.filter.filterEnable(event, player, skill);
+	const info = getRegisteredSkill(lib.skill, skill);
+	if (!info) return false;
+	const evaluated = evaluateSelectionSpec(info.selectionSpec, event, player, skill, message => {
+		throw new Error(message);
+	});
+	if (evaluated.mode === "disabled") return false;
+	const check = () =>
+		withVirtualSelection(
+			{ ui, status: _status },
+			{ event, player, skill, cards: [], targets: [], buttons: [], synthesizeBackup: true },
+			() => !!lib.filter.filterEnable(event, player, skill)
+		);
+	if (evaluated.mode === "explicit") return check();
+	try {
+		return check();
+	} catch {
+		return false;
+	}
 }
 
 /**

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource, playerTestText } from "./testSource.js";
 
-const sourceText = readFileSync(new URL("../player.js", import.meta.url), "utf8");
-const sourceFile = ts.createSourceFile("player.js", sourceText, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+const sourceText = playerTestText();
+const sourceFile = playerTestSource();
 
 function getFunctionText(name) {
 	const declaration = sourceFile.statements.find(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === name);

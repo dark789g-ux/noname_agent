@@ -123,11 +123,19 @@ test("普通 respond 实体牌无目标；显式 headless target 进入 pending 
 	assert.deepEqual(completed.result.targets, [f.players[1]]);
 });
 
-test("借刀杀人等价复杂目标始终回退，普通 set target step 不能冒充专用物化", () => {
-	const jiedao = { name: "jiedao", info: { selectTarget: 1, complexSelect: true, complexTarget: true, filterAddedTarget: () => true, changeTarget: true } };
+test("借刀杀人通用两阶段选目标可执行；显式 set target step 仍禁止冒充", () => {
+	const jiedao = { name: "jiedao", info: { selectTarget: 1, singleCard: true, complexSelect: true, complexTarget: true, filterAddedTarget: (_card: any, _player: any, target: any, preTarget: any) => target !== preTarget, changeTarget: true } };
 	const f = fixture({ cards: [jiedao] });
-	const legacy = { name: "chooseToUse", player: f.owner, filterCard: () => true, filterTarget: () => true };
-	assert.throws(() => buildDecisionCandidateSnapshot(legacy, f.owner, f.runtime), (error: any) => error.stage === "translate/action-resolution" && /complexSelect, complexTarget, filterAddedTarget, changeTarget/.test(error.message));
+	const legacy = { name: "chooseToUse", player: f.owner, filterCard: () => true, filterTarget: (_card: any, owner: any, target: any) => target === f.players[1] };
+	const snapshot = buildDecisionCandidateSnapshot(legacy, f.owner, f.runtime);
+	assert.equal(snapshot.actions[0].target.mode, "dynamic");
+	const session = new DecisionSession(legacy, snapshot, f.runtime);
+	const stage1 = session.accept(call("use_card", { card_ref: "c0" }));
+	assert.deepEqual(stage1.pending?.items.map(item => item.ref), ["p1"]);
+	const stage2 = session.accept(call("select_targets", { step_id: stage1.pending!.id, target_refs: ["p1"] }));
+	assert.deepEqual(stage2.pending?.items.map(item => item.ref), ["p0", "p2"]);
+	const completed = session.accept(call("select_targets", { step_id: stage2.pending!.id, target_refs: ["p2"] }));
+	assert.deepEqual(completed.result.targets, [f.players[1], f.players[2]]);
 	const explicit = { ...legacy, selectionSpec: { steps: [{ type: "target", select: 1, selectionMode: "set" }] } };
 	assert.throws(() => buildDecisionCandidateSnapshot(explicit, f.owner, f.runtime), (error: any) => error.stage === "translate/action-resolution" && /legacy target flags/.test(error.message));
 });
@@ -136,7 +144,9 @@ test("DecisionSession 动态选牌后仅投影实时目标，并拒绝跨动作�
 	const red = { name: "red", info: { notarget: true } };
 	const skills = { rehuoji: { selectionSpec: true, filterCard: () => true, viewAs: { name: "huogong" } } };
 	const f = fixture({ cards: [red], skills });
-	const event = { name: "chooseToUse", player: f.owner, filterCard: () => false, filterTarget: (_card: any, _owner: any, target: any) => target === f.players[1] };
+	// 虚拟火攻也应提供真实的目标规则，且事件允许使用生成后的火攻。
+	f.runtime.getCardInfo = card => card.name === "huogong" ? { selectTarget: 1 } : card.info || {};
+	const event = { name: "chooseToUse", player: f.owner, filterCard: (card: any) => card.name === "huogong", filterTarget: (_card: any, _owner: any, target: any) => target === f.players[1] };
 	const snapshot = buildDecisionCandidateSnapshot(event, f.owner, f.runtime);
 	const session = new DecisionSession(event, snapshot, f.runtime);
 	const started = session.accept(call("use_skill", { skill_name: "rehuoji", card_refs: ["c0"] }));

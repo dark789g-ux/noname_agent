@@ -214,6 +214,8 @@ export interface EventCreationFields<N extends GameEventNumberValue = GameEventN
  * the class's legacy dynamic-property index as an escape hatch.
  */
 export interface GameEventSetFields<N extends GameEventNumberValue = GameEventNumberValue> extends EventCreationFields<N> {
+	/** Reviewed headless contract supplied by a skill or a choice-event producer. */
+	selectionSpec: SelectionSpec | SelectionSpecFactory | true | undefined;
 	custom: GameEventCustomCallbacks;
 	hsskill: string;
 	addCount: boolean | undefined;

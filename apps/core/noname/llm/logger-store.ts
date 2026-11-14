@@ -1,4 +1,5 @@
-/** IndexedDB persistence for completed and in-flight LLM decision logs. */
+/** Transactional persistence for completed and in-flight LLM decision logs. */
+import { request, transaction, type PersistenceDatabase, type PersistenceStore } from "../storage/database.js";
 
 export const LLM_LOG_STORE = "llm_logs";
 export const LLM_LOG_ACTIVE_STORE = "llm_log_active";
@@ -7,9 +8,9 @@ const LEGACY_STORE = "data";
 const LEGACY_KEY = "llm_logs";
 const MIGRATION_KEY = "llm_logs_external_v1_migrated";
 const MAX_LOG_ENTRIES = 500;
-const logDatabaseResolvers = new WeakMap<IDBDatabase, () => Promise<IDBDatabase>>();
+const logDatabaseResolvers = new WeakMap<PersistenceDatabase, () => Promise<PersistenceDatabase>>();
 
-export function registerLLMLogDatabase(mainDatabase: IDBDatabase, resolveLogDatabase: () => Promise<IDBDatabase>): void {
+export function registerLLMLogDatabase(mainDatabase: PersistenceDatabase, resolveLogDatabase: () => Promise<PersistenceDatabase>): void {
 	logDatabaseResolvers.set(mainDatabase, resolveLogDatabase);
 }
 
@@ -44,7 +45,7 @@ export interface LLMLogInstanceLease {
 export type ActiveCheckpointSnapshot = Pick<ActiveLogRecord, "id" | "ownerId" | "revision" | "updatedAt">;
 
 export interface LLMLogStoreOptions {
-	getDatabase: () => IDBDatabase | undefined;
+	getDatabase: () => PersistenceDatabase | undefined;
 	clock?: () => number;
 }
 
@@ -53,42 +54,6 @@ export interface LegacyMigrationSourceSnapshot {
 	formerCompleted: unknown[];
 	formerActive: unknown[];
 	formerLeases: unknown[];
-}
-
-function request<T>(idbRequest: IDBRequest<T>): Promise<T> {
-	return new Promise((resolve, reject) => {
-		idbRequest.onsuccess = () => resolve(idbRequest.result);
-		idbRequest.onerror = () => reject(idbRequest.error || new Error("IndexedDB request failed"));
-	});
-}
-
-function transaction<T>(database: IDBDatabase, stores: string[], mode: IDBTransactionMode, operation: (transaction: IDBTransaction) => Promise<T>): Promise<T> {
-	return new Promise((resolve, reject) => {
-		let result: T;
-		let operationError: unknown;
-		let idbTransaction: IDBTransaction;
-		try {
-			idbTransaction = database.transaction(stores, mode);
-		} catch (error) {
-			reject(error);
-			return;
-		}
-		idbTransaction.oncomplete = () => (operationError ? reject(operationError) : resolve(result));
-		idbTransaction.onerror = () => reject(idbTransaction.error || new Error("IndexedDB transaction failed"));
-		idbTransaction.onabort = () => reject(operationError || idbTransaction.error || new Error("IndexedDB transaction aborted"));
-		operation(idbTransaction)
-			.then(value => {
-				result = value;
-			})
-			.catch(error => {
-				operationError = error;
-				try {
-					idbTransaction.abort();
-				} catch (_error) {
-					// The transaction may already have completed after a request failure.
-				}
-			});
-	});
 }
 
 function isLegacyEntry(value: unknown): value is LLMLogEntryRecord {
@@ -163,7 +128,7 @@ export function canFinalizeActive(expected: ActiveCheckpointSnapshot, current: A
 }
 
 export class LLMLogStore {
-	private readonly getDatabase: () => IDBDatabase | undefined;
+	private readonly getDatabase: () => PersistenceDatabase | undefined;
 	private readonly clock: () => number;
 
 	constructor(options: LLMLogStoreOptions) {
@@ -171,13 +136,13 @@ export class LLMLogStore {
 		this.clock = options.clock || Date.now;
 	}
 
-	private mainDatabase(): IDBDatabase {
+	private mainDatabase(): PersistenceDatabase {
 		const mainDatabase = this.getDatabase();
 		if (!mainDatabase) throw new Error("Main persistence database is unavailable");
 		return mainDatabase;
 	}
 
-	private async database(): Promise<IDBDatabase> {
+	private async database(): Promise<PersistenceDatabase> {
 		const mainDatabase = this.mainDatabase();
 		const resolver = logDatabaseResolvers.get(mainDatabase);
 		if (!resolver) throw new Error("LLM log persistence database is unavailable");
@@ -312,28 +277,12 @@ export class LLMLogStore {
 		});
 	}
 
-	private async pruneCompleted(logStore: IDBObjectStore, keep = MAX_LOG_ENTRIES): Promise<number> {
-		const count = await request(logStore.count());
-		let remaining = Math.max(0, count - keep);
-		const toRemove = remaining;
-		if (!remaining) return 0;
-		const index = logStore.index("timestamp");
-		await new Promise<void>((resolve, reject) => {
-			const cursor = index.openCursor();
-			cursor.onerror = () => reject(cursor.error || new Error("Unable to prune LLM logs"));
-			cursor.onsuccess = () => {
-				const current = cursor.result;
-				if (!current || !remaining) {
-					resolve();
-					return;
-				}
-				remaining--;
-				const deletion = current.delete();
-				deletion.onerror = () => reject(deletion.error || new Error("Unable to delete old LLM log"));
-				deletion.onsuccess = () => current.continue();
-			};
-		});
-		return toRemove;
+	private async pruneCompleted(logStore: PersistenceStore, keep = MAX_LOG_ENTRIES): Promise<number> {
+		if (await logStore.count() <= keep) return 0;
+		const entries = (await logStore.getAll()).sort((a, b) => a.timestamp - b.timestamp);
+		const expired = entries.slice(0, Math.max(0, entries.length - keep));
+		for (const entry of expired) await logStore.delete(entry.id);
+		return expired.length;
 	}
 
 	async listEntries<T extends LLMLogEntryRecord = LLMLogEntryRecord>(): Promise<T[]> {
@@ -393,25 +342,11 @@ export class LLMLogStore {
 	}
 
 	async clearExpiredLeases(now = this.clock()): Promise<number> {
-		return transaction(await this.database(), [LLM_LOG_INSTANCE_STORE], "readwrite", async idbTransaction => {
-			const index = idbTransaction.objectStore(LLM_LOG_INSTANCE_STORE).index("expiresAt");
-			let removed = 0;
-			await new Promise<void>((resolve, reject) => {
-				const cursor = index.openCursor();
-				cursor.onerror = () => reject(cursor.error || new Error("Unable to clear expired LLM log leases"));
-				cursor.onsuccess = () => {
-					const current = cursor.result;
-					if (!current || Number(current.key) > now) {
-						resolve();
-						return;
-					}
-					removed++;
-					const deletion = current.delete();
-					deletion.onerror = () => reject(deletion.error || new Error("Unable to delete expired LLM log lease"));
-					deletion.onsuccess = () => current.continue();
-				};
-			});
-			return removed;
+		return transaction(await this.database(), [LLM_LOG_INSTANCE_STORE], "readwrite", async operation => {
+			const store = operation.objectStore(LLM_LOG_INSTANCE_STORE);
+			const expired = (await store.getAll()).filter(lease => lease.expiresAt <= now);
+			for (const lease of expired) await store.delete(lease.instanceId);
+			return expired.length;
 		});
 	}
 }

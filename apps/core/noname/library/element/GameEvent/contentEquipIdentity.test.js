@@ -1,9 +1,12 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
-const source = ts.createSourceFile("content.ts", readFileSync(new URL("../content.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const realContentSource = await contentTestSource();
+
+const source = realContentSource;
 let equip;
 function visit(node) {
 	if (ts.isMethodDeclaration(node) && node.name.getText(source) === "equip") equip = node;

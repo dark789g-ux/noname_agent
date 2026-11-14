@@ -1,44 +1,39 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import ts from "typescript";
+import { createModuleRuntime } from "./testing/module-runtime.mjs";
 
-const source = ts.createSourceFile("candidates.ts", readFileSync(new URL("./candidates.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-const declaration = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "getCandidateCards");
-assert.ok(declaration);
-const code = ts.transpileModule(declaration.getText(source).replace(/^export /, ""), { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText;
-
-function fixture(filterCard) {
+async function fixture(filterCard) {
 	const card = { name: "sha", cardid: "card" };
-	const info = { filterCard };
+	const info = { filterCard, selectionSpec: true };
 	const player = { getCards: () => [card] };
-	const candidates = new Function("lib", "get", "getRegisteredSkill", "cardToId", `${code}; return getCandidateCards;`)(
-		{ skill: { example: info } },
-		{ translation: value => value.name },
-		(registry, name) => registry[name],
-		value => value.cardid
-	);
-	return { card, info, player, run: () => candidates({ filterCard: () => false }, player, ["example"]) };
+	const runtime = await createModuleRuntime({ lib: { skill: { example: info } }, get: { translation: value => value.name, filter: filter => card => Object.entries(filter).every(([key, value]) => card[key] === value) } });
+	const { getCandidateCards } = await runtime.import("noname/llm/candidates.ts");
+	return { card, info, player, run: () => getCandidateCards({ filterCard: () => false }, player, ["example"]) };
 }
 
-test("candidate filters preserve receiver, card identity and exact true result", () => {
-	const f = fixture(function (card, player) {
-		assert.equal(this, f.info);
-		assert.equal(card, f.card);
-		assert.equal(player, f.player);
-		return true;
-	});
+test("loaded candidate filters preserve receiver, identity and exact true", async () => {
+	const f = await fixture(
+		/** @this {any} */ function (card, player) {
+			assert.equal(this, f.info);
+			assert.equal(card, f.card);
+			assert.equal(player, f.player);
+			return true;
+		}
+	);
 	const result = f.run();
 	assert.equal(result.length, 1);
 	assert.equal(result[0].card, f.card);
-	assert.deepEqual(result[0].skills, ["example"]);
-	assert.equal(fixture(true).run().length, 1);
-	assert.equal(fixture(() => 1).run().length, 0);
-	assert.equal(fixture(undefined).run().length, 0);
-	assert.equal(fixture(null).run().length, 0);
+	assert.deepEqual(Array.from(result[0].skills), ["example"]);
+	assert.equal((await fixture(true)).run().length, 1);
+	assert.equal((await fixture(() => 1)).run().length, 0);
+	assert.equal((await fixture(undefined)).run().length, 0);
+	assert.equal((await fixture(null)).run().length, 0);
 });
 
-test("unsupported non-callable filters retain the existing failure instead of silently filtering", () => {
-	assert.throws(() => fixture(false).run(), TypeError);
-	assert.throws(() => fixture({ name: "sha" }).run(), TypeError);
+test("reviewed boolean and engine-normalized object filters are supported", async () => {
+	assert.equal((await fixture(false)).run().length, 0);
+	assert.equal((await fixture({ name: "sha" })).run().length, 1);
+	assert.equal((await fixture({ name: "shan" })).run().length, 0);
+	const f = await fixture(42);
+	assert.throws(f.run, /Selection filter must/);
 });

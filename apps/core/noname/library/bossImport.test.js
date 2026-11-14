@@ -1,24 +1,12 @@
+import { importBossCharacters } from "./configuration/importBoss.js";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import test from "node:test";
-import ts from "typescript";
 
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-let callback;
-function visit(node) {
-	if (ts.isCallExpression(node) && node.expression.getText(source) === "game.loadModeAsync" && ts.isStringLiteral(node.arguments[0]) && node.arguments[0].text === "boss" && node.arguments[1]?.getText(source).includes("mode_boss")) {
-		assert.equal(callback, undefined, "Boss import callback must be unique");
-		callback = node.arguments[1];
-	}
-	ts.forEachChild(node, visit);
-}
-visit(source);
-assert.ok(callback);
+import test from "node:test";
 
 function setup() {
 	const storage = { boss: {}, versus: {}, translate: {} };
 	let continued = 0;
-	const run = new Function("storage", "loadversus", `return ${callback.getText(source)}`)(storage, () => continued++);
+	const run = mode => importBossCharacters(mode, storage, () => continued++);
 	return { storage, run, continued: () => continued };
 }
 

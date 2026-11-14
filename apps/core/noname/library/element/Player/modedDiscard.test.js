@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
+import ts from "typescript";
+import { playerTestSource } from "./testSource.js";
 
 function loadModedDiscard() {
-	const source = readFileSync(new URL("../player.js", import.meta.url), "utf8");
-	const start = source.indexOf("\tmodedDiscard(params) {");
-	const end = source.indexOf("\n\t/**", start);
-	assert.notEqual(start, -1, "modedDiscard source should exist");
-	assert.notEqual(end, -1, "modedDiscard should end before its next documentation block");
-	const method = source.slice(start, end).replace("\tmodedDiscard(params) {", "function modedDiscard(params) {");
-	return Function("game", "get", "lib", "_status", `return ${method}`);
+	const source = playerTestSource();
+	const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Player");
+	const method = declaration?.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === "modedDiscard");
+	assert.ok(method, "modedDiscard source should exist");
+	return Function("game", "get", "lib", "_status", `return ({ ${method.getText(source)} }).modedDiscard;`);
 }
 
 test("modedDiscard keeps both Mod callback receivers, arities, order, and undefined result", () => {

@@ -45,6 +45,8 @@
 
 ## IndexedDB 存储细节
 
+本地浏览器现通过本地服务将以下逻辑表保存在项目的 `data/noname.sqlite` 中，首次使用时只读迁移原 IndexedDB，后续以 SQLite 为准。Electron、Cordova 等原生客户端沿用下述 IndexedDB 布局。完整说明见 [SQLite 存储](../sqlite-storage.md)。
+
 ```text
 主配置库: mainDbName（不为日志升级版本）
 独立日志库: `${mainDbName}_llm_logs`
@@ -76,7 +78,7 @@
 
 每个标签页维护 30 秒心跳、90 秒有效期的实例租约，并用带配置前缀的 `BroadcastChannel` 确认 owner 是否存活。启动时及每分钟扫描活动检查点；只有 owner 在 300ms 内不响应、租约已过期且决策 deadline 额外过期 60 秒后，才把记录原子地转为 `interrupted`。`BroadcastChannel` 不可用时退化为租约和 deadline 判定。中断日志保留已完成轮次，并显示“页面关闭、崩溃或页面实例失活”的说明；它不表示已回退本地 AI。
 
-日志只保存在本机 IndexedDB，不上传服务器、不跨设备同步。进入持久化队列前会清洗非 JSON 对象和鉴权信息；流式内容不会写入数据库。
+日志保存在本机：本地浏览器使用 SQLite，原生客户端使用 IndexedDB，不上传外部服务器、不跨设备同步。SQLite 模式的存储故障会显示错误并等待用户重试。进入持久化队列前会清洗非 JSON 对象和鉴权信息；流式内容不会写入数据库。
 
 ## 日志内容展示
 

@@ -7,40 +7,16 @@
 		<div class="config switcher pointerspan import-trigger" @click="toggleImportPanel">
 			<span class="underlinenode slim">导入录像...</span>
 		</div>
-		<div
-			v-if="showImportPanel"
-			class="config import-panel"
-		>
+		<div v-if="showImportPanel" class="config import-panel">
 			<input ref="fileInputRef" type="file" accept="*/*" />
 			<button @click="onImportClick">确定</button>
 		</div>
 
 		<!-- 浮动按钮：播/存/删（选中录像后显示） -->
-		<div
-			v-if="selectedVideo"
-			class="video-float-buttons"
-		>
-			<div
-				class="menubutton round highlight"
-				style="left: 215px; transition: opacity 0.3s"
-				@click="playVideo"
-			>
-				播
-			</div>
-			<div
-				class="menubutton round highlight"
-				style="left: 275px; transition: opacity 0.3s"
-				@click="saveVideo"
-			>
-				存
-			</div>
-			<div
-				class="menubutton round highlight"
-				style="left: 335px; transition: opacity 0.3s"
-				@click="deleteVideo"
-			>
-				删
-			</div>
+		<div v-if="selectedVideo" class="video-float-buttons">
+			<div class="menubutton round highlight" style="left: 215px; transition: opacity 0.3s" @click="playVideo">播</div>
+			<div class="menubutton round highlight" style="left: 275px; transition: opacity 0.3s" @click="saveVideo">存</div>
+			<div class="menubutton round highlight" style="left: 335px; transition: opacity 0.3s" @click="deleteVideo">删</div>
 		</div>
 	</div>
 </template>
@@ -49,6 +25,7 @@
 import { ref, onMounted } from "vue";
 import { ui, game, lib, _status, get } from "noname";
 import { menuBridge } from "../../utils/menuBridge";
+import { persistVideo } from "@/storage/videos.js";
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -96,17 +73,7 @@ function createVideoNode(video: VideoData, before?: boolean) {
 
 	// 日期字符串
 	const date = new Date(video.time);
-	const str =
-		date.getFullYear() +
-		"." +
-		(date.getMonth() + 1) +
-		"." +
-		date.getDate() +
-		" " +
-		date.getHours() +
-		":" +
-		(date.getMinutes() < 10 ? "0" : "") +
-		date.getMinutes();
+	const str = date.getFullYear() + "." + (date.getMonth() + 1) + "." + date.getDate() + " " + date.getHours() + ":" + (date.getMinutes() < 10 ? "0" : "") + date.getMinutes();
 
 	ui.create.div(".caption", video.name[0], node);
 	ui.create.div(".text", str + "<br>" + video.name[1], node);
@@ -121,15 +88,12 @@ function createVideoNode(video: VideoData, before?: boolean) {
 	}
 
 	// 星标
-	ui.create.div(".video_star", "★", node, function () {
-		this.parentNode.classList.toggle("starred");
-		const store = lib.db.transaction(["video"], "readwrite").objectStore("video");
-		if (this.parentNode.classList.contains("starred")) {
-			(this.parentNode as any).link.starred = true;
-		} else {
-			(this.parentNode as any).link.starred = false;
-		}
-		store.put((this.parentNode as any).link);
+	ui.create.div(".video_star", "★", node, async function () {
+		const parent = this.parentNode as HTMLElement & { link: VideoData };
+		const starred = !parent.classList.contains("starred");
+		await persistVideo(lib.db, { ...parent.link, starred });
+		parent.link.starred = starred;
+		parent.classList.toggle("starred", starred);
 	});
 
 	if (video.starred) {
@@ -162,22 +126,22 @@ function playVideo() {
 	game.playVideo(selectedVideo.value.time, selectedVideo.value.mode);
 }
 
-function deleteVideo() {
+async function deleteVideo() {
 	if (!selectedVideo.value || !selectedVideoEl.value) return;
-	lib.videos.remove(selectedVideo.value);
-	const store = lib.db.transaction(["video"], "readwrite").objectStore("video");
-	store.delete(selectedVideo.value.time);
-	selectedVideoEl.value.remove();
-	selectedVideo.value = null;
-	selectedVideoEl.value = null;
+	const video = selectedVideo.value;
+	const element = selectedVideoEl.value;
+	await game.deleteDB("video", video.time);
+	lib.videos.remove(video);
+	element.remove();
+	if (selectedVideo.value === video) {
+		selectedVideo.value = null;
+		selectedVideoEl.value = null;
+	}
 }
 
 function saveVideo() {
 	if (!selectedVideo.value) return;
-	game.export(
-		lib.init.encode(JSON.stringify(selectedVideo.value)),
-		"无名杀 - 录像 - " + selectedVideo.value.name[0] + " - " + selectedVideo.value.name[1],
-	);
+	game.export(lib.init.encode(JSON.stringify(selectedVideo.value)), "无名杀 - 录像 - " + selectedVideo.value.name[0] + " - " + selectedVideo.value.name[1]);
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +158,7 @@ function onImportClick() {
 	if (!fileToLoad) return;
 
 	const fileReader = new FileReader();
-	fileReader.onload = function (fileLoadedEvent) {
+	fileReader.onload = async function (fileLoadedEvent) {
 		const data = fileLoadedEvent.target?.result;
 		if (!data) return;
 
@@ -207,91 +171,46 @@ function onImportClick() {
 			return;
 		}
 
-		const store = lib.db.transaction(["video"], "readwrite").objectStore("video");
-		// 去重：移除已有的同名录像
-		const videos = lib.videos.slice(0);
-		for (let i = 0; i < videos.length; i++) {
-			if (videos[i].starred) {
-				videos.splice(i--, 1);
+		if (lib.videos.some(video => video.time === parsed.time)) {
+			alert("录像已存在");
+			return;
+		}
+		const videos = lib.videos.filter(video => !video.starred);
+		const removed = [];
+		for (let count = 0; count < 5 && videos.length && videos.length >= parseInt(lib.config.video); count++) removed.push(videos.pop()!);
+		await persistVideo(
+			lib.db,
+			parsed,
+			removed.map(video => video.time)
+		);
+		for (const video of removed) {
+			lib.videos.remove(video);
+			for (const node of Array.from(videoListRef.value?.children || [])) {
+				if ((node as any).link === video) node.remove();
 			}
 		}
-
-		// 删除超量（最多 5 个）
-		for (let deletei = 0; deletei < 5; deletei++) {
-			if (videos.length >= parseInt(lib.config.video) && videos.length) {
-				const toremove = videos.pop();
-				lib.videos.remove(toremove);
-				store.delete(toremove.time);
-				if (videoListRef.value) {
-					for (let i = 0; i < videoListRef.value.childNodes.length; i++) {
-						if ((videoListRef.value.childNodes[i] as any).link == toremove) {
-							videoListRef.value.childNodes[i].remove();
-							break;
-						}
-					}
-				}
-			} else {
-				break;
-			}
-		}
-
-		// 时间去重检查
-		for (let i = 0; i < lib.videos.length; i++) {
-			if (lib.videos[i].time == parsed.time) {
-				alert("录像已存在");
-				return;
-			}
-		}
-
 		lib.videos.unshift(parsed);
-		store.put(parsed);
 		createVideoNode(parsed, true);
 	};
 	fileReader.readAsText(fileToLoad, "UTF-8");
 }
 
 // ---------------------------------------------------------------------------
-// 初始化：加载 IndexedDB 录像
+// 初始化：加载持久化录像
 // 对应旧版 node._initLink（817-995）
 // ---------------------------------------------------------------------------
-onMounted(() => {
-	lib.videos = [];
+onMounted(async () => {
 	if (!lib.db) return;
-
-	const store = lib.db.transaction(["video"], "readwrite").objectStore("video");
-	store.openCursor().onsuccess = function (e: any) {
-		const cursor = e.target.result;
-		if (cursor) {
-			lib.videos.push(cursor.value);
-			cursor.continue();
-		} else {
-			// 排序（旧版 826-828）
-			lib.videos.sort(function (a: any, b: any) {
-				return parseInt(b.time) - parseInt(a.time);
-			});
-
-			// 渲染录像列表
-			for (let i = 0; i < lib.videos.length; i++) {
-				createVideoNode(lib.videos[i]);
-			}
-
-			// 覆盖 ui.create.videoNode 为 DOM 创建版本
-			// 对应旧版 889：initLink 后 videoNode 从简单 push 变为 createNode
-			ui.create.videoNode = function (video: VideoData, before?: boolean) {
-				lib.videos.remove(video);
-				if (_status.over) return;
-				lib.videos[before === true ? "unshift" : "push"](video);
-				createVideoNode(video, before);
-			};
-
-			// 设置 ui.updateVideoMenu
-			// 对应旧版 978-989：录像结束后切换到"其它"tab 的录像左栏项
-			// （旧版同时显示播/存/删按钮；Vue 版浮动按钮由 selectedVideo 驱动，选中录像后显示）
-			ui.updateVideoMenu = function () {
-				menuBridge.setActiveLeftItem?.("其它", "video");
-			};
-		}
+	const videos = await game.getDB("video");
+	lib.videos = Object.values(videos || {}).sort((a: any, b: any) => Number(b.time) - Number(a.time));
+	for (const video of lib.videos) createVideoNode(video);
+	ui.create.videoNode = function (video: VideoData, before?: boolean) {
+		lib.videos.remove(video);
+		if (_status.over) return;
+		lib.videos[before === true ? "unshift" : "push"](video);
+		createVideoNode(video, before);
 	};
+	ui.updateVideoMenu = () => menuBridge.setActiveLeftItem?.("其它", "video");
 });
 </script>
 

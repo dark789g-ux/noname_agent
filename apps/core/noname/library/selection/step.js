@@ -16,13 +16,14 @@ import { SelectionValidator } from "./validator.js";
  * @property {boolean} [required]
  * @property {boolean} [forced]
  * @property {boolean} [complex]
+ * @property {"set" | "sequential"} [selectionMode]
  */
 
 export class SelectionStep {
 	/**
 	 * @param {SelectionStepOptions} options
 	 */
-	constructor({ id, type, items = [], select, getSelect, isIncluded, isSelectable, required, forced, complex } = {}) {
+	constructor({ id, type, items = [], select, getSelect, isIncluded, isSelectable, required, forced, complex, selectionMode } = {}) {
 		this.id = id || type;
 		this.type = type;
 		this.items = items;
@@ -33,6 +34,7 @@ export class SelectionStep {
 		this.required = required;
 		this.forced = forced;
 		this.complex = complex;
+		this.selectionMode = selectionMode;
 	}
 
 	inspect(context, proposedSelected = []) {

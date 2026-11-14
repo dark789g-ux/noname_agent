@@ -1,22 +1,15 @@
+import { field, config } from "./testing/fixtures.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import test from "node:test";
-import ts from "typescript";
-import { readMaximumNumberOfPlayers } from "./playerLimit.js";
 
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const getters = [];
-function visit(node) {
-	if (ts.isGetAccessor(node) && node.name.getText(source) === "item" && node.getText(source).includes("readMaximumNumberOfPlayers")) getters.push(node);
-	ts.forEachChild(node, visit);
-}
-visit(source);
-assert.equal(getters.length, 2);
+import test from "node:test";
+
+import { readMaximumNumberOfPlayers } from "./playerLimit.js";
 
 for (const [index, fallback] of [10, 12].entries()) {
 	test(`player menu preserves default ${fallback}, coercion and invalid setting failures`, () => {
 		const status = {};
-		const menu = new Function("_status", "get", "readMaximumNumberOfPlayers", `"use strict"; return { ${getters[index].getText(source)} };`)(status, { cnNumber: String }, readMaximumNumberOfPlayers);
+		const modes = field("mode", { _status: status, get: { cnNumber: String } });
+		const menu = index === 0 ? modes.identity.connect.connect_player_number : modes.guozhan.config.player_number;
 		assert.equal(Object.keys(menu.item).length, fallback - 1);
 		for (const value of [undefined, null, false, "", 0, NaN]) {
 			status.maximumNumberOfPlayers = value;

@@ -1,3 +1,13 @@
+import {
+	collectExtraZones,
+	collectPlayerMarks,
+	collectPlayerSkillStates,
+	formatPlayerStateExtras,
+	type PromptExtraZoneState,
+	type PromptMarkState,
+	type PromptSkillState,
+} from "./prompt-state-extras.js";
+
 export interface PromptSkill {
 	name: string;
 	description: string;
@@ -46,6 +56,9 @@ export interface PromptPlayerState {
 	linked: boolean;
 	turnedOver: boolean;
 	judgments: PromptJudgmentCard[];
+	marks?: PromptMarkState[];
+	extraZones?: PromptExtraZoneState[];
+	skillStates?: PromptSkillState[];
 }
 
 /** 移除 HTML 与多余空白；不截断规则文本。 */
@@ -95,7 +108,9 @@ export interface PromptRuntime {
 	getPlayerName(player: any): string;
 	getSkillName(skill: string): string;
 	getSkillDescription(skill: string, player: any): string;
-	getSkillMeta(skill: string): { charlotte?: boolean; sub?: boolean } | undefined;
+	getSkillMeta(skill: string): { charlotte?: boolean; sub?: boolean; limited?: boolean; juexingji?: boolean; zhuanhuanji?: unknown; zhuanhuanji2?: unknown; intro?: { nocount?: boolean; markcount?: unknown } } | undefined;
+	isZhuanhuanji?(skill: string, player: any): boolean;
+	isCardKnown?(card: any, observer: any): boolean;
 	getEquipmentSkills(card: any): string[];
 	isEquipmentCard(card: any): boolean;
 	getCardName(card: any): string;
@@ -115,15 +130,24 @@ export interface PromptSnapshotOptions {
 	decisionDescriptions: Record<string, string>;
 	getSkillName(skill: string): string;
 	getSkillDescription(skill: string): string;
+	getCardLabel?(card: any): string;
+	getPlayerLabel?(player: any): string;
+	pileOverviewText?: string;
+	roundHistoryText?: string;
 }
 
 /** 从注入的游戏运行时采集 LLM 所需的全员档案和场面状态。 */
 export function collectPromptPlayers(runtime: PromptRuntime, observer: any, referencedPlayers?: any[]): { profiles: PromptPlayerProfile[]; states: PromptPlayerState[] } {
 	const players = Array.from(runtime.players || []);
 	const statePlayers = referencedPlayers?.length ? referencedPlayers : players;
+	const skillsCache = new Map<any, string[]>();
+	const readSkills = (player: any): string[] => {
+		if (!skillsCache.has(player)) skillsCache.set(player, getPlayerSkills(player));
+		return skillsCache.get(player)!;
+	};
 	return {
-		profiles: players.map(player => collectPlayerProfile(runtime, player)),
-		states: statePlayers.map(player => collectPlayerState(runtime, player, observer)),
+		profiles: players.map(player => collectPlayerProfile(runtime, player, readSkills(player))),
+		states: statePlayers.map(player => collectPlayerState(runtime, player, observer, readSkills(player))),
 	};
 }
 
@@ -131,12 +155,29 @@ export function collectPromptPlayers(runtime: PromptRuntime, observer: any, refe
 export function buildDecisionSnapshot(decisionPoint: string, event: any, candidates: PromptSnapshotCandidates, states: PromptPlayerState[], options: PromptSnapshotOptions): string {
 	const lines: string[] = [`## 决策类型：${options.decisionDescriptions[decisionPoint] || decisionPoint}`];
 	if (event.prompt) lines.push(`## 提示：${event.prompt}`);
+	if (event.judging) lines.push(`## 当前判定牌：${options.getCardLabel?.(event.judging) || `${event.judging.name} ${event.judging.suit || ""} ${event.judging.number ?? ""}`}`);
+	if (event.source) lines.push(`## 选择来源：${options.getPlayerLabel?.(event.source) || event.source.name || "未知角色"}`);
+	if (event.skill) lines.push(`## 已选择技能：${event.skill}；继续当前材料或目标步骤，无需再次发动。`);
+	if (event.prompt2) lines.push(`## 补充规则：${event.prompt2}`);
+	if (Array.isArray(event.choiceList)) lines.push(`## 选项说明：\n${event.choiceList.map((text: any, index: number) => `${index}: ${text}`).join("\n")}`);
+	if (Array.isArray(event.targetprompt)) lines.push(`## 目标顺序：${event.targetprompt.join(" → ")}`);
+	lines.push(`## 取消：${event.forced ? "必须完成合法选择" : "允许放弃尚未提交的选择"}`);
 	if (event.dialog && typeof event.dialog === "string") lines.push(`## 对话：${event.dialog}`);
+	if (Array.isArray(event.createDialog)) {
+		const shown = visibleDialogItems(event.createDialog, options.getCardLabel);
+		if (shown.length) lines.push(`## 当前决策公开给你的信息：${shown.join("；")}`);
+	}
+	if (options.pileOverviewText) lines.push("", options.pileOverviewText);
 	lines.push("", formatPlayerStates(states));
-	if (candidates.actions && ["chooseToUse", "chooseToRespond"].includes(decisionPoint)) {
+	if (options.roundHistoryText) lines.push("", options.roundHistoryText);
+	if (candidates.actions && !event.skill && ["chooseToUse", "chooseToRespond"].includes(decisionPoint)) {
 		lines.push("\n## 可执行动作：");
 		if (!candidates.actions.length) lines.push("- 无");
 		else for (const action of candidates.actions) lines.push(`- ${formatAction(action, candidates, options)}`);
+		if (candidates.cards.length) {
+			lines.push("\n## 动作材料引用：");
+			for (const card of candidates.cards) lines.push(`- ${card.ref}: ${card.name}（${card.id}）`);
+		}
 	} else if (candidates.cards.length) {
 		lines.push("\n## 可用卡牌：");
 		for (const card of candidates.cards) {
@@ -161,6 +202,15 @@ export function buildDecisionSnapshot(decisionPoint: string, event: any, candida
 	return lines.join("\n");
 }
 
+function visibleDialogItems(items: any[], cardLabel?: (card: any) => string): string[] {
+	if (items[1] === "blank") return [];
+	return items.flatMap(item => {
+		if (Array.isArray(item)) return visibleDialogItems(item, cardLabel);
+		if (item && typeof item === "object" && typeof item.name === "string") return [cardLabel?.(item) || `${item.name} ${item.suit || ""} ${item.number || ""}`];
+		return typeof item === "string" && !["hidden", "forcebutton"].includes(item) ? [item] : [];
+	});
+}
+
 function formatAction(action: NonNullable<PromptSnapshotCandidates["actions"]>[number], candidates: PromptSnapshotCandidates, options: PromptSnapshotOptions): string {
 	const card = candidates.cards.find(value => value.ref === action.cardRef);
 	const name = action.kind === "card" ? `直接使用 ${action.cardRef}【${card?.name || "未知"}】` : `发动 ${action.skillName}【${options.getSkillName(action.skillName || "") || action.skillName}】`;
@@ -183,8 +233,7 @@ function formatTarget(target: { mode: string; range?: [number, number]; targetRe
 	return `${count}｜候选=[${target.targetRefs.join(",")}]`;
 }
 
-function collectPlayerProfile(runtime: PromptRuntime, player: any): PromptPlayerProfile {
-	const skills = getPlayerSkills(player);
+function collectPlayerProfile(runtime: PromptRuntime, player: any, skills = getPlayerSkills(player)): PromptPlayerProfile {
 	const hiddenSkills = new Set(player.hiddenSkills || []);
 	const globalSkills = new Set(runtime.globalSkills || []);
 	const equipmentSkills = getEquipmentSkillCards(runtime, player, skills);
@@ -210,10 +259,20 @@ function collectPlayerProfile(runtime: PromptRuntime, player: any): PromptPlayer
 	};
 }
 
-function collectPlayerState(runtime: PromptRuntime, player: any, observer: any): PromptPlayerState {
+function collectPlayerState(runtime: PromptRuntime, player: any, observer: any, skills = getPlayerSkills(player)): PromptPlayerState {
 	const hand = getCards(player, "h");
 	const equip = getCards(player, "e");
 	const judgment = getCards(player, "j");
+	const hiddenSkills = new Set(player.hiddenSkills || []);
+	const globalSkills = new Set(runtime.globalSkills || []);
+	const visibleSkills = skills.filter(skill => {
+		if (!skill || hiddenSkills.has(skill) || globalSkills.has(skill)) return false;
+		const meta = runtime.getSkillMeta(skill);
+		return !meta?.sub && !meta?.charlotte;
+	});
+	const marks = collectPlayerMarks(player, runtime);
+	const extraZones = collectExtraZones(player, observer, runtime);
+	const skillStates = collectPlayerSkillStates(player, visibleSkills, runtime);
 	return {
 		seat: getSeat(player),
 		name: runtime.getPlayerName(player),
@@ -227,6 +286,9 @@ function collectPlayerState(runtime: PromptRuntime, player: any, observer: any):
 		linked: Boolean(player.isLinked?.()),
 		turnedOver: Boolean(player.isTurnedOver?.()),
 		judgments: judgment.map(card => collectJudgmentCard(runtime, card, player)),
+		...(marks.length ? { marks } : {}),
+		...(extraZones.length ? { extraZones } : {}),
+		...(skillStates.length ? { skillStates } : {}),
 	};
 }
 
@@ -326,6 +388,7 @@ export function formatPlayerStates(states: PromptPlayerState[]): string {
 		lines.push(`体力：${state.hp}/${state.maxHp}；护甲：${state.hujia}；手牌：${state.handCount}；横置：${yesNo(state.linked)}；翻面：${yesNo(state.turnedOver)}`);
 		lines.push(`装备区：${state.equips.length ? state.equips.join("、") : "无"}`);
 		lines.push(`已知手牌：${state.knownHandCards.length ? state.knownHandCards.join("、") : "无"}`);
+		lines.push(...formatPlayerStateExtras(state));
 		lines.push("判定区：");
 		if (!state.judgments.length) {
 			lines.push("- 无");

@@ -1,21 +1,10 @@
+import { config } from "./testing/fixtures.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import test from "node:test";
-import ts from "typescript";
 
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+import test from "node:test";
 
 function loadThemeClick(game) {
-	let callback;
-	const visit = node => {
-		if (ts.isPropertyAssignment(node) && node.name.getText(source) === "zhishixian" && ts.isObjectLiteralExpression(node.initializer)) {
-			callback = node.initializer.properties.find(member => member.name?.getText(source) === "onclick");
-		}
-		ts.forEachChild(node, visit);
-	};
-	visit(source);
-	assert.ok(callback && ts.isMethodDeclaration(callback));
-	return new Function("game", `return function(items) ${callback.body.getText(source)}`)(game);
+	return config("zhishixian", { game }).onclick;
 }
 
 test("line theme changes preserve the initialized original function and theme identity", () => {

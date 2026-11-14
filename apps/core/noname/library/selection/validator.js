@@ -80,7 +80,8 @@ export class SelectionValidator {
 		/** @type {T[]} */
 		const automaticSelected = [];
 		const entries = items.map(item => {
-			const proposedSelected = automatic ? automaticSelected.slice() : selected.slice();
+			const index = selected.indexOf(item);
+			const proposedSelected = automatic ? automaticSelected.slice() : step?.selectionMode === "sequential" && index >= 0 ? selected.slice(0, index) : selected.slice();
 			const available = Boolean(included(item, context, proposedSelected, step) && selectable(item, context, proposedSelected, step));
 			if (automatic && available) {
 				automaticSelected.push(item);

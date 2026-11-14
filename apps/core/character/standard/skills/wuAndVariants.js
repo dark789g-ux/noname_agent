@@ -1,3 +1,5 @@
+import { auditSelectionSpec } from "./selectionAudit.js";
+import { lijianSelectionSpec } from "./selectionSpecs.js";
 import { lib, game, ui, get, ai, _status } from "noname";
 
 /** @satisfies {Pick<NonNullable<importCharacterConfig["skill"]>, "xiaoji" | "jieyin" | "qingnang" | "jijiu" | "jijiu_re_huatuo" | "wushuang" | "wushuang1" | "wushuang2" | "zhanshen" | "shenji" | "lijian" | "biyue" | "yaowu" | "new_jiangchi">} */
@@ -33,6 +35,7 @@ export const wuAndVariantsSkills = {
 		},
 	},
 	jieyin: {
+		selectionSpec: true,
 		audio: 2,
 		enable: "phaseUse",
 		filterCard: true,
@@ -85,6 +88,7 @@ export const wuAndVariantsSkills = {
 		},
 	},
 	qingnang: {
+		selectionSpec: true,
 		audio: 2,
 		enable: "phaseUse",
 		filterCard: true,
@@ -118,6 +122,7 @@ export const wuAndVariantsSkills = {
 		},
 	},
 	jijiu: {
+		selectionSpec: true,
 		mod: {
 			aiValue(player, card, num) {
 				if (get.name(card) !== "tao" && get.color(card) !== "red") {
@@ -290,6 +295,7 @@ export const wuAndVariantsSkills = {
 		},
 	},
 	lijian: {
+		selectionSpec: lijianSelectionSpec,
 		audio: 2,
 		audioname: ["re_diaochan"],
 		enable: "phaseUse",
@@ -434,3 +440,5 @@ export const wuAndVariantsSkills = {
 		},
 	},
 };
+
+auditSelectionSpec(wuAndVariantsSkills.lijian);

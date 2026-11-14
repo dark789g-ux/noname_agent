@@ -1,16 +1,24 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions.js";
 import type { CandidateCard } from "./candidates.js";
 
-export type SelectionToolType = "button" | "card" | "target" | "control" | "number";
+export type SelectionToolType = "button" | "card" | "target" | "control" | "number" | "move";
+
+export const INSPECT_DISCARD_PILE_TOOL = "inspect_discard_pile";
+
+export interface BuildToolsOptions {
+	allowInspectDiscard?: boolean;
+}
 
 /** 构造当前选择阶段可调用的工具。 */
-export function buildTools(
-	decisionPoint: string,
-	candidates: { cards: CandidateCard[]; skills: string[] },
-	stage?: { id: string; type: SelectionToolType },
-	forced = false,
-): ChatCompletionTool[] {
-	if (stage) return [buildSelectionTool(stage)];
+export function buildTools(decisionPoint: string, candidates: { cards: CandidateCard[]; skills: string[] }, stage?: { id: string; type: SelectionToolType }, forced = false, options?: BuildToolsOptions): ChatCompletionTool[] {
+	const baseTools = buildBaseTools(decisionPoint, candidates, stage, forced);
+	if (!baseTools.length) return [];
+	if (options?.allowInspectDiscard) return [...baseTools, inspectDiscardTool()];
+	return baseTools;
+}
+
+function buildBaseTools(decisionPoint: string, candidates: { cards: CandidateCard[]; skills: string[] }, stage?: { id: string; type: SelectionToolType }, forced = false): ChatCompletionTool[] {
+	if (stage) return optionalPass([buildSelectionTool(stage)], forced, "取消当前未提交选择。");
 	switch (decisionPoint) {
 		case "chooseToUse":
 			return buildChooseToUseTools(candidates, forced);
@@ -40,13 +48,16 @@ function skillTool(): ChatCompletionTool {
 		function: {
 			name: "use_skill",
 			description: "发动候选主动技能。需要选牌或目标时，先传 skill_name，随后严格按下一轮选择工具完成。",
-			parameters: object({
-				skill_name: string("候选技能 ID"),
-				card_refs: strings("可选：已选卡牌短引用 c0/c1"),
-				target_refs: strings("可选：已选目标短引用 p0/p1"),
-				card_ids: strings("兼容旧协议的牌 ID"),
-				target_ids: array("兼容旧协议的目标数组", { type: "integer" }),
-			}, ["skill_name"]),
+			parameters: object(
+				{
+					skill_name: string("候选技能 ID"),
+					card_refs: strings("可选：已选卡牌短引用 c0/c1"),
+					target_refs: strings("可选：已选目标短引用 p0/p1"),
+					card_ids: strings("兼容旧协议的牌 ID"),
+					target_ids: array("兼容旧协议的目标数组", { type: "integer" }),
+				},
+				["skill_name"]
+			),
 		},
 	};
 }
@@ -80,7 +91,16 @@ function cardsTool(name: string, description: string): ChatCompletionTool {
 }
 
 function buildSelectionTool(stage: { id: string; type: SelectionToolType }): ChatCompletionTool {
-	const names: Record<SelectionToolType, string> = {
+	if (stage.type === "move")
+		return {
+			type: "function",
+			function: {
+				name: "move_cards",
+				description: "一次提交所有分堆和牌序，每张 m 引用恰好出现一次。",
+				parameters: object({ piles: { type: "array", items: { type: "array", items: { type: "string" } }, description: "按堆编号提交，每堆按从左到右的牌序排列" } }, ["piles"]),
+			},
+		};
+	const names: Record<Exclude<SelectionToolType, "move">, string> = {
 		button: "select_buttons",
 		card: "select_cards",
 		target: "select_targets",
@@ -104,6 +124,17 @@ function passTool(description: string): ChatCompletionTool {
 
 function boolTool(name: string, description: string): ChatCompletionTool {
 	return { type: "function", function: { name, description, parameters: object({}) } };
+}
+
+function inspectDiscardTool(): ChatCompletionTool {
+	return {
+		type: "function",
+		function: {
+			name: INSPECT_DISCARD_PILE_TOOL,
+			description: "查看当前弃牌堆全部卡牌明细（花色、点数、入堆先后顺序）及按花色和牌名的数量统计。单次决策最多调用 1 次，不消耗动作步数。",
+			parameters: object({}),
+		},
+	};
 }
 
 function object(properties: Record<string, any>, required: string[] = []): any {

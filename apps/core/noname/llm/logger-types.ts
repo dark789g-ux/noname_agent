@@ -1,5 +1,5 @@
 export type LogStatus = "success" | "fallback" | "error" | "timeout" | "interrupted";
-export type ErrorStage = "fetch" | "parse" | "translate";
+export type ErrorStage = "config" | "fetch" | "parse" | "translate" | "translate/action-resolution";
 export type RequestTransport = "stream" | "nonstream";
 export type RequestOutcome = "pending" | "success" | "error";
 
@@ -20,7 +20,7 @@ export interface LogTurn {
 	index: number;
 	stage?: string;
 	request: { messages: any[]; tools: any[] };
-	toolCall?: { id?: string; name: string; reason?: string; arguments: any };
+	toolCall?: { id?: string; name: string; reason?: string; reasoningContent?: string; arguments: any };
 	result?: any;
 	error?: string;
 }
@@ -36,9 +36,9 @@ export interface LogEntry {
 	durationMs: number;
 	status: LogStatus;
 	fallbackReason?: string;
-	meta: { enabled: boolean; configured: boolean; model?: string };
+	meta: { enabled: boolean; configured: boolean; model?: string; backend?: string; providerLabel?: string; traceId?: string; skill?: string };
 	request?: { messages: any[]; tools: any[] };
-	response?: { toolCall?: { name: string; reason?: string; arguments: any }; translatedResult?: any };
+	response?: { toolCall?: { name: string; reason?: string; reasoningContent?: string; arguments: any }; translatedResult?: any; execution?: "automatic" };
 	error?: { stage: ErrorStage; message: string; httpStatus?: number };
 	/** 多轮工具调用；缺省代表由旧版本写入的单轮日志。 */
 	turns?: LogTurn[];

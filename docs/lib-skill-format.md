@@ -245,7 +245,7 @@ selectionSpec: {
 }
 ```
 
-`selectionSpec` 可以是 `true`、上述对象或 `(event, player) => HeadlessSelectionSpec` 工厂。每个 step 支持 `id`、`type`、`select`、`items`、`filter(item, player, readonlyContext, selected)` 与 `required`；对象可选 `viewAs`、`finalPredicate(readonlyContext, event, player)`。`type` 仅可为 `button`、`card`、`target`、`control` 或 `number`。按钮、自定义 dialog 和 `chooseButton.backup` 必须同时提供可序列化候选引用与后续事件适配；否则不要声明 `selectionSpec`，引擎会回退原生 AI。
+`selectionSpec` 可以是 `true`、上述对象或 `(event, player) => HeadlessSelectionSpec` 工厂。每个 step 支持 `id`、`type`、`select`、`items`（数组或延后求值函数）、`filter(item, player, readonlyContext, selected)`、`required`、`selectionMode`、`deferredFromCards` 与 `instruction`；对象可选 `viewAs`、`finalPredicate(readonlyContext, event, player)`。普通 step 的 `type` 可为 `button`、`card`、`target`、`control` 或 `number`。`orderedTargets` 配合纯前缀过滤器声明已审核的有序目标；事件可用 `move: "guanxing" | "xunxun" | "gongxin"` 声明相应分堆协议，详见 [技能支持矩阵](llm/skill-support.md)。按钮、自定义 dialog 和 `chooseButton.backup` 必须同时提供可序列化候选引用与后续事件适配；否则不要声明 `selectionSpec`，引擎会回退原生 AI。
 
 ## mod 规则修改
 

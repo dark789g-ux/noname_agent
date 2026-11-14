@@ -230,5 +230,8 @@ export interface CandidateCard {   // candidates.ts:3-7
 | `select_targets` | `step_id`, `target_refs` | 提交选目标步骤 |
 | `select_controls` | `step_id`, `control_refs` | 提交控制项步骤 |
 | `select_numbers` | `step_id`, `number_refs` | 提交数值步骤 |
+| `move_cards` | `piles`（按堆编号排列的 mN 引用数组） | 一次提交已审核的分堆与牌序 |
 
-一次模型响应只能包含一个 tool call；多个 tool call、缺失 `tool_call_id`、过期 `step_id`、引用不在当前候选中，或数量/过滤器/最终 `filterOk` 不通过时，翻译阶段失败并回退原生 AI。候选技能会包含清理后的技能说明（最多 600 字符），仅发送当前合法技能。
+一次模型响应只能包含一个 tool call；多个 tool call、缺失 `tool_call_id`、过期 `step_id`、引用不在当前候选中，或数量/过滤器/最终 `filterOk` 不通过时，翻译阶段失败并回退原生 AI。候选技能会包含清理 HTML 后的完整技能说明（不截断），仅发送当前合法技能。
+
+完整技能范围、隐私规则与分堆契约见 [技能支持矩阵](skill-support.md)。无须模型选择的 backup 阶段直接完成，并以 `response.execution: "automatic"` 记录，不生成虚构的模型工具调用。

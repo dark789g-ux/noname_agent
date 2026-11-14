@@ -1,10 +1,12 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "./testSource.js";
 
-const sourceText = readFileSync(new URL("../player.js", import.meta.url), "utf8");
-const sourceFile = ts.createSourceFile("player.js", sourceText, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+const realContentSource = await contentTestSource();
+
+const sourceFile = playerTestSource();
 
 function getTempIgnoreLoop(methodName) {
 	let method;
@@ -31,8 +33,7 @@ function getTempIgnoreLoop(methodName) {
 }
 
 function getPhaseTempIgnoreReset() {
-	const contentText = readFileSync(new URL("../content.ts", import.meta.url), "utf8");
-	const contentFile = ts.createSourceFile("content.ts", contentText, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TS);
+	const contentFile = realContentSource;
 	let reset;
 	const visit = node => {
 		if (!reset && ts.isExpressionStatement(node) && node.getText(contentFile) === "player.ai.tempIgnore = [];") {

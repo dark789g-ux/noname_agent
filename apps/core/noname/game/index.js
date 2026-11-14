@@ -65,6 +65,9 @@ import { readHistoryEvents } from "./historyTypes.js";
 
 import { security } from "@/util/sandbox.js";
 import { save } from "@/util/config.js";
+import { SqliteDatabase } from "../storage/database.js";
+import { sqliteGameOperation } from "../storage/gameStorage.js";
+import { persistVideo } from "../storage/videos.js";
 import { debounce } from "@/util/utils.js";
 import { menuBridge } from "@/ui/create/menu/vue/utils/menuBridge";
 
@@ -7475,8 +7478,8 @@ ${e instanceof Error ? e.stack : String(e)}`);
 		dialog.add(ui.create.div(".placeholder.slim"));
 		game.addVideo("over", null, dialog.content.innerHTML);
 		let vinum = parseInt(lib.config.video);
-		if (!_status.video && vinum && game.getVideoName && window.indexedDB && _status.videoInited) {
-			let store = lib.db.transaction(["video"], "readwrite").objectStore("video");
+		if (!_status.video && vinum && game.getVideoName && lib.db && _status.videoInited) {
+			const removedVideos = [];
 			let videos = lib.videos.slice(0);
 			for (let i = 0; i < videos.length; i++) {
 				if (videos[i].starred) {
@@ -7487,8 +7490,7 @@ ${e instanceof Error ? e.stack : String(e)}`);
 				if (videos.length >= vinum) {
 				let toremove = videos.pop();
 						if (!toremove) break;
-						lib.videos.remove(toremove);
-					store.delete(toremove.time);
+						removedVideos.push(toremove);
 				} else {
 					break;
 				}
@@ -7542,11 +7544,14 @@ ${e instanceof Error ? e.stack : String(e)}`);
 				if (newvid.name1 === undefined) throw new TypeError("Video character name is missing");
 				newvid.name1 = newvid.name2.slice(10, newvid.name1.lastIndexOf("_"));
 			}
-			lib.videos.unshift(newvid);
 			// 清洗代理对象
 			newvid.video = structuredClone(newvid.video);
-			store.put(newvid);
-			ui.create.videoNode(newvid, true);
+			lib.status.reload++;
+			persistVideo(lib.db, newvid, removedVideos.map(video => video.time)).then(() => {
+				for (const video of removedVideos) lib.videos.remove(video);
+				lib.videos.unshift(newvid);
+				ui.create.videoNode(newvid, true);
+			}).catch(error => console.error("录像保存失败", error)).finally(() => game.reload2());
 		}
 		// _status.auto=false;
 		if (ui.auto) {
@@ -8083,10 +8088,10 @@ ${e instanceof Error ? e.stack : String(e)}`);
 			ui.updatehl();
 		}
 		if (game.getMe().isAlive()) {
-			if (ui.auto) {
+			if (ui.auto && !_status.llmSelfControlledAtGameStart) {
 				ui.auto.show();
 			}
-			if (ui.wuxie) {
+			if (ui.wuxie && !_status.llmSelfControlledAtGameStart) {
 				ui.wuxie.show();
 			}
 			if (ui.revive) {
@@ -8140,10 +8145,10 @@ ${e instanceof Error ? e.stack : String(e)}`);
 		game.addVideo("swapControl", player, get.cardsInfo(player.getCards("h")));
 
 		if (game.getMe().isAlive()) {
-			if (ui.auto) {
+			if (ui.auto && !_status.llmSelfControlledAtGameStart) {
 				ui.auto.show();
 			}
-			if (ui.wuxie) {
+			if (ui.wuxie && !_status.llmSelfControlledAtGameStart) {
 				ui.wuxie.show();
 			}
 			if (ui.revive) {
@@ -9872,13 +9877,15 @@ ${e instanceof Error ? e.stack : String(e)}`);
 	}
 	/**
 	 * @param { string } storeName
-	 * @param { string } idbValidKey
+	 * @param { IDBValidKey | undefined } idbValidKey
 	 * @param { any } value
 	 * @param { Function } [onSuccess]
 	 * @param { Function } [onError]
 	 */
 	putDB(storeName, idbValidKey, value, onSuccess, onError) {
-		if (!lib.db) {
+		const database = lib.db;
+		if (database instanceof SqliteDatabase) return sqliteGameOperation(database, "put", storeName, idbValidKey, value, onSuccess, onError, { lib, game, status: _status });
+		if (!database) {
 			return Promise.resolve(value);
 		}
 		if (lib.status.reload) {
@@ -9917,7 +9924,7 @@ ${e instanceof Error ? e.stack : String(e)}`);
 		}
 		lib.status.reload++;
 		return /** @type {Promise<Event | void>} */ (new Promise((resolve, reject) => {
-			const record = lib.db.transaction([storeName], "readwrite").objectStore(storeName).put(structuredClone(value), idbValidKey);
+			const record = database.transaction([storeName], "readwrite").objectStore(storeName).put(structuredClone(value), idbValidKey);
 			record.onerror = event => {
 				if (typeof onError == "function") {
 					try {
@@ -9951,13 +9958,15 @@ ${e instanceof Error ? e.stack : String(e)}`);
 	/**
 	 *
 	 * @param { string } storeName
-	 * @param { string | null } [query]
+	 * @param { IDBValidKey | null } [query]
 	 * @param { Function } [onSuccess]
 	 * @param { Function } [onError]
 	 * @returns {Promise<unknown>}
 	 */
 	getDB(storeName, query, onSuccess, onError) {
-		if (!lib.db) {
+		const database = lib.db;
+		if (database instanceof SqliteDatabase) return sqliteGameOperation(database, "get", storeName, query, undefined, onSuccess, onError, { lib, game, status: _status });
+		if (!database) {
 			return new Promise(resolve => {
 				if (typeof onSuccess == "function") {
 					onSuccess(null);
@@ -10002,7 +10011,7 @@ ${e instanceof Error ? e.stack : String(e)}`);
 				query
 					? (resolve, reject) => {
 					lib.status.reload++;
-					const idbRequest = lib.db.transaction([storeName], "readwrite").objectStore(storeName).get(query);
+					const idbRequest = database.transaction([storeName], "readwrite").objectStore(storeName).get(query);
 					idbRequest.onerror = event => {
 						if (typeof onError == "function") {
 							try {
@@ -10036,7 +10045,7 @@ ${e instanceof Error ? e.stack : String(e)}`);
 				}
 					: (resolve, reject) => {
 					lib.status.reload++;
-					const idbRequest = lib.db.transaction([storeName], "readwrite").objectStore(storeName).openCursor();
+					const idbRequest = database.transaction([storeName], "readwrite").objectStore(storeName).openCursor();
 					/** @type {Record<PropertyKey, unknown>} */
 					const object = {};
 					idbRequest.onerror = event => {
@@ -10090,12 +10099,14 @@ ${e instanceof Error ? e.stack : String(e)}`);
 		}
 		/**
 		 * @param { string } storeName
-		 * @param { string } [query]
+		 * @param { IDBValidKey } [query]
 		 * @param { Function } [onSuccess]
 	 * @param { Function } [onError]
 	 */
 	deleteDB(storeName, query, onSuccess, onError) {
-		if (!lib.db) {
+		const database = lib.db;
+		if (database instanceof SqliteDatabase) return sqliteGameOperation(database, "delete", storeName, query, undefined, onSuccess, onError, { lib, game, status: _status });
+		if (!database) {
 			return new Promise(resolve => {
 				if (typeof onSuccess == "function") {
 					onSuccess(false);
@@ -10139,7 +10150,7 @@ ${e instanceof Error ? e.stack : String(e)}`);
 		return query
 			? /** @type {Promise<Event | void>} */ (new Promise((resolve, reject) => {
 				lib.status.reload++;
-				const record = lib.db.transaction([storeName], "readwrite").objectStore(storeName).delete(query);
+				const record = database.transaction([storeName], "readwrite").objectStore(storeName).delete(query);
 				record.onerror = event => {
 					if (typeof onError == "function") {
 						try {
@@ -10172,7 +10183,7 @@ ${e instanceof Error ? e.stack : String(e)}`);
 				}
 				const keys = Object.keys(object);
 				lib.status.reload += keys.length;
-				const store = lib.db.transaction([storeName], "readwrite").objectStore(storeName);
+				const store = database.transaction([storeName], "readwrite").objectStore(storeName);
 				return Promise.allSettled(
 					keys.map(
 						key =>
@@ -10446,7 +10457,7 @@ ${e instanceof Error ? e.stack : String(e)}`);
 			base[key] = value;
 		}
 
-		save(storeKey, "config", value).then(callback);
+		return save(storeKey, "config", value).then(callback);
 	}
 	/**
 	 * @param { string } key

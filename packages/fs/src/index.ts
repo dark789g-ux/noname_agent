@@ -5,6 +5,8 @@ import fs from "fs/promises";
 import path from "path";
 import { cwd } from "process";
 import { exec } from "child_process";
+import { databasePath, isWithin, isStoragePath, registerStorage } from "./storage/routes";
+import { registerLlmCliRoutes } from "./llm/routes";
 
 interface JsonResult<T = any> {
 	success: boolean;
@@ -29,11 +31,13 @@ export const defaultConfig = {
 	port: 8089,
 	debug: false,
 	dirname: cwd(),
+	database: "",
+	listen: true,
 };
 
-function createFsHandler(dirname: string) {
+function createFsHandler(dirname: string, protectedDirectory: string) {
 	const join = (url: string) => path.join(dirname, url);
-	const isInProject = (url: string) => path.normalize(join(url)).startsWith(dirname);
+	const isInProject = (url: string) => isWithin(dirname, path.resolve(join(url))) && !isStoragePath(protectedDirectory, path.resolve(join(url)));
 
 	const ensureSafe = (url: string) => {
 		if (!isInProject(url)) throw new Error(`只能访问 ${dirname} 下的资源`);
@@ -56,12 +60,19 @@ function createFsHandler(dirname: string) {
 export default function createApp(config: Partial<typeof defaultConfig> = {}) {
 	const cfg = { ...defaultConfig, ...config };
 	cfg.dirname = path.resolve(cfg.dirname);
+	const database = cfg.database ? path.resolve(cfg.database) : databasePath(cfg.dirname);
 	if (cfg.debug) console.log(cfg);
 	const app = Fastify({
 		logger: cfg.debug,
 	});
 
-	const { ensureSafe, wrap } = createFsHandler(cfg.dirname);
+	const { ensureSafe, wrap } = createFsHandler(cfg.dirname, path.dirname(database));
+	registerStorage(app, database);
+	registerLlmCliRoutes(app);
+	app.addHook("onRequest", async (request, reply) => {
+		const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+		if (isStoragePath(path.dirname(database), path.resolve(cfg.dirname, `.${pathname}`))) return reply.code(403).send("数据库目录不可通过文件服务访问");
+	});
 
 	app.register(cors, {
 		origin: "*",
@@ -216,7 +227,7 @@ export default function createApp(config: Partial<typeof defaultConfig> = {}) {
 	// } else {
 	// 	app.listen(config.port, callback);
 	// }
-	app.listen({ port: cfg.port }, callback);
+	if (cfg.listen) app.listen({ port: cfg.port }, callback);
 
 	return app;
 }

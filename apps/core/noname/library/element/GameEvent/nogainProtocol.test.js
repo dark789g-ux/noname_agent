@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "../Player/testSource.js";
 
-const playerSource = ts.createSourceFile("player.js", readFileSync(new URL("../player.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const playerSource = playerTestSource();
 const playerClass = playerSource.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Player");
 const skills = ts.createSourceFile("rest.js", readFileSync(new URL("../../../../mode/guozhan/src/skill/character/rest.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const registry = skills.statements.find(node => ts.isExportAssignment(node) && ts.isObjectLiteralExpression(node.expression));

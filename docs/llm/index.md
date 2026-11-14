@@ -10,7 +10,7 @@
 ## 总览
 
 ```text
-library/element/content.ts
+library/element/content.ts（薄入口，事件实现在 content/）
   ├─ chooseToUse   ───────────────┐
   ├─ chooseToRespond ─────────────┤
   ├─ chooseToDiscard ─────────────┼── event.result=="ai"
@@ -43,9 +43,9 @@ library/element/content.ts
 
 ## 选择能力与边界
 
-LLM 通过无 UI 选择会话支持简单选牌、选目标、动态数量、`viewAs`，以及可序列化的按钮、控制项和数值步骤。技能必须声明 `selectionSpec`，或被安全的简单规则适配器识别，才会交给 LLM。
+LLM 通过无 UI 会话支持显式审核的选牌、动态步骤、有序目标、`viewAs`、按钮、控制项、数值，以及观星／恂恂／攻心的分堆排序。主动技能必须显式声明 `selectionSpec`。完整名单、后续流程、测试层次及平台范围见 [技能支持矩阵](skill-support.md)。
 
-目前已审计并声明 `selectionSpec` 的代表技能为：`rerende`、`olqiangxi`、`reshenxing`、`rehuoji`、`reqice`、`xintaoluan`、`mbzhaofu`。后三者先返回技能中间结果，再由引擎创建标准 `chooseButton` 子事件；只有该事件已提供可读 `dialog.buttons[].link` 时才继续多轮选择，否则以 `unsupported chooseButton: dialog buttons are unavailable` 安全回退。`choose*OL`、对比及窥视私有牌流程同样不接入。
+目前已审计并声明 `selectionSpec` 的代表技能为：`rerende`、`olqiangxi`、`reshenxing`、`rehuoji`、`reqice`、`xintaoluan`、`mbzhaofu`。后三者先返回技能中间结果，再由引擎创建标准 `chooseButton` 子事件；只有该事件已提供可读 `dialog.buttons[].link` 时才继续多轮选择，否则以 `unsupported chooseButton: dialog buttons are unavailable` 安全回退。`choose*OL` 通过其标准子选择事件间接接入，不声明专用联机或拼点协议已经全面覆盖。私有牌只在事件实际授予查看权限时展示，其他手牌使用匿名引用。
 
 ## 提示词信息边界
 
@@ -74,6 +74,7 @@ LLM 通过无 UI 选择会话支持简单选牌、选目标、动态数量、`vi
 
 | 文档 | 内容 |
 |------|------|
+| [skill-support.md](skill-support.md) | 固定武将、技能流程、审核与验证矩阵 |
 | [architecture.md](architecture.md) | 入口调度、上游触发点、下游结果应用 |
 | [api-layer.md](api-layer.md) | API 调用、上下文构造、Tool schema、候选收集 |
 | [config.md](config.md) | 配置层与持久化 |

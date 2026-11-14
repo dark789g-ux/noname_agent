@@ -145,7 +145,7 @@ assert.equal(calls[0][1], dataFile);
 assert.equal(calls[0][2], "UTF-8");
 assert.deepEqual(
 	calls.map(call => call[0]),
-	["read", "decode", "alert", "get", "get", "clear", "set", "set", "set", "background", "reload"]
+	["read", "decode", "get", "get", "clear", "set", "set", "set", "alert", "background", "reload"]
 );
 assert.deepEqual(
 	[...storage],

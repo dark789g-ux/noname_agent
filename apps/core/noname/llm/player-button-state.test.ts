@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { derive, end, isActive, reset, start } from "./player-button-state.js";
+import { derive, end, isActive, reset, resolvePlayerButtonState, start } from "./player-button-state.js";
 
 function entry(id: string, gameId: string, playerName: string, playerSeatNum?: number) {
 	return { id, gameId, playerName, playerSeatNum };
@@ -57,4 +57,80 @@ test("未知 end 不影响活动日志", () => {
 	start(entry("known", "game_1", "张角", 1));
 	end("unknown");
 	assert.equal(isActive(target), true);
+});
+
+test("玩家角色接入 LLM 时自身与受控角色也显示日志按钮，否则仅 AI 显示", () => {
+	const me = {
+		getName: () => "刘备",
+		getSeatNum: () => 1,
+		isUnderControl: (self?: boolean) => !!self,
+	};
+	const aiPlayer = {
+		getName: () => "张角",
+		getSeatNum: () => 2,
+		isUnderControl: () => false,
+	};
+
+	assert.equal(resolvePlayerButtonState(me, {}, { llm_enabled: true, llm_control_self: false }).visible, false);
+	assert.equal(resolvePlayerButtonState(aiPlayer, {}, { llm_enabled: true, llm_control_self: false }).visible, true);
+
+	assert.equal(resolvePlayerButtonState(me, {}, { llm_enabled: true, llm_control_self: true }).visible, true);
+	assert.equal(resolvePlayerButtonState(aiPlayer, {}, { llm_enabled: true, llm_control_self: true }).visible, true);
+
+	assert.equal(resolvePlayerButtonState(me, {}, { llm_enabled: false, llm_control_self: true }).visible, false);
+	assert.equal(
+		resolvePlayerButtonState(
+			me,
+			{ llmGameId: "game_1", llmEnabledAtGameStart: true, llmSelfControlledAtGameStart: true },
+			{ llm_enabled: true, llm_control_self: false }
+		).visible,
+		true
+	);
+	assert.equal(
+		resolvePlayerButtonState(
+			me,
+			{ llmGameId: "game_1", llmEnabledAtGameStart: true, llmSelfControlledAtGameStart: false },
+			{ llm_enabled: true, llm_control_self: true }
+		).visible,
+		false
+	);
+});
+
+test("按行动顺位解析 AI 短名称（deepseek / agy / codex）与本地 AI 隐藏规则", () => {
+	const cfg = {
+		llm_enabled: true,
+		llm_control_self: false,
+		llm_url: "https://api.deepseek.com",
+		llm_model: "deepseek-flash",
+		llm_default_backend: "openai",
+		llm_seat_backends: {
+			1: "default",
+			2: "agy",
+			3: "codex",
+			4: "local",
+		},
+	};
+	const aiSeat2 = { getName: () => "张角", getSeatNum: () => 2, isUnderControl: () => false, dataset: { position: "1" } };
+	const aiSeat3 = { getName: () => "华佗", getSeatNum: () => 0, isUnderControl: () => false, dataset: { position: "2" } };
+	const aiSeat4 = { getName: () => "吕布", getSeatNum: () => 4, isUnderControl: () => false, dataset: { position: "3" } };
+	const aiSeat5 = { getName: () => "曹操", getSeatNum: () => 5, isUnderControl: () => false, dataset: { position: "4" } };
+
+	const s2 = resolvePlayerButtonState(aiSeat2, {}, cfg);
+	assert.equal(s2.visible, true);
+	assert.equal(s2.label, "agy");
+	assert.equal(s2.backend, "agy");
+
+	const s3 = resolvePlayerButtonState(aiSeat3, {}, cfg);
+	assert.equal(s3.visible, true);
+	assert.equal(s3.label, "codex");
+	assert.equal(s3.backend, "codex");
+
+	const s4 = resolvePlayerButtonState(aiSeat4, {}, cfg);
+	assert.equal(s4.visible, false);
+	assert.equal(s4.label, "");
+
+	const s5 = resolvePlayerButtonState(aiSeat5, {}, cfg);
+	assert.equal(s5.visible, true);
+	assert.equal(s5.label, "deepseek");
+	assert.equal(s5.backend, "openai");
 });

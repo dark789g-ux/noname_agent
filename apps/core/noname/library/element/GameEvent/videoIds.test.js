@@ -1,9 +1,12 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
-const source = ts.createSourceFile("content.ts", readFileSync(new URL("../content.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const realContentSource = await contentTestSource();
+
+const source = realContentSource;
 const content = source.statements.flatMap(node => (ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])).find(node => node.name.getText(source) === "Content").initializer;
 function callback(name, runtime) {
 	const property = content.properties.find(node => node.name?.getText(source) === name);

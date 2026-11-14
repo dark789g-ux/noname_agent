@@ -172,6 +172,21 @@ export class status {
 	 * @type { Record<string, Dialog> }
 	 */
 	countDialogs = {};
+	/**
+	 * 当前对局 LLM 日志会话 ID
+	 * @type { string | undefined }
+	 */
+	llmGameId;
+	/**
+	 * 开局锁定的 LLM 总开关状态
+	 * @type { boolean | undefined }
+	 */
+	llmEnabledAtGameStart;
+	/**
+	 * 开局锁定的玩家角色接入 LLM 状态
+	 * @type { boolean | undefined }
+	 */
+	llmSelfControlledAtGameStart;
 }
 
 export let _status = new status();

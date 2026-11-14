@@ -1,35 +1,14 @@
+import { runtime, config } from "./testing/fixtures.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+
 import test from "node:test";
-import ts from "typescript";
-
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-
-function declaration(name) {
-	const node = source.statements.find(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === name);
-	assert.ok(node, name);
-	return node.getText(source);
-}
 
 function configOnclick(name) {
-	let config;
-	function visit(node) {
-		if (config || !ts.isPropertyAssignment(node) || node.name.getText(source) !== name || !ts.isObjectLiteralExpression(node.initializer)) return;
-		config = node.initializer;
-	}
-	ts.forEachChild(source, function walk(node) {
-		visit(node);
-		ts.forEachChild(node, walk);
-	});
-	assert.ok(config, name);
-	const onclick = config.properties.find(property => ts.isMethodDeclaration(property) && property.name.getText(source) === "onclick");
-	assert.ok(onclick, `${name}.onclick`);
-	const parameters = onclick.parameters.map(parameter => parameter.getText(source)).join(",");
-	return new Function("game", "lib", "alert", "refreshExtensionSourceMenu", "requestImportData", `return function(${parameters}) ${onclick.body.getText(source)}`);
+	return (game, lib, alert, _refresh, _request) => config(name, { game, lib, alert }).onclick;
 }
-
 function helpers(menuBridge) {
-	return new Function("menuBridge", `${declaration("refreshExtensionSourceMenu")}; ${declaration("requestImportData")}; return { refreshExtensionSourceMenu, requestImportData };`)(menuBridge);
+	runtime.set({ menuBridge });
+	return runtime.module("configuration/menuBridge.ts");
 }
 
 function extensionRuntime(sources, current, menuBridge) {
@@ -66,7 +45,10 @@ test("extension source creation keeps prompt and save order, then refreshes the 
 	const runtime = extensionRuntime({ old: "https://old", keep: "https://keep" }, "old", { refreshOptionsConfig: name => refreshes.push(name), requestImportData: () => {} });
 	runtime.game.answers.push("new", "https://new");
 	runtime.create();
-	assert.deepEqual(runtime.calls.map(([name]) => name), ["extension_sources", "extension_source"]);
+	assert.deepEqual(
+		runtime.calls.map(([name]) => name),
+		["extension_sources", "extension_source"]
+	);
 	assert.equal(runtime.lib.config.extension_sources.new, "https://new");
 	assert.equal(runtime.lib.config.extension_source, "new");
 	assert.equal(runtime.lib.configMenu.general.config.extension_source.item.new, "new");
@@ -84,7 +66,10 @@ test("extension source deletion retains the final-source protection and refreshe
 
 	const runtime = extensionRuntime({ old: "https://old", next: "https://next" }, "old", { refreshOptionsConfig: name => refreshes.push(name), requestImportData: () => {} });
 	runtime.remove();
-	assert.deepEqual(runtime.calls.map(([name]) => name), ["extension_source", "extension_sources"]);
+	assert.deepEqual(
+		runtime.calls.map(([name]) => name),
+		["extension_source", "extension_sources"]
+	);
 	assert.equal(runtime.lib.config.extension_source, "next");
 	assert.equal(runtime.lib.config.extension_sources.old, undefined);
 	assert.equal(runtime.lib.configMenu.general.config.extension_source.item.old, undefined);

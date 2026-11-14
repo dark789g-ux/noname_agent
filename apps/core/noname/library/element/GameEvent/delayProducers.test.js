@@ -1,9 +1,13 @@
+import { contentTestSource } from "../../../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { playerTestSource } from "../Player/testSource.js";
 
-const source = ts.createSourceFile("player.js", readFileSync(new URL("../player.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const realContentSource = await contentTestSource();
+
+const source = playerTestSource();
 const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Player");
 const methods = ["draw", "chooseUseTarget"].map(name => {
 	const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === name);
@@ -73,7 +77,7 @@ test("chooseUseTarget writes nodelayx only for the actual legacy option", () => 
 	assert.notEqual(event.targets, game.players);
 });
 
-const contentSource = ts.createSourceFile("content.ts", readFileSync(new URL("../content.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const contentSource = realContentSource;
 const contentDeclaration = contentSource.statements.flatMap(node => (ts.isVariableStatement(node) ? Array.from(node.declarationList.declarations) : [])).find(node => node.name.getText(contentSource) === "Content");
 function contentSteps(name) {
 	const property = contentDeclaration.initializer.properties.find(node => node.name.getText(contentSource) === name);
@@ -187,7 +191,7 @@ test("useCard rereads delayx after the actual shan child changes its parent acro
 
 test("useCard evaluates the card's postAi callback once and stores only its deferred boolean flag", async () => {
 	const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === "useCard");
-	const producer = method.body.statements.find(node => ts.isIfStatement(node) && node.getText(source).includes("var postAi = get.info(next.card).postAi"));
+	const producer = method.body.statements.find(node => ts.isIfStatement(node) && node.getText(source).includes("postAi = get.info(next.card).postAi"));
 	assert.ok(producer);
 	let callbacks = 0,
 		reads = 0;

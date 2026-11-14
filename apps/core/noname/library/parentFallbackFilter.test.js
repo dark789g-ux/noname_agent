@@ -1,17 +1,10 @@
+import { field } from "./testing/fixtures.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import test from "node:test";
-import ts from "typescript";
 
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const library = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Library");
-const filterField = library?.members.find(node => ts.isPropertyDeclaration(node) && node.name.getText(source) === "filter");
+import test from "node:test";
 
 function filterMethod(name, dependencies) {
-	assert.ok(filterField && ts.isObjectLiteralExpression(filterField.initializer));
-	const method = filterField.initializer.properties.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === name);
-	assert.ok(method);
-	return new Function(...Object.keys(dependencies), `"use strict"; return ({ ${method.getText(source)} }).${name};`)(...Object.values(dependencies));
+	return field("filter", dependencies)[name];
 }
 
 test("cardEnabled forwards a parent fallback object unchanged to both Mod and card enable", () => {
@@ -47,7 +40,10 @@ test("cardEnabled forwards a parent fallback object unchanged to both Mod and ca
 	const card = { name: "sha" };
 	const player = {};
 	assert.equal(cardEnabled(card, player, fallback), true);
-	assert.deepEqual(calls, [["mod", card, player, fallback], ["enable", card, player, fallback]]);
+	assert.deepEqual(calls, [
+		["mod", card, player, fallback],
+		["enable", card, player, fallback],
+	]);
 });
 
 test("cardRespondable keeps a parent fallback object instead of substituting the current event", () => {
@@ -80,7 +76,11 @@ for (const name of ["cardUsable"]) {
 				},
 			},
 			_status: { event: {} },
-			game: { checkMod() { return undefined; } },
+			game: {
+				checkMod() {
+					return undefined;
+				},
+			},
 		});
 		const event = {
 			type: "chooseToUse_button",

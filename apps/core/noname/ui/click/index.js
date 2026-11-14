@@ -5141,7 +5141,7 @@ export class Click {
 				}, game.getMe());
 			}
 		} else {
-			if (game.notMe) {
+			if (game.notMe || _status.llmSelfControlledAtGameStart) {
 				return;
 			}
 			ui.control.show();
@@ -5286,10 +5286,10 @@ export class Click {
 		if (_status.over) {
 			return;
 		}
-		if (ui.auto) {
+		if (ui.auto && !_status.llmSelfControlledAtGameStart) {
 			ui.auto.show();
 		}
-		if (ui.wuxie) {
+		if (ui.wuxie && !_status.llmSelfControlledAtGameStart) {
 			ui.wuxie.show();
 		}
 		game.swapPlayer(this);

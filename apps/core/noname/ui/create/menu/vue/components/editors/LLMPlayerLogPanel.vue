@@ -44,6 +44,10 @@
 						<span class="label">configured:</span> {{ selectedDetail.meta.configured }}
 					</div>
 					<div class="field">
+						<span class="label">backend:</span>
+						{{ selectedDetail.meta.providerLabel || selectedDetail.meta.backend || "openai" }}
+					</div>
+					<div class="field">
 						<span class="label">model:</span>
 						{{ selectedDetail.meta.model || "(未设置)" }}
 					</div>
@@ -81,7 +85,8 @@
 			>
 				<div class="detail-card-title">响应结果</div>
 				<div class="detail-card-body">
-					<LLMLogContent v-if="selectedDetail.response.toolCall" :key="`${selectedDetail.id}-tool-call`" :value="selectedDetail.response.toolCall" mode="json" :default-expanded="true" label="tool_call" />
+					<LLMLogContent v-if="selectedDetail.response.toolCall?.reasoningContent" :key="`${selectedDetail.id}-reasoning-content`" :value="selectedDetail.response.toolCall.reasoningContent" mode="auto" :default-expanded="true" label="reasoning_content" />
+					<LLMLogContent v-if="selectedDetail.response.toolCall" :key="`${selectedDetail.id}-tool-call`" :value="stripToolCallReasoning(selectedDetail.response.toolCall)" mode="json" :default-expanded="true" label="tool_call" />
 					<LLMLogContent v-if="selectedDetail.response.translatedResult != null" :key="`${selectedDetail.id}-translated-result`" :value="selectedDetail.response.translatedResult" mode="auto" :default-expanded="true" label="translatedResult" />
 				</div>
 			</div>
@@ -145,7 +150,7 @@
 					【进行中】{{ currentCall.decisionPoint }}
 				</div>
 				<div class="stream-area">
-					<pre class="stream-text">{{ streamText || "等待 LLM 响应..." }}</pre>
+					<pre ref="streamElement" class="stream-text">{{ streamText || "等待 LLM 响应..." }}</pre>
 				</div>
 				<div class="active-meta">
 					已生成 {{ streamText.length }} 字 / 首 Token {{ formatActiveTTFT(currentCall) }} / 用时 {{ elapsedMs }}ms
@@ -188,10 +193,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { llmLogger, type ActiveLogSnapshot, type LogEntry } from "@/llm/logger.js";
 import { lib } from "noname";
-import { getLLMLogStatusDetail, getLLMLogStatusPresentation } from "./llmLogStatus.js";
+import { getLLMLogStatusDetail, getLLMLogStatusPresentation, stripToolCallReasoning } from "./llmLogStatus.js";
 import LLMLogContent from "./LLMLogContent.vue";
 
 const props = defineProps<{
@@ -202,6 +207,7 @@ const props = defineProps<{
 
 const currentCall = ref<LogEntry | null>(null);
 const streamText = ref("");
+const streamElement = ref<HTMLElement | null>(null);
 const streamStartedAt = ref<number | null>(null);
 const history = ref<LogEntry[]>([]);
 const selectedDetail = ref<LogEntry | null>(null);
@@ -210,6 +216,11 @@ const isClearing = ref(false);
 
 let elapsedTimer: number | null = null;
 let historyQueryGeneration = 0;
+
+watch(streamText, async () => {
+	await nextTick();
+	if (streamElement.value) streamElement.value.scrollTop = streamElement.value.scrollHeight;
+});
 
 function matchesPlayer(entry: LogEntry): boolean {
 	if ((entry.gameId || "game_unknown") !== props.gameId) return false;
