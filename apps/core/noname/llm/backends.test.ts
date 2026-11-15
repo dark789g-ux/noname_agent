@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildResolvedBackend, deriveOpenAIDisplayName, readBackendsFromRawConfig, resolveBackendDisplayName, resolvePlayerBackend, resolvePlayerSeatIndex, resolveSummaryBackend } from "./backends.js";
+import { AGY_MODEL_OPTIONS, buildResolvedBackend, CODEX_MODEL_OPTIONS, deriveOpenAIDisplayName, getCLIModelOptions, readBackendsFromRawConfig, resolveBackendDisplayName, resolvePlayerBackend, resolvePlayerSeatIndex, resolveSummaryBackend } from "./backends.js";
 import { buildCliDecisionJsonSchema, buildCliDecisionPrompt, callCliStream, callCliWithTimeout, parseCliEnvelopeToToolCall } from "./cli-client.js";
 import { buildTools } from "./tools.js";
 
@@ -97,6 +97,22 @@ test("CLI Schema、Prompt 构建与响应信封解析兼容多形态与合法性
 	assert.equal(parsed.reasoningContent, "先评估手牌与距离。");
 	assert.deepEqual(parsed.arguments, { card_ref: "c0", target_refs: ["p0"] });
 
+	const parsedNestedResult = parseCliEnvelopeToToolCall(
+		{ result: { status: "SUCCESS", structured_output: { tool: "pass", reason: "保留手牌观察局势", arguments_json: "{}" } } },
+		undefined,
+		schema.properties.tool.enum
+	);
+	assert.equal(parsedNestedResult.name, "pass");
+	assert.equal(parsedNestedResult.reason, "保留手牌观察局势");
+
+	const parsedResponseText = parseCliEnvelopeToToolCall(
+		{ status: "SUCCESS", response: JSON.stringify({ tool: "pass", reason: "兼容仅返回 response 字段", arguments_json: "{}" }) },
+		undefined,
+		schema.properties.tool.enum
+	);
+	assert.equal(parsedResponseText.name, "pass");
+	assert.equal(parsedResponseText.reason, "兼容仅返回 response 字段");
+
 	assert.throws(
 		() => parseCliEnvelopeToToolCall({ tool: "unknown_tool", reason: "测试", arguments_json: "{}" }, undefined, schema.properties.tool.enum),
 		(err: any) => err.stage === "parse"
@@ -156,4 +172,16 @@ test("callCliStream 与 callCliWithTimeout 正确消费 /_llm/cli SSE 与 JSON �
 	const nonStreamResult = await callCliWithTimeout([{ role: "user", content: "是否发动" }], tools, backend);
 	assert.equal(nonStreamResult.name, "no");
 	assert.equal(nonStreamResult.reason, "非流式选否");
+});
+
+test("AGY_MODEL_OPTIONS 与 CODEX_MODEL_OPTIONS 提供预期模型列表", () => {
+	assert.equal(AGY_MODEL_OPTIONS.length, 22);
+	assert.equal(AGY_MODEL_OPTIONS.includes("gemini-4-argon-high"), true);
+	assert.equal(AGY_MODEL_OPTIONS.includes("claude-opus-5-5-high"), true);
+	assert.equal(getCLIModelOptions("agy"), AGY_MODEL_OPTIONS);
+
+	assert.equal(CODEX_MODEL_OPTIONS.length, 8);
+	assert.equal(CODEX_MODEL_OPTIONS.includes("gpt-6.1-terra"), true);
+	assert.equal(CODEX_MODEL_OPTIONS.includes("gpt-reserve" as any), false);
+	assert.equal(getCLIModelOptions("codex"), CODEX_MODEL_OPTIONS);
 });

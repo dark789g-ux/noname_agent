@@ -46,11 +46,41 @@ if (mode === "slow") {
 		const payload = {
 			tool: "use_card",
 			reason: "使用杀",
-			arguments_json: JSON.stringify({ card_ref: "c0", target_refs: ["p0"], cwd: process.cwd(), schemaOk, stdinLen: stdinPrompt.length }),
+			arguments_json: JSON.stringify({
+				card_ref: "c0",
+				target_refs: ["p0"],
+				cwd: process.cwd(),
+				schemaOk,
+				stdinPrompt,
+				args,
+			}),
 		};
-		console.log(JSON.stringify({ type: "step_update", thinking: "正在分析牌面" }));
+		console.log(JSON.stringify({ event: "init", conversation_id: "conv-1", init: { cwd: process.cwd() } }));
+		console.log(JSON.stringify({ event: "step_update", step_update: { step_index: 0, state: "DONE", step_type: "user_input" } }));
+		console.log(
+			JSON.stringify({
+				event: "step_update",
+				step_update: { step_index: 1, state: "ACTIVE", step_type: "agent_response", thinking_delta: "正在分析", text_delta: "{" },
+			})
+		);
 		setTimeout(() => {
-			console.log(JSON.stringify({ type: "result", structured_output: payload }));
+			console.log(
+				JSON.stringify({
+					event: "step_update",
+					step_update: { step_index: 1, state: "DONE", step_type: "agent_response", thinking_delta: "牌面", text_delta: "}" },
+				})
+			);
+			console.log(
+				JSON.stringify({
+					event: "result",
+					result: {
+						conversation_id: "conv-1",
+						status: "SUCCESS",
+						response: JSON.stringify(payload),
+						structured_output: payload,
+					},
+				})
+			);
 		}, 15);
 	} else if (outIdx >= 0 && args[outIdx + 1]) {
 		const payload = JSON.stringify({
@@ -170,14 +200,14 @@ test("/_llm/cli 支持 agy 与 codex 非流式和 SSE 流式执行、沙箱目�
 	assert.ok(codexFinal);
 	assert.equal(codexFinal.reasoningContent, "思考第一步");
 
-	// 3. 流式 SSE agy
+	// 3. 流式 SSE agy（验证真实 init/step_update/result 协议及无 -p/--effort、通过 stdin 传入完整 prompt）
 	const sseAgyText = await fetch(`${baseUrl}/_llm/cli`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
 			provider: "agy",
 			command: mockScript,
-			model: "gemini-3-pro",
+			model: "gemini-3.8-flash-medium",
 			thinkingEffort: "high",
 			prompt: "agy流式测试",
 			jsonSchema: { type: "object" },
@@ -189,10 +219,17 @@ test("/_llm/cli 支持 agy 与 codex 非流式和 SSE 流式执行、沙箱目�
 		.map(block => block.trim())
 		.filter(block => block.startsWith("data:"))
 		.map(block => JSON.parse(block.slice(5).trim()));
+	assert.equal(agyEvents.some(e => e.type === "first_token"), true);
 	const agyFinal = agyEvents.find(e => e.type === "result");
 	assert.ok(agyFinal);
 	assert.equal(agyFinal.reasoningContent, "正在分析牌面");
 	assert.equal(agyFinal.rawOutput.tool, "use_card");
+	const agyMeta = JSON.parse(agyFinal.rawOutput.arguments_json);
+	assert.equal(agyMeta.stdinPrompt.includes("agy流式测试"), true);
+	assert.equal(agyMeta.args.includes("--disable-slash-commands"), true);
+	assert.equal(agyMeta.args.includes("-p"), false);
+	assert.equal(agyMeta.args.includes("--effort"), false);
+	assert.equal(agyMeta.args.includes("--mode"), false);
 
 	// 4. 客户端主动中止应迅速结束流读取，并清理慢子进程
 	const controller = new AbortController();
@@ -214,4 +251,55 @@ test("/_llm/cli 支持 agy 与 codex 非流式和 SSE 流式执行、沙箱目�
 	});
 	await assert.rejects(slowRes.text());
 	assert.ok(Date.now() - startedAt < 2500);
+});
+
+test("resolveCommandTarget 在 PATH 未命中时回退本机常见 agy/codex 路径", async t => {
+	const { resolveCommandTarget } = await import("./cli-command.js");
+	const fakeHome = mkdtempSync(path.join(tmpdir(), "noname-cli-home-"));
+	t.after(() => {
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+
+	const agyDir = path.join(fakeHome, ".gemini", "bin");
+	const codexDir = path.join(fakeHome, ".codex", ".sandbox-bin");
+	mkdirSync(agyDir, { recursive: true });
+	mkdirSync(codexDir, { recursive: true });
+	const agyExe = path.join(agyDir, "agy.exe");
+	const codexExe = path.join(codexDir, "codex.exe");
+	writeFileSync(agyExe, "", "utf8");
+	writeFileSync(codexExe, "", "utf8");
+
+	const agyTarget = resolveCommandTarget("agy", {
+		platform: "win32",
+		pathEnv: "",
+		pathExtEnv: ".exe;.cmd",
+		homeDir: fakeHome,
+		appDataDir: path.join(fakeHome, "AppData", "Roaming"),
+	});
+	assert.deepEqual(agyTarget, { kind: "exe", resolved: agyExe });
+
+	const codexTarget = resolveCommandTarget("codex", {
+		platform: "win32",
+		pathEnv: "",
+		pathExtEnv: ".exe;.cmd",
+		homeDir: fakeHome,
+		appDataDir: path.join(fakeHome, "AppData", "Roaming"),
+	});
+	assert.deepEqual(codexTarget, { kind: "exe", resolved: codexExe });
+
+	// 若 ~/.codex/config.toml 中配置了 CODEX_CLI_PATH，应优先于 .sandbox-bin
+	const appDir = path.join(fakeHome, "app-codex");
+	mkdirSync(appDir, { recursive: true });
+	const appCodexExe = path.join(appDir, "codex.exe");
+	writeFileSync(appCodexExe, "", "utf8");
+	writeFileSync(path.join(fakeHome, ".codex", "config.toml"), `CODEX_CLI_PATH = '${appCodexExe}'\n`, "utf8");
+
+	const configuredCodexTarget = resolveCommandTarget("codex", {
+		platform: "win32",
+		pathEnv: "",
+		pathExtEnv: ".exe;.cmd",
+		homeDir: fakeHome,
+		appDataDir: path.join(fakeHome, "AppData", "Roaming"),
+	});
+	assert.deepEqual(configuredCodexTarget, { kind: "exe", resolved: appCodexExe });
 });

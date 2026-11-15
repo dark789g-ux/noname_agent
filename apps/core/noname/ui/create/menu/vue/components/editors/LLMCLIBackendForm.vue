@@ -34,22 +34,23 @@
 			</div>
 		</div>
 
-		<div class="llm-grid-3">
+		<div :class="provider === 'agy' ? 'llm-grid-2' : 'llm-grid-3'">
 			<div class="llm-field">
 				<label class="llm-field-label">模型名称（可选）</label>
-				<input
+				<select
 					v-model="current.model"
-					type="text"
-					class="llm-input"
-					placeholder="留空使用 CLI 默认模型"
-					@blur="saveCliConfig(false)"
+					class="llm-select"
 					@change="saveCliConfig(false)"
 					@keydown.stop
 					@keyup.stop
-				/>
+				>
+					<option value="">默认（使用 CLI 默认模型）</option>
+					<option v-if="hasCustomModel" :value="current.model">{{ current.model }}</option>
+					<option v-for="modelId in modelOptions" :key="modelId" :value="modelId">{{ modelId }}</option>
+				</select>
 			</div>
 
-			<div class="llm-field">
+			<div v-if="provider === 'codex'" class="llm-field">
 				<label class="llm-field-label">思考深度</label>
 				<select
 					v-model="current.thinkingEffort"
@@ -83,7 +84,7 @@
 		</div>
 
 		<div v-if="provider === 'agy'" class="llm-field-hint">
-			提示：<code>agy</code> 会优先使用 CLI/模型自身的默认推理配置；若目标参数不被支持，建议保持为「默认」。
+			提示：<code>agy</code> 的模型 ID 已包含思考强度档位，请直接通过上方模型下拉框选择。
 		</div>
 
 		<div class="llm-field">
@@ -107,6 +108,7 @@ import { computed, reactive } from "vue";
 import { game, lib, ui } from "noname";
 import {
 	defaultCLISettings,
+	getCLIModelOptions,
 	readBackendsFromRawConfig,
 	type CLIBackendSettings,
 } from "@/llm/backends.js";
@@ -134,6 +136,11 @@ const cliStates = reactive<Record<"agy" | "codex", CLIBackendSettings>>({
 });
 
 const current = computed(() => cliStates[props.provider]);
+const modelOptions = computed(() => getCLIModelOptions(props.provider));
+const hasCustomModel = computed(() => {
+	const value = current.value.model.trim();
+	return !!value && !modelOptions.value.includes(value);
+});
 
 function saveCliConfig(affectsLabel: boolean, ensureCommandFallback = false) {
 	const target = props.provider;
@@ -145,7 +152,7 @@ function saveCliConfig(affectsLabel: boolean, ensureCommandFallback = false) {
 		displayName: src.displayName.trim(),
 		command: src.command.trim() || defaultCLISettings(target).command,
 		model: src.model.trim(),
-		thinkingEffort: src.thinkingEffort,
+		thinkingEffort: target === "agy" ? "default" : src.thinkingEffort,
 		timeoutSec: clampInt(src.timeoutSec, 60, 5, 300),
 		extraArgs: src.extraArgs.trim(),
 	};

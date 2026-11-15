@@ -1,9 +1,10 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
+import { buildSpawnSpec, resolveCommandTarget, type SpawnSpec } from "./cli-command.js";
+import { extractAgyEventUpdate, recoverAgyNdjsonResult } from "./agy-stream.js";
 
 export type CliProvider = "agy" | "codex";
 export type CliThinkingEffort = "default" | "none" | "low" | "medium" | "high";
@@ -29,19 +30,7 @@ export interface CliRunResult {
 	reasoningContent?: string;
 }
 
-interface CommandTarget {
-	kind: "node-script" | "cmd" | "exe";
-	resolved: string;
-}
-
-interface SpawnSpec {
-	file: string;
-	args: string[];
-	useDetachedGroup: boolean;
-	windowsVerbatimArguments: boolean;
-}
-
-const AGY_HEADLESS_INSTRUCTION = "请严格根据标准输入（stdin）中的三国杀牌局信息与工具约束，直接返回符合 JSON Schema 的唯一决策 JSON，不要访问任何文件或执行命令。";
+const AGY_HEADLESS_INSTRUCTION = "【无头执行约束】请严格仅依据以下牌局信息与可用工具定义，直接返回符合 JSON Schema 的唯一决策 JSON，禁止读取文件、检索目录或执行任何终端命令。";
 
 /** 将用户填写的附加 CLI 参数拆分为独立参数数组，不经过 shell 展开。 */
 export function splitCliArgs(input?: string): string[] {
@@ -108,9 +97,8 @@ function buildProviderArgs(options: CliRunOptions, schemaPath: string, outPath: 
 	const effort = options.thinkingEffort || "default";
 	const extra = splitCliArgs(options.extraArgs);
 	if (options.provider === "agy") {
-		const args = ["-p", AGY_HEADLESS_INSTRUCTION, "--mode", "plan", "--output-format", options.stream ? "stream-json" : "json", "--json-schema", schemaPath];
+		const args = ["--disable-slash-commands", "--output-format", options.stream ? "stream-json" : "json", "--json-schema", schemaPath];
 		if (model) args.push("--model", model);
-		if (effort === "low" || effort === "medium" || effort === "high") args.push("--effort", effort);
 		return [...args, ...extra];
 	}
 	const args = ["exec", "-", "--skip-git-repo-check", "--sandbox", "read-only", "--ephemeral", "--output-schema", schemaPath, "-o", outPath];
@@ -121,58 +109,11 @@ function buildProviderArgs(options: CliRunOptions, schemaPath: string, outPath: 
 	return [...args, ...extra];
 }
 
-function resolveCommandTarget(command: string): CommandTarget {
-	const trimmed = String(command || "").trim();
-	if (!trimmed) throw stagedError("config", "CLI 命令不能为空");
-	if (/\.(mjs|cjs|js)$/i.test(trimmed)) return { kind: "node-script", resolved: trimmed };
-	if (process.platform !== "win32") return { kind: "exe", resolved: trimmed };
-
-	const resolved = findWindowsExecutable(trimmed);
-	const lower = resolved.toLowerCase();
-	if (lower.endsWith(".cmd") || lower.endsWith(".bat")) return { kind: "cmd", resolved };
-	return { kind: "exe", resolved };
-}
-
-function findWindowsExecutable(command: string): string {
-	const pathExts = (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD")
-		.split(";")
-		.map(ext => ext.trim())
-		.filter(Boolean);
-	const hasExt = /\.[a-z0-9]+$/i.test(path.basename(command));
-	const probeExts = hasExt ? [""] : [...pathExts, ""];
-	const dirs = /[\\/:]/.test(command)
-		? [""]
-		: (process.env.PATH || "")
-				.split(path.delimiter)
-				.map(dir => dir.trim())
-				.filter(Boolean);
-
-	for (const dir of dirs) {
-		const base = dir ? path.join(dir, command) : command;
-		for (const ext of probeExts) {
-			const candidate = ext ? `${base}${ext}` : base;
-			if (existsSync(candidate)) return candidate;
-		}
+function buildStdinPrompt(options: CliRunOptions): string {
+	if (options.provider === "agy") {
+		return `${AGY_HEADLESS_INSTRUCTION}\n\n${options.prompt}`;
 	}
-	return command;
-}
-
-function buildSpawnSpec(target: CommandTarget, cliArgs: string[]): SpawnSpec {
-	if (target.kind === "node-script") {
-		return { file: process.execPath, args: [target.resolved, ...cliArgs], useDetachedGroup: process.platform !== "win32", windowsVerbatimArguments: false };
-	}
-	if (target.kind === "cmd") {
-		const comspec = process.env.ComSpec || "cmd.exe";
-		const commandLine = `"${[target.resolved, ...cliArgs].map(quoteCmdArg).join(" ")}"`;
-		return { file: comspec, args: ["/d", "/s", "/c", commandLine], useDetachedGroup: false, windowsVerbatimArguments: true };
-	}
-	return { file: target.resolved, args: cliArgs, useDetachedGroup: process.platform !== "win32", windowsVerbatimArguments: false };
-}
-
-function quoteCmdArg(arg: string): string {
-	if (arg === "") return '""';
-	if (!/[\s"&|<>()^%!]/.test(arg)) return arg;
-	return `"${arg.replace(/"/g, "")}"`;
+	return options.prompt;
 }
 
 async function executeCliProcess(spec: SpawnSpec, cwd: string, outPath: string, options: CliRunOptions): Promise<CliRunResult> {
@@ -202,6 +143,7 @@ async function executeCliProcess(spec: SpawnSpec, cwd: string, outPath: string, 
 		let messageBuffer = "";
 		let structuredOutput: unknown;
 		let hasStructuredOutput = false;
+		let agyResultError = "";
 		let firstChunkSent = false;
 		let firstTokenSent = false;
 
@@ -253,6 +195,7 @@ async function executeCliProcess(spec: SpawnSpec, cwd: string, outPath: string, 
 				return;
 			}
 			const agyUpdate = extractAgyEventUpdate(parsed);
+			if (agyUpdate.error) agyResultError = agyUpdate.error;
 			if (agyUpdate.reasoning) {
 				reasoningBuffer = appendStreamSegment(reasoningBuffer, agyUpdate.reasoning, agyUpdate.reasoningIsDelta);
 				emitFirstToken();
@@ -328,7 +271,15 @@ async function executeCliProcess(spec: SpawnSpec, cwd: string, outPath: string, 
 				return;
 			}
 			try {
-				const finalResult = await collectFinalResult(options, outPath, stdoutAll, messageBuffer, reasoningBuffer, hasStructuredOutput ? structuredOutput : undefined);
+				const finalResult = await collectFinalResult(
+					options,
+					outPath,
+					stdoutAll,
+					messageBuffer,
+					reasoningBuffer,
+					hasStructuredOutput ? structuredOutput : undefined,
+					agyResultError
+				);
 				resolve(finalResult);
 			} catch (err: any) {
 				reject(err);
@@ -336,7 +287,7 @@ async function executeCliProcess(spec: SpawnSpec, cwd: string, outPath: string, 
 		});
 
 		child.stdin.on("error", () => {});
-		child.stdin.write(options.prompt, "utf8");
+		child.stdin.write(buildStdinPrompt(options), "utf8");
 		child.stdin.end();
 	});
 }
@@ -347,7 +298,8 @@ async function collectFinalResult(
 	stdoutAll: string,
 	messageBuffer: string,
 	reasoningBuffer: string,
-	structuredOutput: unknown
+	structuredOutput: unknown,
+	agyResultError = ""
 ): Promise<CliRunResult> {
 	if (options.provider === "codex") {
 		let fileContent = "";
@@ -367,22 +319,31 @@ async function collectFinalResult(
 			...(reasoningBuffer ? { reasoningContent: reasoningBuffer } : {}),
 		};
 	}
+	if (agyResultError) {
+		throw stagedError("fetch", `agy CLI 返回错误: ${agyResultError}`);
+	}
 	const trimmedStdout = stdoutAll.trim();
 	if (!options.stream && trimmedStdout) {
 		try {
 			const parsed = JSON.parse(trimmedStdout);
 			const agy = extractAgyEventUpdate(parsed);
+			if (agy.error) throw stagedError("fetch", `agy CLI 返回错误: ${agy.error}`);
 			const reasoning = agy.reasoning || reasoningBuffer;
 			return {
-				rawOutput: agy.hasStructured ? agy.structured : parsed,
+				rawOutput: agy.hasStructured ? agy.structured : agy.text || parsed,
 				...(reasoning ? { reasoningContent: reasoning } : {}),
 			};
-		} catch {
+		} catch (err: any) {
+			if (err?.stage) throw err;
 			return {
 				rawOutput: trimmedStdout,
 				...(reasoningBuffer ? { reasoningContent: reasoningBuffer } : {}),
 			};
 		}
+	}
+	if (options.stream && trimmedStdout) {
+		const recovered = recoverAgyNdjsonResult(trimmedStdout, reasoningBuffer);
+		if (recovered) return recovered;
 	}
 	const fallback = messageBuffer.trim() || trimmedStdout;
 	if (!fallback) throw stagedError("parse", "agy CLI 未返回任何输出");
@@ -390,54 +351,6 @@ async function collectFinalResult(
 		rawOutput: fallback,
 		...(reasoningBuffer ? { reasoningContent: reasoningBuffer } : {}),
 	};
-}
-
-function extractAgyEventUpdate(event: any): {
-	reasoning: string;
-	reasoningIsDelta: boolean;
-	text: string;
-	textIsDelta: boolean;
-	hasStructured: boolean;
-	structured: unknown;
-} {
-	if (!event || typeof event !== "object") {
-		return { reasoning: "", reasoningIsDelta: false, text: "", textIsDelta: false, hasStructured: false, structured: undefined };
-	}
-	let reasoning = "";
-	let reasoningIsDelta = false;
-	if (typeof event.thinking === "string") reasoning = event.thinking;
-	else if (typeof event.reasoning_content === "string") reasoning = event.reasoning_content;
-	else if (typeof event.reasoning === "string") reasoning = event.reasoning;
-	else if (typeof event.step?.thinking === "string") reasoning = event.step.thinking;
-	else if (event.item?.type === "reasoning" && typeof event.item?.text === "string") reasoning = event.item.text;
-	else if (typeof event.delta?.thinking === "string") {
-		reasoning = event.delta.thinking;
-		reasoningIsDelta = true;
-	} else if (typeof event.delta?.reasoning_content === "string") {
-		reasoning = event.delta.reasoning_content;
-		reasoningIsDelta = true;
-	}
-
-	if (event.structured_output !== undefined) {
-		return { reasoning, reasoningIsDelta, text: "", textIsDelta: false, hasStructured: true, structured: event.structured_output };
-	}
-	if (event.type === "result" && event.result !== undefined) {
-		return { reasoning, reasoningIsDelta, text: "", textIsDelta: false, hasStructured: true, structured: event.result };
-	}
-	let text = "";
-	let textIsDelta = false;
-	if (typeof event.result === "string") text = event.result;
-	else if (typeof event.response === "string") text = event.response;
-	else if (typeof event.content === "string") text = event.content;
-	else if (typeof event.message?.content === "string") text = event.message.content;
-	else if (typeof event.delta?.text === "string") {
-		text = event.delta.text;
-		textIsDelta = true;
-	} else if (typeof event.delta?.content === "string") {
-		text = event.delta.content;
-		textIsDelta = true;
-	}
-	return { reasoning, reasoningIsDelta, text, textIsDelta, hasStructured: false, structured: undefined };
 }
 
 function appendStreamSegment(existing: string, next: string, isDelta = false): string {

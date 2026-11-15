@@ -7,6 +7,46 @@ export type CLITHinkingEffort = "default" | "none" | "low" | "medium" | "high";
 
 export const SEAT_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
+export const AGY_MODEL_OPTIONS = [
+	"gemini-4-carbon-medium",
+	"gemini-4-carbon-high",
+	"gemini-4-carbon-low",
+	"gemini-4-argon-medium",
+	"gemini-4-argon-high",
+	"gemini-4-argon-low",
+	"gemini-4-hydrogen-high",
+	"gemini-4-hydrogen-xhigh",
+	"gemini-4-hydrogen-medium",
+	"gemini-4-hydrogen-low",
+	"gemini-pro-orchestrator",
+	"gemini-pro-orchestrator-argon",
+	"gemini-3.8-flash-high",
+	"gemini-3.8-flash-medium",
+	"gemini-3.8-flash-low",
+	"claude-opus-5-5-low",
+	"claude-opus-5-5-medium",
+	"claude-opus-5-5-high",
+	"claude-sonnet-5-5-low",
+	"claude-sonnet-5-5-medium",
+	"claude-sonnet-5-5-high",
+	"gpt-oss-120b-medium",
+] as const;
+
+export const CODEX_MODEL_OPTIONS = [
+	"gpt-6.1-sol",
+	"gpt-6-astra",
+	"gpt-6.1-terra",
+	"gpt-6-sol",
+	"gpt-6-luna",
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+	"gpt-5.6-luna",
+] as const;
+
+export function getCLIModelOptions(provider: "agy" | "codex"): readonly string[] {
+	return provider === "agy" ? AGY_MODEL_OPTIONS : CODEX_MODEL_OPTIONS;
+}
+
 export interface CLIBackendSettings {
 	displayName: string;
 	command: string;

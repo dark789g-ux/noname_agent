@@ -161,6 +161,10 @@ function unwrapEnvelope(rawOutput: unknown): unknown {
 				current = obj.result;
 				continue;
 			}
+			if (typeof obj.response === "string" && obj.response.trim() && obj.tool === undefined && obj.name === undefined) {
+				current = obj.response;
+				continue;
+			}
 		}
 		break;
 	}
