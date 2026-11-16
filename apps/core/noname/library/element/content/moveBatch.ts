@@ -1,7 +1,7 @@
 import { type GuanxingContainer } from "./moveDrag.js";
 
 export function createBatchMove(event) {
-	const filterMove = event.filterMove;
+	const filterMove = event.filterMove ?? (() => true);
 	const filterBatchMove = (buttonList: Button[], buttonsDiv: GuanxingContainer, position: "first" | "last"): Button[] => {
 		const parent = buttonList[0]?.parentElement;
 

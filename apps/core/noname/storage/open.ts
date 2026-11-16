@@ -29,7 +29,10 @@ export async function openPersistence(prefix: string): Promise<{ main: Persisten
 		}
 	}
 	storageInitializing = false;
-	const logs = new SqliteDatabase(transport, "logs");
+	const logsTransport = new StorageTransport(undefined, async error => {
+		throw error;
+	});
+	const logs = new SqliteDatabase(logsTransport, "logs");
 	return { main: new SqliteDatabase(transport, "main"), logs: async () => logs };
 }
 

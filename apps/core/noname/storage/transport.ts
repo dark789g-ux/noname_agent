@@ -45,9 +45,19 @@ export class StorageTransport {
 				const timeout = setTimeout(() => controller.abort(), 15000);
 				try {
 					const response = await this.fetcher("/_storage/rpc", { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: controller.signal });
-					const result = await response.json();
-					if (response.status === 409) throw new StorageConflict(result.error);
-					if (!response.ok || !Object.hasOwn(result, "result")) throw new Error(result.error || `本地存储服务返回 HTTP ${response.status}`);
+					const rawText = await response.text();
+					let result: any = null;
+					if (rawText) {
+						try {
+							result = JSON.parse(rawText);
+						} catch {
+							if (response.ok) throw new Error("本地存储服务返回了无效的 JSON 响应");
+						}
+					}
+					if (response.status === 409) throw new StorageConflict(result?.error || "数据版本冲突");
+					if (!response.ok || !result || typeof result !== "object" || !Object.hasOwn(result, "result")) {
+						throw new Error(result?.error || `本地存储服务返回 HTTP ${response.status}（请确认 @noname/fs 本地服务正在运行）`);
+					}
 					return result.result;
 				} finally {
 					clearTimeout(timeout);

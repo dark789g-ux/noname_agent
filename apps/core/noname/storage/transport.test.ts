@@ -33,3 +33,26 @@ test("storage failure remains pending, shows retry UI, then resumes the same ope
 	assert.equal(bodies[0], bodies[1]);
 	assert.equal(document.querySelector("[data-storage-error]"), null);
 });
+
+test("empty HTTP 500 proxy response reports readable HTTP status instead of JSON parse error", async t => {
+	const dom = new JSDOM("<body></body>");
+	const previousDocument = globalThis.document;
+	globalThis.document = dom.window.document;
+	t.after(() => {
+		globalThis.document = previousDocument;
+		dom.window.close();
+	});
+	let available = false;
+	const transport = new StorageTransport(async () => {
+		if (!available) return new Response("", { status: 500, headers: { "Content-Type": "text/plain" } });
+		return Response.json({ result: { ok: true } });
+	});
+	const pending = transport.request({ action: "status" });
+	await new Promise(resolve => setImmediate(resolve));
+	const text = document.body.textContent || "";
+	assert.match(text, /HTTP 500/);
+	assert.doesNotMatch(text, /Unexpected end of JSON input/);
+	available = true;
+	(document.querySelector("button") as HTMLButtonElement).click();
+	assert.deepEqual(await pending, { ok: true });
+});

@@ -4,6 +4,16 @@ import type { Card, GameEvent, Player, VCard } from "../../index.js";
 import "../contracts/choiceAndPhaseContract.js";
 import type { EventChooseToMoveNewParams, EventChooseToMoveParams, EventMoveCardParams } from "../eventParams.js";
 
+const DEFAULT_MOVE_FILTER_SYMBOL = Symbol.for("noname.defaultMoveFilter");
+
+function createDefaultMoveFilter() {
+	const fn = function () {
+		return true;
+	} as ((...args: any[]) => boolean) & { [DEFAULT_MOVE_FILTER_SYMBOL]?: boolean };
+	fn[DEFAULT_MOVE_FILTER_SYMBOL] = true;
+	return fn;
+}
+
 export const moveAndMinigameMethods = {
 	chooseToPlayBeatmap(this: Player, beatmap?: any): GameEvent {
 		const next: any = game.createEvent("chooseToPlayBeatmap");
@@ -34,12 +44,10 @@ export const moveAndMinigameMethods = {
 			}
 		}
 		next.setContent("chooseToMove");
-		next.filterOk = function () {
+		next.filterOk ??= function () {
 			return true;
 		};
-		next.filterMove = function () {
-			return true;
-		};
+		next.filterMove ??= createDefaultMoveFilter();
 		next._args = args;
 		return next;
 	},
@@ -64,9 +72,7 @@ export const moveAndMinigameMethods = {
 		next.filterOk ??= function () {
 			return true;
 		};
-		next.filterMove ??= function () {
-			return true;
-		};
+		next.filterMove ??= createDefaultMoveFilter();
 		next._args = Array.from(arguments);
 		return next;
 	},

@@ -29,7 +29,7 @@ export const chooseToMove_newContent: Record<string, ContentFuncByAll | ContentF
 			const animationDuration = lib.config.animation_choose_to_move ? 300 : 0;
 			//自动选择
 			event.switchToAuto = () => {
-				if (!event.filterOk(event.moved)) {
+				if (!(event.filterOk ? event.filterOk(event.moved) : true)) {
 					if (!event.forced) {
 						event._result = { bool: false };
 					} else {
@@ -81,7 +81,7 @@ export const chooseToMove_newContent: Record<string, ContentFuncByAll | ContentF
 					}
 					return Array.from(container.children).map(child => ("link" in child ? child.link : undefined));
 				});
-				if (event.filterOk(event.moved)) {
+				if (event.filterOk ? event.filterOk(event.moved) : true) {
 					ui.create.confirm("o");
 				} else {
 					if (!event.forced) {
@@ -97,7 +97,7 @@ export const chooseToMove_newContent: Record<string, ContentFuncByAll | ContentF
 					return;
 				}
 				if (event.dialog.selectedCard) {
-					if (card !== event.dialog.selectedCard && event.filterMove(event.dialog.selectedCard, card, event.moved)) {
+					if (card !== event.dialog.selectedCard && (event.filterMove ? event.filterMove(event.dialog.selectedCard, card, event.moved) : true)) {
 						event.dialog.isBusy = true;
 						game.$swapElement(card, event.dialog.selectedCard, animationDuration).then(() => {
 							event.dialog.isBusy = false;
@@ -120,7 +120,7 @@ export const chooseToMove_newContent: Record<string, ContentFuncByAll | ContentF
 					return;
 				}
 				const index = Array.from(event.dialog.itemContainers).indexOf(itemContainer) / 2 - 1;
-				if (event.filterMove(event.dialog.selectedCard, index, event.moved)) {
+				if (event.filterMove ? event.filterMove(event.dialog.selectedCard, index, event.moved) : true) {
 					event.dialog.isBusy = true;
 					game.$elementGoto(event.dialog.selectedCard, itemContainer, undefined, animationDuration).then(() => {
 						event.dialog.isBusy = false;

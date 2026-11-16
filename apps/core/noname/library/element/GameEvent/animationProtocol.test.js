@@ -181,16 +181,38 @@ test("unrecognized strings and disabled animation preserve the immediate post-an
 	}
 });
 
-test("the real huicui animate producer retains giver/card identity and argument order", () => {
-	const skillSource = source("../../../../character/huicui/skill.js");
-	let expression;
-	function visit(node) {
-		if (!expression && ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "set" && node.arguments[0]?.text === "animate" && ts.isFunctionExpression(node.arguments[1]) && node.arguments[1].getText(skillSource).includes("givers[i].$give")) expression = node.arguments[1];
-		ts.forEachChild(node, visit);
+function findExpressionInModuleTree(entryRelativePath, predicate) {
+	const seen = new Set();
+	const queue = [new URL(entryRelativePath, import.meta.url)];
+	while (queue.length) {
+		const url = queue.shift();
+		if (seen.has(url.href)) continue;
+		seen.add(url.href);
+		const ast = ts.createSourceFile(url.href, readFileSync(url, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+		let match;
+		function visit(node) {
+			if (!match && predicate(node, ast)) match = { sourceFile: ast, expression: node };
+			if (!match) ts.forEachChild(node, visit);
+		}
+		visit(ast);
+		if (match) return match;
+		for (const statement of ast.statements) {
+			if (ts.isImportDeclaration(statement) && statement.moduleSpecifier.text.startsWith("./")) {
+				queue.push(new URL(statement.moduleSpecifier.text, url));
+			}
+		}
 	}
-	visit(skillSource);
-	assert.ok(expression, "real skill assignment must remain reachable in the source");
-	const callback = evaluate(`const callback = ${expression.getText(skillSource)};`, {});
+	return null;
+}
+
+test("the real huicui animate producer retains giver/card identity and argument order", () => {
+	const found = findExpressionInModuleTree(
+		"../../../../character/huicui/skill.js",
+		(node, skillSource) => ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "set" && node.arguments[0]?.text === "animate" && ts.isFunctionExpression(node.arguments[1]) && node.arguments[1].getText(skillSource).includes("givers[i].$give")
+	);
+	assert.ok(found, "real skill assignment must remain reachable in the source");
+	const expression = found.expression.arguments[1];
+	const callback = evaluate(`const callback = ${expression.getText(found.sourceFile)};`, {});
 	const cards = [{}, {}];
 	const player = {};
 	const calls = [];

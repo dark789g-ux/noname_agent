@@ -20,8 +20,8 @@ export function showMoveDialog(event) {
 		ui.selected.guanxing_buttons = [];
 
 		const list = event.list;
-		const filterMove = event.filterMove;
-		const filterOk = event.filterOk;
+		const filterMove = event.filterMove ?? (() => true);
+		const filterOk = event.filterOk ?? (() => true);
 		// 如果只有一行那么多选一般来说就没什么意义喵
 		const canMultiselect = list.length > 1 && lib.config.choose_all_button && event.allowChooseAll;
 

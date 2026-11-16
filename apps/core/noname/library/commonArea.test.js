@@ -1,4 +1,5 @@
 import { field } from "./testing/fixtures.mjs";
+import { renderCommonCardPileDialog } from "../ui/click/methods/commonCardPile.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -44,10 +45,6 @@ test("common areas keep async handlers and register hidden poker piles without c
 });
 
 test("common area dialog shows visible cards but keeps hidden pile counts only", () => {
-	const source = readSource("../ui/click/index.js");
-	const click = source.statements.find(node => ts.isClassDeclaration(node));
-	const method = click.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === "commonCardPileButton");
-	assert.ok(method);
 	const visible = [{}],
 		hidden = [{}, {}];
 	const entries = new Map([
@@ -67,8 +64,7 @@ test("common area dialog shows visible cards but keeps hidden pile counts only",
 	};
 	const ui = { create: { dialog: () => dialog, div: () => "placeholder" } };
 	const get = { cnNumber: String, itemtype: value => (Array.isArray(value) ? "cards" : undefined) };
-	const render = new Function("lib", "_status", "ui", "get", `return function() ${method.body.getText(source)}`)({ commonArea: entries }, { renku: visible, pokerPile: hidden }, ui, get);
-	assert.equal(render(), dialog);
+	assert.equal(renderCommonCardPileDialog({ commonArea: entries }, { renku: visible, pokerPile: hidden }, ui, get), dialog);
 	assert.deepEqual(shown, [[visible, "card"]]);
 	assert.equal(
 		titles.some(value => value.includes("扑克牌堆 (2张)")),

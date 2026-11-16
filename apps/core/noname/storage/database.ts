@@ -106,7 +106,10 @@ export class SqliteDatabase {
 				return result;
 			} catch (error) {
 				if (!(error instanceof StorageConflict)) throw error;
-				if (attempt && attempt % 8 === 0) await showStorageFailure(error);
+				if (attempt && attempt % 8 === 0) {
+					if (this.namespace === "logs") throw error;
+					await showStorageFailure(error);
+				}
 			}
 		}
 	}
