@@ -1,0 +1,355 @@
+/*--------位置(5人)------*/
+[data-number="5"] > .player[data-position="1"] {
+	top: calc(200% / 3 - 220px);
+	left: calc(100% - 150px);
+}
+[data-number="5"] > .player[data-position="2"] {
+	top: 0;
+	left: calc(200% / 3 - 50px);
+}
+[data-number="5"] > .player[data-position="3"] {
+	top: 0;
+	left: calc(100% / 3 - 100px);
+}
+[data-number="5"] > .player[data-position="4"] {
+	top: calc(200% / 3 - 220px);
+	left: 0;
+}
+[data-number="5"] > .card[data-position="1"] {
+	top: calc(150% / 3 - 65px);
+	left: calc(100% - 127px);
+}
+[data-number="5"] > .card[data-position="2"] {
+	top: 38px;
+	left: calc(200% / 3 - 27px);
+}
+[data-number="5"] > .card[data-position="3"] {
+	top: 38px;
+	left: calc(100% / 3 - 77px);
+}
+[data-number="5"] > .card[data-position="4"] {
+	top: calc(150% / 3 - 65px);
+	left: 23px;
+}
+[data-number="5"] > .popup[data-position="1"] {
+	top: calc(200% / 3 - 210px);
+	left: calc(100% - 186px);
+}
+[data-number="5"] > .popup[data-position="2"] {
+	top: 190px;
+	left: calc(200% / 3 + 73px);
+}
+[data-number="5"] > .popup[data-position="3"] {
+	top: 190px;
+	left: calc(100% / 3 - 100px);
+}
+[data-number="5"] > .popup[data-position="4"] {
+	top: calc(200% / 3 - 210px);
+	left: 160px;
+}
+/*--------位置(4人)------*/
+[data-number="4"] > .player[data-position="1"] {
+	top: calc(100% / 3 - 40px);
+	left: calc(100% - 150px);
+}
+[data-number="4"] > .player[data-position="2"] {
+	top: 0;
+	left: calc(50% - 75px);
+}
+[data-number="4"] > .player[data-position="3"] {
+	top: calc(100% / 3 - 40px);
+	left: 0;
+}
+[data-number="4"] > .card[data-position="1"] {
+	top: calc(100% / 3 - 2px);
+	left: calc(100% - 127px);
+}
+[data-number="4"] > .card[data-position="2"] {
+	top: 38px;
+	left: calc(50% - 52px);
+}
+[data-number="4"] > .card[data-position="3"] {
+	top: calc(100% / 3 - 2px);
+	left: 23px;
+}
+[data-number="4"] > .popup[data-position="1"] {
+	top: calc(100% / 3 - 30px);
+	left: calc(100% - 186px);
+}
+[data-number="4"] > .popup[data-position="2"] {
+	top: 190px;
+	left: calc(50% - 61px);
+}
+[data-number="4"] > .popup[data-position="3"] {
+	top: calc(100% / 3 - 30px);
+	left: 160px;
+}
+/*--------位置(3人)------*/
+[data-number="3"] > .player[data-position="1"] {
+	top: 20px;
+	left: calc(75% + 30px);
+}
+[data-number="3"] > .player[data-position="2"] {
+	top: 20px;
+	left: calc(25% - 180px);
+}
+[data-number="3"] > .card[data-position="1"] {
+	top: 58px;
+	left: calc(75% + 53px);
+}
+[data-number="3"] > .card[data-position="2"] {
+	top: 58px;
+	left: calc(25% - 157px);
+}
+[data-number="3"] > .popup[data-position="1"] {
+	top: 210px;
+	left: calc(75% + 153px);
+}
+[data-number="3"] > .popup[data-position="2"] {
+	top: 210px;
+	left: calc(25% - 180px);
+}
+/*--------位置(2人)------*/
+[data-number="2"] > .player[data-position="1"] {
+	top: 0;
+	left: calc(50% - 75px);
+}
+[data-number="2"] > .card[data-position="1"] {
+	top: 0;
+	left: calc(50% - 52px);
+}
+[data-number="2"] > .popup[data-position="1"] {
+	top: 190px;
+	left: calc(50% - 61px);
+}
+/*--------位置(1人)------*/
+.player[data-position="0"] {
+	top: calc(100% - 170px);
+	left: calc(50% - 75px);
+}
+/*--------位置(联机)------*/
+#window > .player.connect[data-position="c0"] {
+	left: calc(50% - 255px);
+	top: calc(50% - 90px);
+}
+#window > .player.connect[data-position="c1"] {
+	left: calc(50% - 75px);
+	top: calc(50% - 90px);
+}
+#window > .player.connect[data-position="c2"] {
+	left: calc(50% + 105px);
+	top: calc(50% - 90px);
+}
+#window > .player.connect[data-position="c3"] {
+	left: calc(50% - 255px);
+	top: calc(50% - 90px);
+}
+#window > .player.connect[data-position="c4"] {
+	left: calc(50% - 75px);
+	top: calc(50% - 90px);
+}
+#window > .player.connect[data-position="c5"] {
+	left: calc(50% + 105px);
+	top: calc(50% - 90px);
+}
+
+#window:not(.more_room) > .player.connect[data-position="c3"] {
+	opacity: 0 !important;
+	pointer-events: none;
+	visibility: hidden;
+}
+#window:not(.more_room) > .player.connect[data-position="c4"] {
+	opacity: 0 !important;
+	pointer-events: none;
+	visibility: hidden;
+}
+#window:not(.more_room) > .player.connect[data-position="c5"] {
+	opacity: 0 !important;
+	pointer-events: none;
+	visibility: hidden;
+}
+
+#window.more_room > .player.connect[data-position="c0"] {
+	transform: translateY(-105px);
+}
+#window.more_room > .player.connect[data-position="c1"] {
+	transform: translateY(-105px);
+}
+#window.more_room > .player.connect[data-position="c2"] {
+	transform: translateY(-105px);
+}
+#window.more_room > .player.connect[data-position="c3"] {
+	transform: translateY(105px);
+}
+#window.more_room > .player.connect[data-position="c4"] {
+	transform: translateY(105px);
+}
+#window.more_room > .player.connect[data-position="c5"] {
+	transform: translateY(105px);
+}
+
+#window > .player.connect {
+	width: 150px;
+}
+.connectbutton {
+	top: calc(500% / 7 + 80px + 5px);
+}
+
+.card[data-position="0"] {
+	top: calc(100% - 130px);
+	left: calc(50% - 52px);
+}
+.popup[data-position="0"] {
+	top: calc(100% - 206px);
+	left: calc(50% - 61px);
+}
+#me,
+#mebg,
+#autonode {
+	top: calc(100% - 150px);
+}
+#handcards1,
+#handcards2 {
+	width: calc(50% - 95px);
+	height: 127px;
+	padding: 10px;
+}
+#handcards2 {
+	left: calc(50% + 75px);
+}
+.dialog {
+	width: calc(90% - 300px);
+	left: calc(5% + 150px);
+	top: auto;
+	bottom: 185px;
+	height: calc(100% - 385px);
+	z-index: 4;
+}
+.dialog.nobutton {
+	bottom: auto !important;
+	top: 200px !important;
+}
+#arena.stone:not(.choose-character) .dialog {
+	width: calc(90% - 440px);
+	left: calc(5% + 220px);
+}
+.dialog.removing {
+	top: auto;
+}
+#control {
+	z-index: 5;
+	top: auto;
+	bottom: 210px;
+	width: calc(100% - 300px);
+	left: 150px;
+}
+#arena.discard-player-card > #control,
+#arena.gain-player-card > #control,
+#arena.choose-player-card > #control,
+#arena.choose-to-move > #control {
+	bottom: 30px;
+	transition: all 0s;
+}
+#arena.phone.discard-player-card > #control,
+#arena.phone.gain-player-card > #control,
+#arena.phone.choose-player-card > #control,
+#arena.phone.choose-to-move > #control {
+	bottom: 43px;
+}
+#arena.ipad.discard-player-card > #control,
+#arena.ipad.gain-player-card > #control,
+#arena.ipad.choose-player-card > #control,
+#arena.ipad.choose-to-move > #control {
+	bottom: 45px;
+}
+.popup {
+	z-index: 6;
+}
+.dialog.scroll1,
+.dialog.scroll2,
+.dialog.withbg {
+	background: rgba(0, 0, 0, 0.2);
+	box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px;
+	min-height: 200px;
+}
+.dialog > .bar {
+	display: none !important;
+}
+.dialog > .content-container {
+	height: 100%;
+	top: 0;
+}
+
+.bordered {
+	border: 1px solid white;
+	box-shadow: black 0 0 2px;
+}
+
+#window.low_performance #arena .player:not([data-position="0"]) .equips > .card,
+#window.low_performance #arena.chess .player .equips > .card {
+	animation: game_start 0.5s !important;
+	-webkit-animation: game_start 0.5s !important;
+}
+
+@media screen and (min-width: 1150px) {
+	.dialog {
+		width: 630px;
+		left: calc(50% - 315px);
+	}
+	.dialog.bosscharacter {
+		width: 735px;
+		left: calc(50% - 367.5px);
+	}
+	#arena.stone:not(.choose-character) .dialog {
+		width: calc(90% - 440px);
+		left: calc(5% + 220px);
+	}
+}
+
+@keyframes card_start2x {
+	from {
+		opacity: 0;
+		margin-top: -13px;
+		margin-bottom: -11px;
+	}
+}
+@keyframes card_start2xx {
+	from {
+		opacity: 0;
+		margin-top: -12px;
+		margin-bottom: -12px;
+		transform: scale(0);
+	}
+}
+@keyframes card_start2xxx {
+	from {
+		opacity: 0;
+		margin-top: -12px;
+		margin-bottom: -12px;
+		transform: scale(0) rotate(90deg);
+	}
+}
+
+@-webkit-keyframes card_start2x {
+	from {
+		opacity: 0;
+		margin-top: -13px;
+		margin-bottom: -11px;
+	}
+}
+@-webkit-keyframes card_start2xx {
+	from {
+		opacity: 0;
+		margin-top: -12px;
+		margin-bottom: -12px;
+		transform: scale(0);
+	}
+}
+@-webkit-keyframes card_start2xxx {
+	from {
+		opacity: 0;
+		margin-top: -12px;
+		margin-bottom: -12px;
+		transform: scale(0) rotate(90deg);
+	}
+}

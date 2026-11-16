@@ -1,0 +1,441 @@
+/*--------窗口--------*/
+.dialog {
+	text-align: center;
+	z-index: 4;
+	transition-property: opacity, background, box-shadow;
+}
+.dialog {
+	width: calc(90% - 420px);
+	height: calc(100% / 3 - 160px / 3 + 120px);
+}
+.dialog.fullheight {
+	height: calc(100% - 80px) !important;
+	top: 40px !important;
+}
+.dialog.fullwidth {
+	left: calc(5% + 60px) !important;
+	width: calc(90% - 120px) !important;
+}
+.dialog.halfleft,
+.dialog.halfright {
+	width: 43% !important;
+	opacity: 1 !important;
+}
+.dialog.halfleft {
+	left: 5% !important;
+}
+.dialog.halfright {
+	left: 52% !important;
+}
+.dialog {
+	top: calc(100% / 3 - 100px / 3);
+	left: calc(5% + 210px);
+}
+.dialog.nobutton {
+	width: 400px;
+	left: calc(50% - 200px);
+	bottom: auto !important;
+	min-height: 0px !important;
+}
+.dialog.forcebutton,
+.dialog.forcebutton-auto {
+	width: 400px;
+	left: calc(50% - 200px);
+}
+.dialog.nobutton .content > div:last-child {
+	padding-bottom: 8px;
+}
+#window > .dialog.popped {
+	z-index: 5;
+	width: 220px;
+	background: rgba(0, 0, 0, 0.2);
+	box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px;
+	border-radius: 6px;
+	transition: opacity 0.3s;
+}
+#window[data-radius_size="reduce"] > .dialog.popped {
+	border-radius: 4px;
+}
+#window[data-radius_size="off"] > .dialog.popped {
+	border-radius: 0px;
+}
+#window[data-radius_size="increase"] > .dialog.popped {
+	border-radius: 12px;
+}
+#window > .dialog.popped > .bar {
+	display: none !important;
+}
+#window > .dialog.popped > .content-container {
+	height: 100%;
+	top: 0;
+}
+.content > table {
+	width: 100%;
+}
+.content > div {
+	--contentdiv-margin-left: 4px;
+	--contentdiv-margin-right: 4px;
+	--contentdiv-margin-top: 8px;
+	--contentdiv-margin-bottom: 8px;
+	margin-top: var(--contentdiv-margin-top);
+	margin-bottom: var(--contentdiv-margin-bottom);
+	margin-left: var(--contentdiv-margin-left);
+	margin-right: var(--contentdiv-margin-right);
+	position: relative;
+}
+.content > div:not(.pointerdiv) {
+	width: calc(100% - 8px);
+}
+.content > .caption + .buttons:not(*:last-child) {
+	margin-top: 0;
+	margin-bottom: 0;
+}
+.content > .caption + .buttons:last-child {
+	margin-top: 0;
+}
+.content > .config {
+	height: 20px;
+	line-height: 20px;
+}
+.content > .config.removing {
+	margin-top: -28px;
+}
+.config > .configinfo {
+	margin-top: 28px;
+}
+.config > .configinfo > ul {
+	margin: 0;
+	padding-left: 20px;
+}
+.config > .configinfo > .dashedline {
+	border-bottom: 1px dashed white;
+	display: block;
+	height: 0;
+	margin-top: 5px;
+	margin-bottom: 5px;
+}
+.content > .placeholder {
+	display: block;
+	height: 5px;
+}
+.content > .placeholder.slim {
+	margin: 1px;
+}
+.content > .placeholder.removing {
+	margin-top: -13px;
+}
+.content {
+	display: block;
+	width: 100%;
+	font-size: 0px;
+	overflow-x: hidden;
+}
+.content > * {
+	font-size: 16px;
+}
+.dialog:not(.popped) .content {
+	vertical-align: top;
+}
+.dialog:not(.popped) .content > .config {
+	width: 200px;
+	left: 0;
+	margin-left: 20px;
+	display: inline-block;
+}
+.dialog:not(.popped) .content > .config > .switcher {
+	position: absolute;
+}
+.dialog .content > .volumn {
+	margin: 0;
+	font-family: "xinwei";
+}
+.dialog .content > .volumn > span {
+	margin-left: 2px;
+	margin-right: 2px;
+}
+
+.config {
+	text-align: left;
+	width: 90%;
+	left: 5%;
+	display: block;
+	overflow: hidden;
+	border-radius: 2px;
+}
+.config > div {
+	text-align: left;
+	left: 0;
+}
+.config > div > div {
+	position: relative;
+	padding-right: 10px;
+	height: 20px;
+}
+.dialog > .content > .config {
+	width: 300px;
+	left: calc(50% - 150px);
+}
+.toggle {
+	right: 16px;
+	left: auto !important;
+	min-width: 16px;
+	text-align: right !important;
+}
+
+.menu-buttons.configpopped {
+	margin-top: 10px;
+}
+.menu-buttons.configpopped > .toggle {
+	text-align: left !important;
+	margin-left: 21px !important;
+	width: calc(100% - 15px) !important;
+	overflow: visible;
+}
+
+.switcher {
+	width: 88%;
+	position: relative;
+}
+.dialog.popped .caption {
+	transition: all 0s;
+}
+.caption {
+	padding-top: 8px;
+	font-size: 20px;
+	display: block;
+}
+.caption.choosetomove {
+	margin: 5px;
+	padding: 0px !important;
+}
+.caption:only-child {
+	padding-bottom: 8px;
+}
+.caption:not(.normal) > div {
+	text-align: left;
+	display: block;
+	width: 100%;
+}
+.caption > div {
+	position: relative;
+}
+.caption > .text {
+	font-size: 16px;
+	text-align: left;
+}
+.caption > .text.center {
+	text-align: center;
+}
+.caption > .text.chat {
+	word-break: break-all;
+	margin-bottom: 3px;
+	margin-left: 10px;
+	width: calc(100% - 20px);
+}
+.caption > .text.textlink {
+	margin-left: 10px;
+}
+.caption > .text.textlink:not(*:first-child) {
+	margin-top: 6px;
+}
+.caption > .text.textlink:hover {
+	text-decoration: underline;
+}
+.caption > div > div {
+	font-size: 16px;
+	position: relative;
+	width: calc(100% - 70px);
+	vertical-align: top;
+	margin: 0;
+	padding: 0;
+}
+
+.skill {
+	left: 0 !important;
+	width: 70px !important;
+	/*-- white-space: nowrap; --*/
+}
+.skilln {
+	left: 0 !important;
+	width: 70px !important;
+}
+.skill > .card {
+	transform: scale(0.56);
+	transform-origin: top left;
+	margin-left: 2px;
+	margin-top: 6px;
+	margin-bottom: -52px;
+}
+.caption > .ctext {
+	text-align: center;
+	font-size: 16px;
+}
+
+.button.character,
+.button.card {
+	width: 90px;
+	height: 90px;
+	position: relative;
+	margin: 6px;
+}
+.button.card {
+	font-size: 14px;
+}
+.button.character > .name {
+	left: 5px;
+	top: 22px;
+	max-height: 68px;
+	overflow: hidden;
+	white-space: nowrap;
+	writing-mode: vertical-rl;
+	-webkit-writing-mode: vertical-rl;
+}
+.button.character > .hp {
+	left: 5px;
+	top: 3px;
+}
+.button.character > .hp.text {
+	top: 8px;
+	left: 6px;
+	font-family: "huangcao", "xinwei";
+	font-size: 20px;
+	letter-spacing: 3px;
+}
+.button.nodisplay {
+	display: none;
+}
+.dialog .content > .nodisplay {
+	display: none;
+}
+.button.character > .intro {
+	top: 71px;
+	left: 0;
+}
+.button.character > .identity {
+	align-items: flex-end;
+	display: flex;
+	flex-direction: column;
+	flex-wrap: wrap-reverse;
+	left: 72px;
+	top: -6px;
+}
+.button.character.newstyle > .identity {
+	/*display: none;*/
+	border: none;
+	background: none !important;
+	/*box-shadow: none;*/
+	left: auto;
+	right: 6px;
+	top: 5px;
+	/*font-size: 20px;*/
+}
+.button.newstyle > .name {
+	top: 8px;
+	max-height: 84px;
+}
+.button.newstyle > .name.long {
+	top: 6px;
+	transform: scale(0.93);
+	transform-origin: top left;
+}
+.button.newstyle > .hp,
+.button.newstyle > .hp.text {
+	left: auto;
+	top: auto;
+	text-align: right;
+	right: 6px;
+	bottom: 5px;
+}
+.button.newstyle > .hp > div {
+	width: 10px;
+	height: 10px;
+	background: rgba(57, 123, 4, 1);
+	border: 1px solid rgba(39, 79, 7, 1);
+	box-shadow: rgba(0, 0, 0, 0.2) 1px -1px 2px inset, rgba(255, 255, 255, 0.15) -1px 1px 5px inset;
+}
+.button.newstyle > .hp > .shield {
+	background: rgba(63, 119, 173, 1);
+	border: 1px solid rgba(31, 82, 131, 1);
+}
+.button.newstyle > .hp > div.text {
+	background: none !important;
+	box-shadow: none !important;
+	border: none !important;
+	font-family: "xinwei";
+	text-align: right;
+	width: auto;
+	height: auto;
+	transform: none !important;
+	text-shadow: black 0 0 2px, black 0 0 3px;
+}
+
+.button.replaceButton,
+.button.replaceButton.text {
+	left: 2px;
+	top: auto;
+	text-align: center;
+	width: 42px;
+	right: auto;
+	bottom: 3px;
+	background-image: linear-gradient(rgba(150, 47, 47, 1), rgba(132, 43, 43, 1));
+	border-radius: 3px;
+}
+.button.replaceButton > div {
+	width: 10px;
+	height: 10px;
+}
+/*--------确认--------*/
+#control {
+	text-align: center;
+	z-index: 5;
+	top: calc(200% / 3);
+	left: calc(5% + 240px);
+	width: calc(90% - 480px);
+	pointer-events: none;
+}
+#control > * {
+	pointer-events: auto;
+}
+#window:not(.nopointer) #control {
+	cursor: pointer;
+}
+#control.nozoom > div {
+	transition-property: opacity;
+}
+#control > div.stayleft {
+	transition-property: opacity !important;
+}
+.control {
+	padding-top: 2px;
+	padding-bottom: 2px;
+	padding-left: 4px;
+	padding-right: 4px;
+}
+.control {
+	font-size: 20px;
+	white-space: nowrap;
+	overflow: hidden;
+	opacity: 0;
+}
+.control.removing.removing2 {
+	transform: scale(0.2);
+}
+.control > div {
+	position: relative;
+	padding: 3px;
+	margin: 0;
+}
+.control.disabled {
+	opacity: 0.6 !important;
+	cursor: default !important;
+}
+#control > div {
+	position: absolute;
+	left: 50%;
+}
+#arena.choose-to-move > #control,
+#arena.discard-player-card > #control,
+#arena.gain-player-card > #control,
+#arena.choose-player-card > #control {
+	top: calc(80%) !important;
+}

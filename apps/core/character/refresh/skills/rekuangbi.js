@@ -168,6 +168,7 @@ export const rekuangbiSkills = {
 			next.set("filterMove", function (from, to) {
 				return typeof to != "number";
 			});
+			next.set("selectionSpec", { move: "swap" });
 			next.set("processAI", function (list) {
 				const player = _status.event.player;
 				let cards = list[0][1].concat(list[1][1]),

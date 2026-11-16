@@ -31,6 +31,7 @@ export const qixingSkills = {
 				["手牌区", cards],
 			]);
 			next.set("filterMove", (from, to) => typeof to != "number");
+			next.set("selectionSpec", { move: "swap" });
 			next.set("processAI", processAI);
 
 			const result = await next.forResult();
@@ -112,6 +113,7 @@ export const qixingSkills = {
 				["手牌区", cards],
 			]);
 			next.set("filterMove", (from, to) => typeof to != "number");
+			next.set("selectionSpec", { move: "swap" });
 			next.set("processAI", processAI);
 
 			const result = await next.forResult();

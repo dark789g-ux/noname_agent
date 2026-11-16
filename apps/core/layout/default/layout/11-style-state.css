@@ -1,0 +1,364 @@
+/*--------样式--------*/
+#arena.selecting:not(.video) .player[data-position="0"] .card:not(.selectable) > .background,
+#arena.selecting:not(.video) .player[data-position="0"] .card:not(.selectable) > .image,
+#arena.selecting:not(.video) .player[data-position="0"] .card:not(.selectable) > .name,
+#arena.selecting:not(.video) .player[data-position="0"] .card:not(.selectable) > .name2,
+#arena.selecting:not(.video) .player[data-position="0"] .card:not(.selectable) > .info,
+#arena.selecting:not(.video) .player[data-position="0"] .card:not(.selectable) > .range,
+#arena.selecting:not(.video) .player[data-position="0"] .card:not(.selectable) > .gaintag,
+#arena.selecting:not(.video) .player[data-position="0"] .card:not(.selectable) > .addinfo,
+#arena.selecting:not(.video) .player.current_action .card:not(.selectable) > .background,
+#arena.selecting:not(.video) .player.current_action .card:not(.selectable) > .image,
+#arena.selecting:not(.video) .player.current_action .card:not(.selectable) > .name,
+#arena.selecting:not(.video) .player.current_action .card:not(.selectable) > .name2,
+#arena.selecting:not(.video) .player.current_action .card:not(.selectable) > .info,
+#arena.selecting:not(.video) .player.current_action .card:not(.selectable) > .range,
+#arena.selecting:not(.video) .player.current_action .card:not(.selectable) > .gaintag,
+#arena.selecting:not(.video) .player.current_action .card:not(.selectable) > .addinfo,
+#arena.selecting:not(.video) #me .card:not(.selectable) > .background,
+#arena.selecting:not(.video) #me .card:not(.selectable) > .image,
+#arena.selecting:not(.video) #me .card:not(.selectable) > .name,
+#arena.selecting:not(.video) #me .card:not(.selectable) > .name2,
+#arena.selecting:not(.video) #me .card:not(.selectable) > .info,
+#arena.selecting:not(.video) #me .card:not(.selectable) > .range,
+#arena.selecting:not(.video) #me .card:not(.selectable) > .gaintag,
+#arena.selecting:not(.video) #me .card:not(.selectable) > .addinfo,
+#arena.selecting:not(.video) .dialog:not(.noselect) .button:not(.selectable):not(.noclick):not(.replaceButton),
+#arena.selecting:not(.video) .dialog:not(.noselect) .textbutton:not(.selectable):not(.noclick):not(.replaceButton),
+#arena.selecting:not(.video) .dialog:not(.noselect) .tdnodes:not(.selectable):not(.noclick):not(.replaceButton),
+.dead,
+.likedead {
+	opacity: 0.6;
+}
+
+#window:not(.nopointer) .player .judges > .card,
+#window:not(.nopointer) .player .marks > .card {
+	cursor: context-menu;
+}
+#window:not(.nopointer) .player .identity.guessing {
+	cursor: help;
+}
+
+#window:not(.nopointer) #system > div > div:not(.hidden),
+#window:not(.nopointer) .choosedouble.character,
+#window:not(.nopointer) .config.more,
+#window:not(.nopointer) .dashboard,
+#window:not(.nopointer) .textlink,
+#window:not(.nopointer) .hrefnode,
+#window:not(.nopointer) #historybar > div > div,
+#window:not(.nopointer) .closenode,
+#window:not(.nopointer) .pointerdiv,
+#window:not(.nopointer) .pointernode div,
+#window:not(.nopointer) .pointerspan span,
+#window:not(.nopointer) .pointertable td > span,
+#window:not(.nopointer) .config > .toggle.onoff,
+#window:not(.nopointer) .pointerdialog .button:not(.unselectable),
+#window:not(.nopointer) .dialog.fullheight .buttons .button:not(.selectedx):not(.glow):not(.glows):not(.forbidden),
+#window:not(.nopointer) #arena.selecting:not(.video) .player .equips > .card.selectable,
+#window:not(.nopointer) #arena.selecting #me .card.selectable,
+#window:not(.nopointer) #arena.selecting .button.selectable,
+#window:not(.nopointer) #arena.selecting .player.selectable,
+#window:not(.nopointer) .menubutton.round,
+*[data-cursor_style="pointer"] {
+	cursor: pointer;
+}
+*[data-cursor_style="forbidden"] {
+	cursor: not-allowed;
+}
+*[data-cursor_style="menu"] {
+	cursor: context-menu;
+}
+*[data-cursor_style="zoom"] {
+	cursor: -webkit-zoom-in;
+}
+#arena.dragging {
+	cursor: -webkit-grabbing;
+}
+
+#arena.selecting:not(.video) .player[data-position="0"] .marks > .card:not(.selectable) > .image,
+#arena.selecting:not(.video) .player[data-position="0"] .judges > .card:not(.selectable) > .image,
+#arena.selecting:not(.video) .player[data-position="0"] .judges > .card:not(.selectable) > .background,
+#arena.selecting:not(.video) .player .marks > .card:not(.selectable) > .image,
+#arena.selecting:not(.video) .player .judges > .card:not(.selectable) > .image,
+#arena.selecting:not(.video) .player .judges > .card:not(.selectable) > .background {
+	opacity: 1;
+}
+
+#arena.tempnoe .player.selectable .equips > .card {
+	pointer-events: none;
+}
+
+.unselectable:not(.selected):not(.removing) {
+	opacity: 0.6 !important;
+}
+.unselectable2 {
+	opacity: 0.4 !important;
+}
+.mark > .background {
+	opacity: 1 !important;
+}
+#arena.selecting:not(.video) #me .card:not(.selectable) {
+	opacity: 0.8;
+}
+.button.character.banned,
+.button.card.banned {
+	opacity: 0.5;
+}
+
+.card.selectable > .background,
+.card.selectable > .name,
+.card.selectable > .name2,
+.card.selectable > .info,
+.card.selectable > .range,
+.card.selectable > .gaintag,
+.button.selectable {
+	opacity: 1;
+}
+
+.card {
+	color: rgba(0, 0, 0, 0.3);
+	text-shadow: none;
+}
+.fire {
+	color: rgba(255, 0, 0, 0.3);
+}
+.thunder {
+	color: rgba(0, 80, 255, 0.3);
+}
+.kami {
+	color: rgba(90, 118, 99, 0.3);
+}
+.ice {
+	color: rgba(0, 153, 255, 0.3);
+}
+.poison {
+	color: rgba(30, 133, 51, 0.4);
+}
+.brown {
+	color: rgba(133, 92, 30, 0.4);
+}
+.purple {
+	color: rgba(177, 62, 177, 0.4);
+}
+.player,
+.button.character {
+	color: white;
+	text-shadow: black 0 0 2px;
+}
+.turnedover > div {
+	opacity: 0.3;
+}
+.turnedover > .identity,
+.turnedover > .framebg,
+.turnedover > .marks,
+.turnedover > .judges {
+	opacity: 0.7;
+}
+.turnedover > .timerbar {
+	opacity: 1;
+}
+.intro:not(.showintro) {
+	opacity: 0;
+	display: none !important;
+}
+.intro.showintro {
+	white-space: nowrap;
+}
+div:hover > .intro {
+	opacity: 1;
+}
+/*.hp>div{background: white;box-shadow:0px 1px 1px rgba(0,0,0,0.5);border:1px solid #fff;border-radius: 8px;}*/
+/*.hp>.lost{background: rgba(128,128,128,0.3);}*/
+.identity {
+	border-radius: 12px;
+	border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.player .identity {
+	z-index: 4;
+}
+.info {
+	border-radius: 10px;
+}
+.dialog > .bar {
+	position: absolute;
+	width: 100%;
+	height: 5px;
+	left: 0;
+	opacity: 0;
+}
+.dialog > .bar.top {
+	top: 0;
+}
+.dialog > .bar.bottom {
+	bottom: 0;
+}
+.dialog > .content-container {
+	width: 100%;
+	height: calc(100% - 0px);
+	/*height:calc(100% - 5px);*/
+	left: 0;
+	top: 0px;
+	/*top:5px;*/
+	position: absolute;
+	overflow: scroll;
+}
+/*.dialog.scroll1>.bar.top{opacity:1}
+.dialog.scroll2>.bar.bottom{opacity:1}*/
+.dialog.slim {
+	top: 300px;
+	bottom: auto;
+	min-height: none;
+}
+/*.dialog.scroll1{box-shadow:0 -10px 10px -9px rgba(0,0,0,0.1),0 -10px 0 -9px rgba(0,0,0,0.05);}
+.dialog.scroll2{box-shadow:0 10px 10px -9px rgba(0,0,0,0.1),0 10px 0 -9px rgba(0,0,0,0.05)}
+.dialog.scroll1.scroll2{box-shadow:0 -10px 10px -9px rgba(0,0,0,0.1),0 -10px 0 -9px rgba(0,0,0,0.05),
+	0 10px 10px -9px rgba(0,0,0,0.1),0 10px 0 -9px rgba(0,0,0,0.05);}*/
+/* .selected,.target { */
+/*transform: scale(1.05);*/
+/* } */
+/*.player.target{-webkit-filter:brightness(1.2)}*/
+
+.target {
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgba(255, 0, 0, 0.4) 0 0 5px, rgba(255, 0, 0, 0.5) 0 0 12px, rgba(255, 0, 0, 0.8) 0 0 15px !important;
+}
+#mebg.target {
+	transform: none !important;
+}
+#arena[data-target_shake="shake"] .target {
+	transform: rotate(-3deg);
+}
+#arena[data-target_shake="shake"] .target2 {
+	transform: rotate(3deg);
+}
+#arena[data-target_shake="zoom"] .target,
+#arena[data-target_shake="zoom"] .target2 {
+	transform: scale(1.03);
+}
+
+.content > .config.line2 {
+	transform: translateX(-5px);
+}
+.popup {
+	--popup-padding: 50px;
+	background: rgba(0, 0, 0, 0.2);
+	box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px;
+	border-radius: 4px;
+	padding-left: var(--popup-padding);
+	padding-right: var(--popup-padding);
+}
+
+.tdnode {
+	position: relative !important;
+	display: inline-block;
+	padding: 5px !important;
+	padding-left: 8px !important;
+	padding-right: 8px !important;
+	font-size: 18px !important;
+	margin: 4px !important;
+	margin-left: 6px !important;
+	margin-right: 6px !important;
+	width: auto !important;
+}
+.tdnode.thundertext {
+	background-image: linear-gradient(rgba(47, 101, 150, 1), rgba(43, 90, 132, 1)) !important;
+}
+.tdnode.reduce_margin {
+	margin-left: 4px !important;
+	margin-right: 4px !important;
+}
+
+.shadowed,
+.menubutton.large.shadowed {
+	background: rgba(0, 0, 0, 0.2);
+	box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px;
+	border-radius: 8px;
+	color: white !important;
+}
+.shadowed2 {
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgba(0, 0, 0, 0.45) 0 3px 10px;
+}
+#window[data-radius_size="reduce"] .shadowed {
+	border-radius: 4px;
+}
+#window[data-radius_size="off"] .shadowed {
+	border-radius: 0px;
+}
+#window[data-radius_size="increase"] .shadowed {
+	border-radius: 16px;
+}
+#window[data-radius_size="default"] .shadowed.reduce_radius {
+	border-radius: 4px;
+}
+
+#window > .choosedouble {
+	left: 50%;
+	top: 50%;
+}
+#window > .choosedouble:not(.character) {
+	transition-duration: 0.2s;
+}
+#window > .choosedouble.character {
+	transform-origin: top left;
+	transition-property: opacity, transform;
+}
+#window > .choosedouble.character.moved {
+	z-index: 1;
+}
+#window:not(.nopointer) > .choosedouble.character.moved:not(.selecting) {
+	cursor: default;
+}
+#window > .choosedouble.character > .name {
+	left: 6%;
+	top: 8%;
+	white-space: nowrap;
+	writing-mode: vertical-rl;
+	-webkit-writing-mode: vertical-rl;
+}
+
+.hrefnode {
+	text-decoration: underline;
+}
+.closenode {
+	float: right;
+}
+.underline,
+.underlinenode {
+	padding: 3px;
+	width: auto;
+	display: inline-block;
+	border-width: 0 0 2px;
+	border-style: solid;
+	border-color: transparent;
+}
+.underlinenode.slim {
+	padding-bottom: 0;
+}
+.underlinenode.gray:not(.on) {
+	border-color: rgb(133, 133, 133);
+	opacity: 0.5;
+}
+.on > .underline,
+.underlinenode.on {
+	border-color: rgb(0, 133, 255);
+}
+.config.underlined {
+	overflow: visible;
+}
+.config.underlined > div {
+	border-width: 0 0 2px;
+	border-style: solid;
+	border-color: rgb(0, 133, 255);
+	padding-bottom: 1px;
+}
+
+.newgame {
+	width: calc(100% - 16px);
+	display: flex;
+}
+.newgame > div {
+	padding: 3px;
+	position: relative;
+	margin: auto;
+}
+

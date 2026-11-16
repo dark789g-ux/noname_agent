@@ -137,6 +137,7 @@ export const jilinSkills = {
 					next.set("filterMove", (from, to) => {
 						return typeof to != "number";
 					});
+					next.set("selectionSpec", { move: "swap" });
 					next.set("processAI", list => {
 						let player = get.player(),
 							cards = list[0][1].concat(list[1][1]).sort(function (a, b) {

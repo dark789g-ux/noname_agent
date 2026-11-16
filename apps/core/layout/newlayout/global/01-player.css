@@ -1,0 +1,340 @@
+.player {
+	width: 150px;
+	height: 180px;
+}
+.player .avatar {
+	width: 130px;
+	height: 160px;
+}
+#historybar {
+	height: calc(90% - 25px);
+}
+#window > .player:not(.minskin) > .avatar,
+#arena.slim_player .player:not(.minskin):not(.fakeme) .avatar {
+	width: 136px;
+	height: 166px;
+	left: 7px;
+	top: 7px;
+}
+#window[data-player_border="slim"] > .player:not(.minskin):not(.fakeme).connect > .avatar {
+	width: 142px;
+	height: 172px;
+	left: 4px;
+	top: 4px;
+}
+#arena.uslim_player .player:not(.minskin):not(.fakeme) .avatar {
+	width: 144px;
+	height: 174px;
+	left: 3px;
+	top: 3px;
+}
+#arena.mslim_player .player:not(.minskin):not(.fakeme) .avatar {
+	width: 140px;
+	height: 170px;
+	left: 5px;
+	top: 5px;
+}
+#arena.lslim_player .player:not(.minskin):not(.fakeme) .avatar {
+	left: 5px;
+	top: 5px;
+}
+#arena:not(.mobile).uslim_player .player:not(.minskin):not(.fakeme) .avatar,
+#arena.mobile.uslim_player .player:not(.minskin):not(.fakeme):not(*[data-position="0"]) .avatar {
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px;
+}
+#window > .player.minskin > .avatar {
+	width: 106px;
+	height: 106px;
+	left: 7px;
+	top: 7px;
+}
+.player.minskin {
+	width: 120px;
+	height: 120px;
+	/*zoom:0.9;*/
+}
+.player.minskin .avatar {
+	height: 100px;
+	width: 100px;
+}
+#arena.slim_player .player.minskin:not(.fakeme) .avatar:not(.fakeme) {
+	width: 106px;
+	height: 106px;
+	left: 7px;
+	top: 7px;
+}
+#arena.uslim_player .player.minskin:not(.fakeme) .avatar:not(.fakeme) {
+	width: 114px;
+	height: 114px;
+	left: 3px;
+	top: 3px;
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px;
+}
+#arena.mslim_player .player.minskin:not(.fakeme) .avatar:not(.fakeme) {
+	width: 110px;
+	height: 110px;
+	left: 5px;
+	top: 5px;
+}
+/*#arena.uslim_player .player.minskin:not(.fakeme) .avatar:not(.fakeme){
+	left:5px;
+	top:5px;
+}*/
+.player.minskin .hp,
+.player.minskin .hp.text {
+	left: 88px;
+}
+#arena.slim_player .player.minskin .hp,
+#arena.slim_player .player.minskin .hp.text {
+	left: 91px;
+}
+.player .avatar2 {
+	width: 52px;
+	height: 52px;
+	top: 73px;
+	left: 92px;
+}
+.player .avatar,
+.player .avatar2 {
+	transition-property: opacity;
+}
+.player .actcount.hp {
+	top: 18px;
+	left: 15px;
+	width: 120px;
+	bottom: auto;
+	right: auto;
+	text-align: left;
+	transform: none;
+}
+#arena.slim_player .player .actcount.hp {
+	left: 12px;
+	top: 15px;
+}
+.player.fullskin2 .avatar,
+.player.fullskin2 .avatar2 {
+	width: 65px;
+	background-position: 50%;
+}
+#arena.slim_player .player.fullskin2:not(.minskin) .avatar,
+#arena.slim_player .player.fullskin2:not(.minskin) .avatar2 {
+	width: 68px;
+}
+#arena.uslim_player .player.fullskin2:not(.minskin) .avatar,
+#arena.uslim_player .player.fullskin2:not(.minskin) .avatar2 {
+	width: 72px;
+}
+#arena.mslim_player .player.fullskin2:not(.minskin) .avatar,
+#arena.mslim_player .player.fullskin2:not(.minskin) .avatar2 {
+	width: 70px;
+}
+.player.fullskin2 .avatar {
+	border-radius: 8px 0 0 8px;
+}
+#window[data-radius_size="reduce"] .player.fullskin2 .avatar {
+	border-radius: 4px 0 0 4px;
+}
+#window[data-radius_size="off"] .player.fullskin2 .avatar {
+	border-radius: 0 0 0 0;
+}
+#window[data-radius_size="increase"] .player.fullskin2 .avatar {
+	border-radius: 16px 0 0 16px;
+}
+#window[data-radius_size="reduce"] .player.fullskin2 .avatar2 {
+	border-radius: 0 4px 4px 0;
+}
+#window[data-radius_size="off"] .player.fullskin2 .avatar2 {
+	border-radius: 0 0 0 0;
+}
+#window[data-radius_size="increase"] .player.fullskin2 .avatar2 {
+	border-radius: 0 16px 16px 0;
+}
+.player.fullskin2 .avatar2 {
+	top: 10px;
+	left: auto;
+	right: 10px;
+	height: 160px;
+	z-index: 1;
+	border-radius: 0 8px 8px 0;
+}
+#arena.slim_player .player.fullskin2:not(.minskin) .avatar2 {
+	top: 7px;
+	right: 7px;
+	height: 166px;
+}
+#arena.uslim_player .player.fullskin2:not(.minskin) .avatar2 {
+	top: 3px;
+	right: 3px;
+	height: 174px;
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px;
+}
+#arena.mslim_player .player.fullskin2:not(.minskin) .avatar2 {
+	top: 5px;
+	right: 5px;
+	height: 170px;
+}
+#arena.lslim_player .player.fullskin2:not(.minskin) .avatar2 {
+	top: 5px;
+	right: 5px;
+}
+.player .marks,
+.player .judges {
+	width: 36px;
+	text-align: center;
+	padding-bottom: 10px;
+}
+.player .marks {
+	left: -21px;
+	top: 14px;
+	height: auto;
+}
+.player .judges {
+	right: -33px;
+	top: 26px;
+	left: auto;
+}
+.player:not(.linked2) .marks > div:first-child,
+#arena:not(.nolink) .player .marks > div:first-child {
+	transform: scale(0.2);
+	opacity: 0;
+	pointer-events: none;
+}
+
+.player .hp > div {
+	width: 10px;
+	height: 10px;
+	margin-left: 0;
+}
+.player .hp {
+	width: 18px;
+	line-height: 16px;
+	text-align: center;
+	bottom: 18px;
+	top: auto;
+	left: 118px;
+	z-index: 3;
+	/*transform:rotate(180deg);*/
+}
+#arena.slim_player .player .hp,
+#window > .player:not(.minskin) .hp {
+	bottom: 15px;
+	left: 121px;
+}
+#window > .player.minskin .hp {
+	left: 91px;
+}
+.player .hp.text {
+	font-family: "xinwei";
+	/*font-size:22px;*/
+	transform: none;
+	transition: all 0s;
+	left: 114px;
+}
+.player .hp.text > div:last-child {
+	top: 4px;
+}
+/*#arena.slim_player .player .hp.text{
+	left:117px;
+}*/
+.player .hp.long {
+	bottom: 12px;
+	max-height: 160px;
+}
+#arena.slim_player .player .hp.long {
+	bottom: 9px;
+}
+.player .hp.long > div:first-child {
+	margin-top: 7px;
+}
+
+.player .intro {
+	top: 96px;
+	left: 120px;
+}
+.player.minskin .count,
+.player .count {
+	top: auto;
+	/*bottom: 30px;
+	left: -3px;*/
+	bottom: -14px;
+	right: -14px;
+	padding: 2px;
+	/*line-height: 20px;*/
+	/*width: 8px;*/
+	line-height: 28px;
+	height: 28px;
+	width: 28px;
+	text-align: left;
+	border-radius: 2px;
+	z-index: 1;
+	background-image: url("../../../image/card/handcard.png");
+	background-repeat: no-repeat;
+	background-size: cover;
+	font-weight: bolder;
+	/*border-radius: 3px 0 0 3px;
+	box-shadow: rgba(0, 0, 0, 0.2) 1px -1px 2px inset, rgba(255, 255, 255, 0.15) -1px 1px 5px inset;*/
+}
+.player.topcount .count {
+	border-radius: 2px;
+	text-align: center;
+	z-index: 3;
+}
+
+#arena.mobile.uslim_player .player:not([data-position="0"]) > .count,
+#arena.mobile.mslim_player .player:not([data-position="0"]) > .count,
+#arena.mobile.lslim_player .player:not([data-position="0"]) > .count,
+#arena.mobile.uslim_player.chess .player > .count,
+#arena.mobile.mslim_player.chess .player > .count,
+#arena.mobile.lslim_player.chess .player > .count,
+#arena:not(.mobile).uslim_player .player > .count,
+#arena:not(.mobile).mslim_player .player > .count,
+#arena:not(.mobile).lslim_player .player > .count {
+	z-index: 3 !important;
+	border-radius: 2px !important;
+	text-align: center !important;
+}
+.player.unseen .count {
+	border-radius: 3px;
+	text-align: center;
+}
+/*#arena.slim_player .player .count {
+	left: -6px;
+}*/
+#arena.mslim_player .player .count {
+	left: -5px;
+}
+.player .count.action {
+	bottom: 60px;
+}
+.player .count[data-condition="mid"] {
+	font-size: 14px;
+}
+
+.player .count[data-condition="low"] {
+	font-size: 16px;
+}
+.player .count[data-condition="high"] {
+	font-size: 12px;
+}
+/*.player .count[data-condition="none"] {
+	background: rgba(57, 123, 4, 1);
+	border: 1px solid rgba(39, 79, 7, 1);
+	filter: grayscale(1);
+	-webkit-filter: grayscale(1);
+}
+.player .count[data-condition="high"] {
+	background: rgba(85, 134, 57, 1);
+	border: 1px solid rgba(39, 79, 7, 1);
+}
+.player .count[data-condition="higher"] {
+	background: rgba(63, 119, 173, 1);
+	border: 1px solid rgba(31, 82, 131, 1);
+}
+.player .count[data-condition="mid"] {
+	background: rgba(194, 167, 30, 1);
+	border: 1px solid rgba(87, 71, 8, 1);
+}
+.player .count[data-condition="low"] {
+	background: rgba(148, 27, 27, 1);
+	border: 1px solid rgba(86, 9, 9, 1);
+}*/
