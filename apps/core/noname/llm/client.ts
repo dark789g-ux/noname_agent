@@ -12,6 +12,7 @@ import type { LLMConfig } from "./index.js";
 import type { StreamPhase, StreamUsage } from "./logger-types.js";
 import { assertLLMURL } from "./config.js";
 import { parseToolCallResult, type ToolCallResult } from "./tool-call-parser.js";
+import { requestWithParallelToolFallback } from "./client-request.js";
 
 export { parseToolCallResult, type ToolCallResult };
 
@@ -58,12 +59,16 @@ export async function callLLMWithTimeout(
 			messages,
 			tools,
 			tool_choice: "auto",
+			parallel_tool_calls: false,
 		};
 		if (config.thinkingEffort !== "none") {
 			body.reasoning_effort = config.thinkingEffort;
 		}
 
-		const resp = await client.chat.completions.create(body);
+		const resp = await requestWithParallelToolFallback((includeParameter, timeout) => {
+			const { parallel_tool_calls, ...withoutParallel } = body;
+			return client.chat.completions.create(includeParameter ? body : withoutParallel, { timeout });
+		}, config.timeoutSec * 1000);
 		const usage = extractOpenAIUsage((resp as any)?.usage);
 		if (usage) {
 			try {
@@ -155,6 +160,7 @@ export async function callLLMStream(
 			messages,
 			tools,
 			tool_choice: "auto",
+			parallel_tool_calls: false,
 			stream: true,
 		};
 		if (config.thinkingEffort !== "none") {
@@ -167,10 +173,13 @@ export async function callLLMStream(
 		// as any: openai SDK 的 create() 根据 body 参数重载推断返回类型，
 		// Record<string, any> 导致推断为 non-streaming 的 ChatCompletion 类型。
 		// body 和返回值都强转 any，避免与已知 baseline TS 错误类似的类型冲突
-		const stream = (await client.chat.completions.create(
-			body as any,
-			{ signal } as any,
-		)) as any;
+		const stream = await requestWithParallelToolFallback(async (includeParameter, timeout) => {
+			const { parallel_tool_calls, ...withoutParallel } = body;
+			return client.chat.completions.create(
+				(includeParameter ? body : withoutParallel) as any,
+				{ signal, timeout } as any,
+			) as Promise<any>;
+		}, config.timeoutSec * 1000, signal);
 
 		let functionName = "";
 		let toolCallId = "";

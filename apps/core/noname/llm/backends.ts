@@ -233,7 +233,13 @@ export function resolveBackendDisplayName(kind: LLMBackendKind, config: BackendC
 }
 
 /** 优先读取已结算行动顺位（1..N），未结算前按开局桌位 dataset.position + 1 推算。 */
-export function resolvePlayerSeatIndex(player?: SeatSubjectLike | null): number {
+export function resolvePlayerSeatIndex(
+	player?: SeatSubjectLike | null,
+	status?: { llmInitialSeatIndices?: WeakMap<object, number> }
+): number {
+	if (player && typeof player === "object" && status?.llmInitialSeatIndices?.has(player)) {
+		return status.llmInitialSeatIndices.get(player)!;
+	}
 	const settled = typeof player?.getSeatNum === "function" ? Number(player.getSeatNum()) : 0;
 	if (Number.isFinite(settled) && settled > 0) return Math.floor(settled);
 	const rawPos = player?.dataset?.position;
@@ -289,15 +295,19 @@ export function buildResolvedBackend(kind: LLMBackendKind, config: BackendConfig
 export function resolvePlayerBackend(
 	player: SeatSubjectLike | null | undefined,
 	config: BackendConfigInput,
-	status?: { llmSelfControlledAtGameStart?: boolean }
+	status?: {
+		llmSelfControlledAtGameStart?: boolean;
+		llmInitialHumanPlayer?: unknown;
+		llmInitialSeatIndices?: WeakMap<object, number>;
+	}
 ): ResolvedBackend {
 	const enabled = !!config.enabled;
 	const controlSelf = status?.llmSelfControlledAtGameStart ?? !!config.controlSelf;
-	const isHuman = !!player?.isUnderControl?.(true);
+	const isHuman = status?.llmInitialHumanPlayer !== undefined ? (player as unknown) === status.llmInitialHumanPlayer : !!player?.isUnderControl?.(true);
 	if (!enabled || (isHuman && !controlSelf)) {
 		return buildResolvedBackend("local", config);
 	}
-	const seatIndex = resolvePlayerSeatIndex(player);
+	const seatIndex = resolvePlayerSeatIndex(player, status);
 	const kind = resolveSeatBackendKind(seatIndex, config);
 	return buildResolvedBackend(kind, config);
 }

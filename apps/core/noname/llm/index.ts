@@ -1,4 +1,4 @@
-import { lib, _status, ui } from "noname";
+import { game, lib, _status, ui } from "noname";
 import {
 	hasAnyConfiguredBackend,
 	readBackendsFromRawConfig,
@@ -35,6 +35,8 @@ type LLMGameStatus = {
 	llmConfigAtGameStart?: Readonly<LLMConfig>;
 	llmEnabledAtGameStart?: boolean;
 	llmSelfControlledAtGameStart?: boolean;
+	llmInitialHumanPlayer?: unknown;
+	llmInitialSeatIndices?: WeakMap<object, number>;
 	llmGameId?: string;
 	llmMultiTurnUnsupported?: boolean;
 	llmMultiTurnUnsupportedByBackend?: Record<string, boolean>;
@@ -162,6 +164,25 @@ function onGameStart(): void {
 	status.llmEnabledAtGameStart = snapshot.enabled;
 	const selfControlled = snapshot.enabled && snapshot.controlSelf;
 	status.llmSelfControlledAtGameStart = selfControlled;
+	status.llmInitialHumanPlayer = game?.me;
+	const seatMap = new WeakMap<object, number>();
+	for (const p of [...(game?.players || []), ...(game?.dead || [])]) {
+		if (p && typeof p === "object") {
+			const settled = typeof p.getSeatNum === "function" ? Number(p.getSeatNum()) : 0;
+			if (Number.isFinite(settled) && settled > 0) {
+				seatMap.set(p, Math.floor(settled));
+			} else {
+				const rawPos = p.dataset?.position;
+				if (rawPos !== undefined && rawPos !== "") {
+					const pos = Number(rawPos);
+					if (Number.isFinite(pos) && pos >= 0) {
+						seatMap.set(p, Math.floor(pos) + 1);
+					}
+				}
+			}
+		}
+	}
+	status.llmInitialSeatIndices = seatMap;
 	delete status.llmMultiTurnUnsupported;
 	delete status.llmMultiTurnUnsupportedByBackend;
 	if (selfControlled) {

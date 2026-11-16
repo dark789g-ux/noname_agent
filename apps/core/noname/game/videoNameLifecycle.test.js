@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { gameTestSource } from "./testSource.js";
 
-const source = ts.createSourceFile("game/index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const source = gameTestSource();
 let statements;
 function visit(node) {
 	if (ts.isBlock(node)) {

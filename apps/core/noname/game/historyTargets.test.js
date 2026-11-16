@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 import { itemType } from "../library/experimental/symbol.js";
+import { gameTestSource } from "./testSource.js";
 
-const source = ts.createSourceFile("game.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const source = gameTestSource();
 const gameClass = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Game");
 const method = gameClass.members.find(node => node.name?.getText(source) === "logv");
 

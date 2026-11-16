@@ -1,4 +1,4 @@
-import { _status, game, get, lib } from "noname";
+import { _status, game, get, lib, ui } from "noname";
 import type { GameEvent, Player } from "../../index.js";
 import "../contracts/statusContract.js";
 
@@ -91,13 +91,15 @@ export const identityAndProfileMethods = {
 		if (!identity) {
 			identity = this.identity;
 		}
-		const firstChild = this.node.identity.firstChild as HTMLElement;
-		if (get.is.jun(this)) {
-			firstChild.innerHTML = "君";
-		} else {
-			firstChild.innerHTML = get.translation(identity);
+		if (!ui?.create?.playerCard?.syncIdentity?.(this, identity, nature)) {
+			const firstChild = this.node.identity.firstChild as HTMLElement;
+			if (get.is.jun(this)) {
+				firstChild.innerHTML = "君";
+			} else {
+				firstChild.innerHTML = get.translation(identity);
+			}
+			this.node.identity.dataset.color = nature || identity;
 		}
-		this.node.identity.dataset.color = nature || identity;
 		return this;
 	},
 	isZhu2(this: Player): boolean {

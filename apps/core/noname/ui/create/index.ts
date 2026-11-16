@@ -1,4 +1,5 @@
 import { menu } from "./menu/vue/index.js";
+import { playerCardVueBridge } from "./player/vue/mountPlayerCard.js";
 import { installPrototypeMethods } from "../installPrototypeMethods.js";
 import "./contracts/createContract.js";
 import { createArenaMethods } from "./arena/index.js";
@@ -18,6 +19,8 @@ export class Create {
 	videoNode?: (video: Videos, before: boolean) => void;
 	/** 创建菜单 */
 	menu = menu;
+	/** 人物卡片 Vue 桥接 */
+	playerCard = playerCardVueBridge;
 	buttonPresets = createButtonPresets();
 }
 

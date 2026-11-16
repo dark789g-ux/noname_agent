@@ -225,9 +225,20 @@ export const arenaAndPlayerStateMethods = {
 		const playerName = player.getName();
 		const state = resolvePlayerButtonState(player, _status as PlayerButtonStatusSnapshot, lib.config);
 		const label = state.label || "AI";
+		const title = state.active ? `${playerName}（${label}）正在思考；点击查看日志` : `查看 ${playerName}（${label}）的 AI 日志`;
+		if (
+			ui?.create?.playerCard?.syncLLMBadge?.(player, {
+				label,
+				visible: state.visible,
+				highlighted: state.highlighted,
+				title,
+			})
+		) {
+			return;
+		}
 		button.textContent = label;
 		button.style.display = state.visible ? "" : "none";
 		button.classList.toggle("llm-log-btn-active", state.highlighted);
-		button.title = state.active ? `${playerName}（${label}）正在思考；点击查看日志` : `查看 ${playerName}（${label}）的 AI 日志`;
+		button.title = title;
 	},
 };

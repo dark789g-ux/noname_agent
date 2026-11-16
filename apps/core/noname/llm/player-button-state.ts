@@ -46,6 +46,8 @@ export interface PlayerButtonStatusSnapshot {
 	llmConfigAtGameStart?: BackendConfigInput;
 	llmEnabledAtGameStart?: boolean;
 	llmSelfControlledAtGameStart?: boolean;
+	llmInitialHumanPlayer?: unknown;
+	llmInitialSeatIndices?: WeakMap<object, number>;
 }
 
 export interface PlayerButtonConfig {
@@ -126,9 +128,10 @@ export function resolvePlayerButtonState(player: PlayerButtonSubject, status: Pl
 	const enabled = status.llmEnabledAtGameStart ?? !!config.llm_enabled;
 	const controlSelf = status.llmSelfControlledAtGameStart ?? (enabled && !!config.llm_control_self);
 	const effectiveConfig = toBackendInput(status, config, enabled, controlSelf);
-	const seatIndex = resolvePlayerSeatIndex(player);
+	const seatIndex = resolvePlayerSeatIndex(player, status);
 	const kind = resolveSeatBackendKind(seatIndex, effectiveConfig);
 	const isExternal = kind === "openai" || kind === "agy" || kind === "codex";
+	const isUnderControl = status.llmInitialHumanPlayer !== undefined ? (player as unknown) === status.llmInitialHumanPlayer : player.isUnderControl(true);
 
 	const base = derive(
 		{
@@ -138,7 +141,7 @@ export function resolvePlayerButtonState(player: PlayerButtonSubject, status: Pl
 		},
 		{
 			enabled: enabled && isExternal,
-			isUnderControl: player.isUnderControl(true),
+			isUnderControl,
 			controlSelf,
 		}
 	);

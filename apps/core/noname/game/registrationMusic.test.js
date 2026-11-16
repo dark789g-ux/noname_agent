@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 import { requireRegisteredSkill } from "../library/skillRegistry.js";
+import { gameTestSource } from "./testSource.js";
 
 function methodBody(path, className, methodName) {
-	const source = ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+	const source = path === "./index.js" ? gameTestSource() : ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 	const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === className);
 	const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === methodName);
 	assert.ok(method);

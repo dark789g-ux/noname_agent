@@ -5,10 +5,11 @@ import test from "node:test";
 import ts from "typescript";
 import { playerTestSource } from "../library/element/Player/testSource.js";
 import { itemType } from "../library/experimental/symbol.js";
+import { gameTestSource } from "./testSource.js";
 
 const realContentSource = await contentTestSource();
 
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const source = gameTestSource();
 const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Game");
 const method = declaration.members.find(node => node.name?.getText(source) === "cardsDiscard");
 const eventSource = ts.createSourceFile("initializeEvent.ts", readFileSync(new URL("../library/element/GameEvent/initializeEvent.ts", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);

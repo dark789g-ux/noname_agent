@@ -110,3 +110,4 @@ Vite 别名（见 `apps/core/vite.config.ts`）：`noname` → `/noname.js`，`@
 
 ## 常见组件
 - apps\core\noname\ui\create\menu\vue\components\editors\LLMPlayerLogPanel.vue: 用于显示玩家的 LLM 日志。
+- apps\core\noname\ui\create\player\vue\components\PlayerCard.vue: 玩家卡牌组件，显示玩家的基本信息和状态。

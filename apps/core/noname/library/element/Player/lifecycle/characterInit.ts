@@ -81,11 +81,13 @@ export const characterInitMethods = {
 		this.maxHp = maxHp1;
 		this.hujia = hujia1;
 		this.node.intro.innerHTML = lib.config.intro;
-		this.node.name.dataset.nature = get.groupnature(this.group);
 		lib.setIntro(this);
-		this.node.name.innerHTML = get.slimName(character);
-		if (this.classList.contains("minskin") && this.node.name.querySelectorAll("br").length >= 4) {
-			this.node.name.classList.add("long");
+		if (!ui?.create?.playerCard?.syncName1?.(this, character, this.group, this.classList.contains("minskin"))) {
+			this.node.name.dataset.nature = get.groupnature(this.group);
+			this.node.name.innerHTML = get.slimName(character);
+			if (this.classList.contains("minskin") && this.node.name.querySelectorAll("br").length >= 4) {
+				this.node.name.classList.add("long");
+			}
 		}
 		if (info.hasHiddenSkill && !this.noclick) {
 			if (!this.hiddenSkills) {
@@ -220,11 +222,13 @@ export const characterInitMethods = {
 		this.node.equips.show();
 
 		this.node.intro.innerHTML = lib.config.intro;
-		this.node.name.dataset.nature = get.groupnature(String(this.group));
 		lib.setIntro(this);
-		this.node.name.innerHTML = get.slimName(character);
-		if (this.classList.contains("minskin") && this.node.name.querySelectorAll("br").length >= 4) {
-			this.node.name.classList.add("long");
+		if (!ui?.create?.playerCard?.syncName1?.(this, character, String(this.group), this.classList.contains("minskin"))) {
+			this.node.name.dataset.nature = get.groupnature(String(this.group));
+			this.node.name.innerHTML = get.slimName(character);
+			if (this.classList.contains("minskin") && this.node.name.querySelectorAll("br").length >= 4) {
+				this.node.name.classList.add("long");
+			}
 		}
 		if (info.hasHiddenSkill && !this.noclick) {
 			if (!_status.video && get.mode() != "guozhan") {
@@ -253,7 +257,9 @@ export const characterInitMethods = {
 				}
 				this.classList.add(_status.video ? "unseen2_v" : "unseen2");
 			}
-			this.node.name2.innerHTML = get.slimName(character2);
+			if (!ui?.create?.playerCard?.syncName2?.(this, character2)) {
+				this.node.name2.innerHTML = get.slimName(character2);
+			}
 		}
 		if (this.storage.nohp) {
 			this.node.hp.hide();

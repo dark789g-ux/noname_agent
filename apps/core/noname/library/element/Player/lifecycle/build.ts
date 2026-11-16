@@ -15,6 +15,10 @@ export const lifecycleBuildMethods = {
 	},
 	buildNode(this: Player) {
 		const player = this;
+		if (ui.create?.playerCard?.mount) {
+			ui.create.playerCard.mount(player);
+			return;
+		}
 		const node: Record<string, HTMLDivElement> = (player.node = {
 			avatar: ui.create.div(".avatar", player, ui.click.avatar).hide(),
 			avatar2: ui.create.div(".avatar2", player, ui.click.avatar2).hide(),
@@ -70,23 +74,27 @@ export const lifecycleBuildMethods = {
 		});
 		(node.link.firstChild as HTMLDivElement).setBackgroundImage("image/card/tiesuo_mark.png");
 		(node.link.firstChild as HTMLDivElement).style.backgroundSize = "cover";
-		ui.create.div(node.identity);
+		if (!node.identity.firstChild) {
+			ui.create.div(node.identity);
+		}
 		// 角色卡片上方 AI 名称徽标（仅外部 LLM / CLI 控场角色或存在活跃日志时显示，点击查看日志）
-		node.llmLogBtn = ui.create.div(".llm-log-btn", player);
-		node.llmLogBtn.textContent = "AI";
-		node.llmLogBtn.style.display = "none";
-		node.llmLogBtn.addEventListener("click", function (e) {
-			e.stopPropagation();
-			const state = resolvePlayerButtonState(player, _status as PlayerButtonStatusSnapshot, lib.config);
-			if (!state.visible) return;
-			import("@/llm/openLLMPlayerLog.js")
-				.then(({ openLLMPlayerLog }) => {
-					openLLMPlayerLog(player);
-				})
-				.catch(() => {
-					// 加载失败静默处理
-				});
-		});
+		if (!node.llmLogBtn) {
+			node.llmLogBtn = ui.create.div(".llm-log-btn", player);
+			node.llmLogBtn.textContent = "AI";
+			node.llmLogBtn.style.display = "none";
+			node.llmLogBtn.addEventListener("click", function (e) {
+				e.stopPropagation();
+				const state = resolvePlayerButtonState(player, _status as PlayerButtonStatusSnapshot, lib.config);
+				if (!state.visible) return;
+				import("@/llm/openLLMPlayerLog.js")
+					.then(({ openLLMPlayerLog }) => {
+						openLLMPlayerLog(player);
+					})
+					.catch(() => {
+						// 加载失败静默处理
+					});
+			});
+		}
 		ui.updateLLMLogButton(player);
 	},
 	buildProperty(this: Player) {

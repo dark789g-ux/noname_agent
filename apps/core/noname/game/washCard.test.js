@@ -5,8 +5,9 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import ts from "typescript";
 import { itemType } from "../library/experimental/symbol.js";
+import { gameTestSource } from "./testSource.js";
 
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const source = gameTestSource();
 const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Game");
 const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === "washCard");
 assert.ok(method);

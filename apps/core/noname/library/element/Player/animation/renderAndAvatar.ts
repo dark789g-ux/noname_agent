@@ -184,79 +184,83 @@ export const renderAndAvatarMethods = {
 			}
 		}
 		if (!this.storage.nohp) {
-			const hidden = this.classList.contains("unseen_show") || this.classList.contains("unseen2_show");
-			const maxHp = hidden ? 1 : this.maxHp;
-			if (maxHp == Infinity) {
-				hp.innerHTML = this.hp == Infinity ? "∞" : this.hp + "<br>/<br>" + "∞" + "<div></div>";
-			} else if (Number(maxHp) > 5) {
-				hp.innerHTML = this.hp + "<br>/<br>" + maxHp + "<div></div>";
-				if (this.hp == 0) {
-					const lastHpSegment = hp.lastElementChild;
-					if (lastHpSegment instanceof HTMLElement) {
-						lastHpSegment.classList.add("lost");
+			if (!ui?.create?.playerCard?.syncHp?.(this)) {
+				const hidden = this.classList.contains("unseen_show") || this.classList.contains("unseen2_show");
+				const maxHp = hidden ? 1 : this.maxHp;
+				if (maxHp == Infinity) {
+					hp.innerHTML = this.hp == Infinity ? "∞" : this.hp + "<br>/<br>" + "∞" + "<div></div>";
+				} else if (Number(maxHp) > 5) {
+					hp.innerHTML = this.hp + "<br>/<br>" + maxHp + "<div></div>";
+					if (this.hp == 0) {
+						const lastHpSegment = hp.lastElementChild;
+						if (lastHpSegment instanceof HTMLElement) {
+							lastHpSegment.classList.add("lost");
+						}
+					}
+					hp.classList.add("textstyle");
+				} else {
+					hp.innerHTML = "";
+					hp.classList.remove("text");
+					hp.classList.remove("textstyle");
+					while (Number(maxHp) > hp.children.length) {
+						ui.create.div(hp);
+					}
+					while (Math.max(0, Number(maxHp)) < hp.children.length) {
+						const lastHpSegment = hp.lastElementChild;
+						if (!lastHpSegment) {
+							break;
+						}
+						hp.removeChild(lastHpSegment);
+					}
+					for (let i = 0; i < Number(maxHp); i++) {
+						let index = i;
+						if (get.is.newLayout()) {
+							index = Number(maxHp) - i - 1;
+						}
+						const hpSegment = hp.children[index];
+						if (!(hpSegment instanceof HTMLElement)) {
+							continue;
+						}
+						if (i < Number(this.hp)) {
+							hpSegment.classList.remove("lost");
+						} else {
+							hpSegment.classList.add("lost");
+						}
 					}
 				}
-				hp.classList.add("textstyle");
-			} else {
-				hp.innerHTML = "";
-				hp.classList.remove("text");
-				hp.classList.remove("textstyle");
-				while (Number(maxHp) > hp.children.length) {
-					ui.create.div(hp);
+				if (hidden) {
+					hp.dataset.condition = "hidden";
+				} else if (hp.classList.contains("room")) {
+					hp.dataset.condition = "high";
+				} else if (this.hp == 0) {
+					hp.dataset.condition = "";
+				} else if (Number(this.hp) > Math.round(Number(maxHp) / 2) || this.hp === maxHp) {
+					hp.dataset.condition = "high";
+				} else if (Number(this.hp) > Math.floor(Number(maxHp) / 3)) {
+					hp.dataset.condition = "mid";
+				} else {
+					hp.dataset.condition = "low";
 				}
-				while (Math.max(0, Number(maxHp)) < hp.children.length) {
-					const lastHpSegment = hp.lastElementChild;
-					if (!lastHpSegment) {
-						break;
-					}
-					hp.removeChild(lastHpSegment);
-				}
-				for (let i = 0; i < Number(maxHp); i++) {
-					let index = i;
-					if (get.is.newLayout()) {
-						index = Number(maxHp) - i - 1;
-					}
-					const hpSegment = hp.children[index];
-					if (!(hpSegment instanceof HTMLElement)) {
-						continue;
-					}
-					if (i < Number(this.hp)) {
-						hpSegment.classList.remove("lost");
-					} else {
-						hpSegment.classList.add("lost");
-					}
-				}
-			}
-			if (hidden) {
-				hp.dataset.condition = "hidden";
-			} else if (hp.classList.contains("room")) {
-				hp.dataset.condition = "high";
-			} else if (this.hp == 0) {
-				hp.dataset.condition = "";
-			} else if (Number(this.hp) > Math.round(Number(maxHp) / 2) || this.hp === maxHp) {
-				hp.dataset.condition = "high";
-			} else if (Number(this.hp) > Math.floor(Number(maxHp) / 3)) {
-				hp.dataset.condition = "mid";
-			} else {
-				hp.dataset.condition = "low";
-			}
 
-			setTimeout(function () {
-				hp.style.transition = "";
-			});
+				setTimeout(function () {
+					hp.style.transition = "";
+				});
+			}
 		}
 		let numh = this.countCards("h");
 		if (_status.video) {
 			// eslint-disable-next-line prefer-rest-params
 			numh = arguments[0];
 		}
-		this.node.count.innerHTML = numh?.toString();
-		if (numh < 10) {
-			this.node.count.dataset.condition = "low";
-		} else if (numh < 100) {
-			this.node.count.dataset.condition = "mid";
-		} else {
-			this.node.count.dataset.condition = "high";
+		if (!ui?.create?.playerCard?.syncCount?.(this, numh)) {
+			this.node.count.innerHTML = numh?.toString();
+			if (numh < 10) {
+				this.node.count.dataset.condition = "low";
+			} else if (numh < 100) {
+				this.node.count.dataset.condition = "mid";
+			} else {
+				this.node.count.dataset.condition = "high";
+			}
 		}
 		if (this.updates) {
 			for (let i = 0; i < this.updates.length; i++) {

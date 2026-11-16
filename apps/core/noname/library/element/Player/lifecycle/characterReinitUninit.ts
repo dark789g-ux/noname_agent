@@ -53,12 +53,16 @@ export const characterReinitUninitMethods = {
 	$reinit12(this: Player, newPairs) {
 		const player = this;
 		player.node.avatar.setBackground(newPairs[0], "character");
-		player.node.name.innerHTML = get.slimName(newPairs[0]);
+		if (!ui?.create?.playerCard?.syncName1?.(player, newPairs[0])) {
+			player.node.name.innerHTML = get.slimName(newPairs[0]);
+		}
 		player.name2 = newPairs[1];
 		player.classList.add("fullskin2");
 		player.node.avatar2.classList.remove("hidden");
 		player.node.avatar2.setBackground(newPairs[1], "character");
-		player.node.name2.innerHTML = get.slimName(newPairs[1]);
+		if (!ui?.create?.playerCard?.syncName2?.(player, newPairs[1])) {
+			player.node.name2.innerHTML = get.slimName(newPairs[1]);
+		}
 		if (player == game.me && ui.fakeme) {
 			ui.fakeme.style.backgroundImage = player.node.avatar.style.backgroundImage;
 		}
@@ -68,10 +72,14 @@ export const characterReinitUninitMethods = {
 			name = newPairs[0];
 		player.smoothAvatar(false);
 		player.node.avatar.setBackground(name, "character");
-		player.node.name.innerHTML = get.slimName(name);
+		if (!ui?.create?.playerCard?.syncName1?.(player, name)) {
+			player.node.name.innerHTML = get.slimName(name);
+		}
 		player.classList.remove("fullskin2");
 		player.node.avatar2.classList.add("hidden");
-		player.node.name2.innerHTML = "";
+		if (!ui?.create?.playerCard?.syncName2?.(player, "")) {
+			player.node.name2.innerHTML = "";
+		}
 		if (player == game.me && ui.fakeme) {
 			ui.fakeme.style.backgroundImage = player.node.avatar.style.backgroundImage;
 		}
@@ -181,13 +189,17 @@ export const characterReinitUninitMethods = {
 				this.smoothAvatar(true);
 			}
 			this.node.avatar2.setBackground(to, "character");
-			this.node.name2.innerHTML = get.slimName(to);
+			if (!ui?.create?.playerCard?.syncName2?.(this, to)) {
+				this.node.name2.innerHTML = get.slimName(to);
+			}
 		} else if (this.name == to || this.name1 == to) {
 			if (smooth) {
 				this.smoothAvatar(false);
 			}
 			this.node.avatar.setBackground(to, "character");
-			this.node.name.innerHTML = get.slimName(to);
+			if (!ui?.create?.playerCard?.syncName1?.(this, to)) {
+				this.node.name.innerHTML = get.slimName(to);
+			}
 
 			if (this == game.me && ui.fakeme) {
 				ui.fakeme.style.backgroundImage = this.node.avatar.style.backgroundImage;
@@ -265,12 +277,14 @@ export const characterReinitUninitMethods = {
 
 		this.node.identity.style.backgroundColor = "";
 		this.node.intro.innerHTML = "";
-		this.node.name.innerHTML = "";
-		this.node.hp.innerHTML = "";
-		this.node.count.innerHTML = "0";
+		if (!ui?.create?.playerCard?.reset?.(this)) {
+			this.node.name.innerHTML = "";
+			this.node.hp.innerHTML = "";
+			this.node.count.innerHTML = "0";
+			this.node.name2.innerHTML = "";
+		}
 
 		this.node.avatar2.hide();
-		this.node.name2.innerHTML = "";
 		this.classList.remove("fullskin2");
 		this.node.count.classList.remove("p2");
 

@@ -1,8 +1,7 @@
 import { createModuleRuntime } from "../llm/testing/module-runtime.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { URL } from "node:url";
 import ts from "typescript";
+import { gameTestSource } from "./testSource.js";
 
 if (typeof Array.prototype.addArray !== "function") {
 	Object.defineProperty(Array.prototype, "addArray", {
@@ -14,7 +13,7 @@ if (typeof Array.prototype.addArray !== "function") {
 	});
 }
 
-const gameSource = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const gameSource = gameTestSource();
 
 export function gameMethod(name, dependencies = {}) {
 	const gameClass = gameSource.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Game");
