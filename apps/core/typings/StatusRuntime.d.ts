@@ -1,11 +1,5 @@
 export {};
 
-declare module "@/ui/create/index.js" {
-	interface Create {
-		cards(ordered?: boolean): void;
-	}
-}
-
 declare module "@/status/index.js" {
 	type RuntimePrintableFunction = (...args: never[]) => void;
 	type RuntimePrintablePrimitive = string | number | boolean | bigint | symbol | null | undefined;

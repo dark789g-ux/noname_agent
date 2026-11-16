@@ -1,23 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import ts from "typescript";
-
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-let getResultSource;
-function collect(node) {
-	if (ts.isFunctionDeclaration(node) && node.name?.text === "getResult" && node.getText(source).includes("Online deck monitoring requires a WebSocket")) {
-		assert.equal(getResultSource, undefined);
-		getResultSource = node.getText(source);
-	}
-	ts.forEachChild(node, collect);
-}
-collect(source);
-assert.equal(typeof getResultSource, "string");
-
-function createGetResult(game, ui = {}) {
-	return new Function("game", "ui", `return (${getResultSource});`)(game, ui);
-}
+import { fetchDeckMonitorResult } from "./arena/deckMonitorResult.js";
 
 test("online deck monitoring preserves the socket receiver, request and reply protocol", async () => {
 	const data = { drawPile: ["card1"], discardPile: [] };
@@ -34,20 +17,20 @@ test("online deck monitoring preserves the socket receiver, request and reply pr
 			callback({ data: JSON.stringify([JSON.stringify({ type: "cardPile", data })]) });
 		},
 	};
-	assert.deepEqual(await createGetResult({ online: true, ws: socket })(), data);
+	assert.deepEqual(await fetchDeckMonitorResult({ online: true, ws: socket }, {}), data);
 	assert.deepEqual(calls, [["cardPile"]]);
 });
 
 test("missing or failing online sockets retain the existing false result", async () => {
 	for (const ws of [undefined, null, { send() { throw new Error("closed"); } }]) {
-		assert.equal(await createGetResult({ online: true, ws })(), false);
+		assert.equal(await fetchDeckMonitorResult({ online: true, ws }, {}), false);
 	}
 });
 
 test("offline deck monitoring retains the existing DOM collection identities", async () => {
 	const drawPile = [];
 	const discardPile = [];
-	const result = await createGetResult({ online: false }, { cardPile: { children: drawPile }, discardPile: { children: discardPile } })();
+	const result = await fetchDeckMonitorResult({ online: false }, { cardPile: { children: drawPile }, discardPile: { children: discardPile } });
 	assert.equal(result.drawPile, drawPile);
 	assert.equal(result.discardPile, discardPile);
 });
