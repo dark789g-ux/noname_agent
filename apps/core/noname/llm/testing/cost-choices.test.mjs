@@ -64,3 +64,104 @@ test("judgement and source context include the visible card's suit and number", 
 	assert.ok(text.includes("sha heart 7"));
 	assert.ok(text.includes("attacker"));
 });
+
+test("non-forced chooseCard with no legal cards auto-cancels without LLM request or fallback error", async () => {
+	const f = await createDeciderRuntime();
+	const owner = f.player("jushou", [{ name: "shan", suit: "heart", number: 2 }]);
+	const outcome = await f.decide({
+		name: "chooseCard",
+		player: owner,
+		forced: false,
+		selectCard: 1,
+		filterCard: card => card.name === "sha",
+	});
+	assert.equal(outcome.handled, true);
+	assert.equal(outcome.result.bool, false);
+	assert.equal(f.requests.length, 0);
+	assert.ok(f.logs.some(log => log[0] === "logAutomaticResponse"));
+	assert.equal(
+		f.logs.some(log => log[0] === "endFallback"),
+		false
+	);
+});
+
+test("forced chooseCard with no legal cards falls back with direct:* stage id instead of skill:undefined", async () => {
+	const f = await createDeciderRuntime();
+	const owner = f.player("jushou", [{ name: "shan", suit: "heart", number: 2 }]);
+	const outcome = await f.decide({
+		name: "chooseCard",
+		player: owner,
+		forced: true,
+		selectCard: 1,
+		filterCard: card => card.name === "sha",
+	});
+	assert.equal(outcome.handled, false);
+	assert.equal(f.requests.length, 0);
+	const fallbackLog = f.logs.find(log => log[0] === "endFallback");
+	assert.ok(fallbackLog);
+	assert.match(String(fallbackLog[2]), /^selection direct:chooseCard:card:0 has no legal continuation$/);
+});
+
+test("chooseCard aligns filterCard(card, player, event) and object filters across collection, stage, and validation", async () => {
+	const f = await createDeciderRuntime();
+	const owner = f.player("owner", [
+		{ name: "sha", suit: "spade", number: 1 },
+		{ name: "shan", suit: "heart", number: 2 },
+	]);
+	f.get.filter = filter => card => Object.entries(filter).every(([key, value]) => card[key] === value);
+	f.queue.push(stageTool("card", ["c0"]));
+	const ev1 = {
+		name: "chooseCard",
+		player: owner,
+		selectCard: 1,
+		requiredSuit: "heart",
+		filterCard: (card, player, event) => player === owner && card.suit === event.requiredSuit,
+	};
+	const res1 = await f.decide(ev1);
+	assert.equal(res1.handled, true);
+	assert.equal(res1.result.cards[0], owner.cards[1]);
+
+	f.queue.push(stageTool("card", ["c0"]));
+	const res2 = await f.decide({
+		name: "chooseCard",
+		player: owner,
+		selectCard: 1,
+		filterCard: { suit: "spade" },
+	});
+	assert.equal(res2.handled, true);
+	assert.equal(res2.result.cards[0], owner.cards[0]);
+});
+
+test("chooseCardTarget pre-filters dead-end cards and auto-cancels if no card has a legal target", async () => {
+	const f = await createDeciderRuntime();
+	const owner = f.player("owner", [
+		{ name: "dead_end", suit: "club", number: 3 },
+		{ name: "playable", suit: "heart", number: 4 },
+	]);
+	const enemy = f.player("enemy");
+	f.queue.push(stageTool("card", ["c1"]), stageTool("target", ["p1"]));
+	const res1 = await f.decide({
+		name: "chooseCardTarget",
+		player: owner,
+		selectCard: 1,
+		selectTarget: 1,
+		filterCard: () => true,
+		filterTarget: (card, _player, target) => card?.name === "playable" && target === enemy,
+	});
+	assert.equal(res1.handled, true);
+	assert.equal(res1.result.cards[0], owner.cards[1]);
+	assert.equal(res1.result.targets[0], enemy);
+
+	const res2 = await f.decide({
+		name: "chooseCardTarget",
+		player: owner,
+		forced: false,
+		selectCard: 1,
+		selectTarget: 1,
+		filterCard: () => true,
+		filterTarget: () => false,
+	});
+	assert.equal(res2.handled, true);
+	assert.equal(res2.result.bool, false);
+	assert.equal(f.requests.length, 2);
+});

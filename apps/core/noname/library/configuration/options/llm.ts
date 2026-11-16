@@ -128,6 +128,20 @@ export function createConfigMenuLlm() {
 					game.saveConfig("llm_timeout", val);
 				} as (this: HTMLDivElement) => void,
 			},
+			llm_context_size: {
+				name: "上下文窗口（Tokens）",
+				init: "128000",
+				input: true,
+				intro: "OpenAI 兼容模型的上下文窗口上限（Tokens），用于日志面板上下文占用显示与超限自动重建阈值（4096 ~ 2000000）。",
+				/** @type {(this: HTMLDivElement) => void} */
+				onblur: function (this: import("@/library/contracts/menu.js").MenuCallbackNode): void {
+					let val = parseInt(this.innerHTML.replace(/<br>/g, ""));
+					if (isNaN(val) || val < 4096) val = 128000;
+					if (val > 2000000) val = 2000000;
+					this.innerHTML = String(val);
+					game.saveConfig("llm_context_size", val);
+				} as (this: HTMLDivElement) => void,
+			},
 		},
 	};
 }

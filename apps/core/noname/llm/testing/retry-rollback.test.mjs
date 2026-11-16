@@ -50,7 +50,7 @@ test("tryLLMDecide rolls back and retries within maxTurns on recoverable mid-sta
 	assert.equal(f.requests.length, 4);
 	const feedbacks = f.requests[3].messages.filter(m => m.role === "tool").map(m => JSON.parse(m.content));
 	assert.deepEqual(
-		feedbacks.map(item => item.accepted),
+		Array.from(feedbacks, item => item.accepted),
 		[false, true, false]
 	);
 });

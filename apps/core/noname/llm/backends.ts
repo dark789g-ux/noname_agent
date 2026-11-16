@@ -6,6 +6,7 @@ export type SeatBackendChoice = "default" | LLMBackendKind;
 export type CLITHinkingEffort = "default" | "none" | "low" | "medium" | "high";
 
 export const SEAT_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+export const DEFAULT_OPENAI_CONTEXT_SIZE = 128_000;
 
 export const AGY_MODEL_OPTIONS = [
 	"gemini-4-carbon-medium",
@@ -59,6 +60,7 @@ export interface CLIBackendSettings {
 export interface BackendsConfigFields {
 	defaultBackend: LLMBackendKind;
 	openaiDisplayName: string;
+	openaiContextSize: number;
 	agy: CLIBackendSettings;
 	codex: CLIBackendSettings;
 	seatBackends: Record<string, SeatBackendChoice>;
@@ -75,6 +77,7 @@ export interface BackendConfigInput {
 	timeoutSec?: number;
 	defaultBackend?: LLMBackendKind;
 	openaiDisplayName?: string;
+	openaiContextSize?: number;
 	agy?: Partial<CLIBackendSettings>;
 	codex?: Partial<CLIBackendSettings>;
 	seatBackends?: Record<string, SeatBackendChoice>;
@@ -88,6 +91,7 @@ export interface ResolvedBackend {
 	timeoutSec: number;
 	maxRetries: number;
 	thinkingEffort: string;
+	contextSize?: number;
 	url?: string;
 	apikey?: string;
 	command?: string;
@@ -137,6 +141,7 @@ export function defaultBackendsFields(): BackendsConfigFields {
 	return {
 		defaultBackend: "openai",
 		openaiDisplayName: "",
+		openaiContextSize: DEFAULT_OPENAI_CONTEXT_SIZE,
 		agy: defaultCLISettings("agy"),
 		codex: defaultCLISettings("codex"),
 		seatBackends: defaultSeatBackends(),
@@ -188,6 +193,7 @@ export function readBackendsFromRawConfig(rawConfig: Record<string, any> = {}, d
 	return {
 		defaultBackend: normalizeBackendKind(rawConfig.llm_default_backend, "openai"),
 		openaiDisplayName: normalizeLLMText(rawConfig.llm_openai_display_name, doc),
+		openaiContextSize: clampSeconds(rawConfig.llm_context_size, DEFAULT_OPENAI_CONTEXT_SIZE, 4096, 2_000_000),
 		agy: readCLISettings(rawConfig.llm_agy_config, "agy"),
 		codex: readCLISettings(rawConfig.llm_codex_config, "codex"),
 		seatBackends,
@@ -274,6 +280,7 @@ export function buildResolvedBackend(kind: LLMBackendKind, config: BackendConfig
 		timeoutSec: clampSeconds(config.timeoutSec, 30, 1, 300),
 		maxRetries: clampSeconds(config.maxRetries, 0, 0, 3),
 		thinkingEffort: config.thinkingEffort || "medium",
+		contextSize: clampSeconds(config.openaiContextSize, DEFAULT_OPENAI_CONTEXT_SIZE, 4096, 2_000_000),
 		url,
 		apikey,
 	};

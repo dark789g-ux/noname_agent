@@ -1,12 +1,16 @@
 import type { CandidateAction, DecisionCandidateSnapshot } from "./action-candidates.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
+import { evalFilterTargetValue } from "./generic-skill-plan.js";
+import { withVirtualSelection, type LegacyBridgeHost } from "./legacy-bridge.js";
 import { uniqueLegacyMatch } from "./protocol.js";
-import { fail } from "./selection-adapter.js";
+import { fail, normalizeRange } from "./selection-adapter.js";
+import { matchesSelectionFilter } from "./selection-filter.js";
 
 export interface ValidationRuntime {
 	getOwner(card: any): any;
 	alivePlayers(): any[];
 	deadPlayers(): any[];
+	normalizeFilter?(filter: any): Function;
 }
 
 export function resolveCandidateCards(cards: Map<string, CandidateCard>, candidates: CandidateCard[], refs: string[] | undefined, action: string, min: number, max = Infinity): any[] {
@@ -39,7 +43,7 @@ export function isTargetCurrent(event: any, target: any, runtime: ValidationRunt
 export function assertCardLegal(event: any, card: any, runtime: ValidationRuntime): void {
 	try {
 		if (!isCardOwned(event, card, runtime)) fail("card is no longer owned by the player");
-		if (typeof event.filterCard === "function" && !event.filterCard(card, event.player)) fail("card is no longer legal");
+		if (event.filterCard !== undefined && !matchesSelectionFilter(event.filterCard, card, event.player, event, runtime.normalizeFilter, event)) fail("card is no longer legal");
 	} catch (error) {
 		if ((error as any)?.stage) throw error;
 		fail("card legality could not be verified");
@@ -49,7 +53,7 @@ export function assertCardLegal(event: any, card: any, runtime: ValidationRuntim
 export function assertTargetLegal(event: any, target: any, card: any, runtime: ValidationRuntime): void {
 	try {
 		if (!isTargetCurrent(event, target, runtime)) fail("target is no longer current");
-		if (typeof event.filterTarget === "function" && !event.filterTarget(card, event.player, target)) fail("target is no longer legal");
+		if (event.filterTarget !== undefined && !evalFilterTargetValue(event.filterTarget, card, event.player, target)) fail("target is no longer legal");
 	} catch (error) {
 		if ((error as any)?.stage) throw error;
 		fail("target legality could not be verified");
@@ -102,4 +106,30 @@ export function resolveCurrentAction(snapshot: DecisionCandidateSnapshot | undef
 
 export function resolveActionCardRefs(action: CandidateAction | undefined, cards: CandidateCard[]): string[] {
 	return action?.cardRef ? [action.cardRef] : action?.materialCardRefs || cards.map(card => card.ref);
+}
+
+export function hasLegalDirectTargetCandidate(
+	event: any,
+	targets: Iterable<CandidateTarget>,
+	runtime: ValidationRuntime & { legacyBridgeHost?: LegacyBridgeHost },
+	value: any,
+	kind: "card" | "button"
+): boolean {
+	return withVirtualSelection(
+		runtime.legacyBridgeHost,
+		{ event, player: event.player, cards: kind === "card" ? [value] : [], targets: [], buttons: kind === "button" ? [value] : [] },
+		() => {
+			const rawSelect = typeof event.selectTarget === "function" ? event.selectTarget() : event.selectTarget;
+			const [minTargets, maxTargets] = normalizeRange(rawSelect);
+			if (maxTargets < 0 || minTargets <= 0) return true;
+			const card = kind === "card" ? value : value?.link;
+			let count = 0;
+			for (const target of targets) {
+				if (isTargetCurrent(event, target.player, runtime) && evalFilterTargetValue(event.filterTarget, card, event.player, target.player)) {
+					if (++count >= minTargets) return true;
+				}
+			}
+			return false;
+		}
+	);
 }

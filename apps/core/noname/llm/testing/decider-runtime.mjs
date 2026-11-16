@@ -1,6 +1,8 @@
 import { fileURLToPath, URL } from "node:url";
 import { createSkillRuntime } from "./skill-runtime.mjs";
 
+let nextGameId = 0;
+
 /** Real orchestrator with a deterministic provider, no network or credentials. */
 export async function createDeciderRuntime(configOverrides = {}) {
 	let dispatch;
@@ -29,13 +31,25 @@ export async function createDeciderRuntime(configOverrides = {}) {
 	};
 	const modulePath = file => fileURLToPath(new URL(`../${file}.js`, import.meta.url));
 	const f = await createSkillRuntime({
-		engine: { _status: { llmEnabledAtGameStart: true } },
+		engine: { _status: { llmEnabledAtGameStart: true, llmGameId: `test_game_${++nextGameId}` } },
 		modules: {
 			"@/llm/index.js": { tryLLMDecide: event => dispatch(event) },
 			[modulePath("index")]: { llmEnabled: () => true, llmConfigured: () => true, getLLMConfig: () => config },
 			[modulePath("logger")]: { llmLogger: logger },
 			[modulePath("client")]: { callLLMStream: request, callLLMWithTimeout: request },
-			[modulePath("context")]: { buildContext: event => ({ messages: [{ role: "user", content: JSON.stringify({ actor: event.player.name, hand: event.player.getCards("h").map(card => card.name) }) }] }) },
+			[modulePath("context")]: {
+				buildContext: event => ({ messages: [{ role: "user", content: JSON.stringify({ actor: event.player.name, hand: event.player.getCards("h").map(card => card.name) }) }] }),
+				collectDecisionPromptFacts: (event, snapshot) => ({
+					decisionPoint: event.name,
+					profiles: [],
+					states: [],
+					pileOverview: { roundNumber: 1, drawPileCount: 0, discardPileCount: 0 },
+					roundHistory: { currentRound: 1, entries: [] },
+					decisionHeaderText: JSON.stringify({ actor: event.player.name, hand: event.player.getCards("h").map(card => card.name) }),
+					decisionChoicesText: snapshot?.stage ? `\n- step_id: ${snapshot.stage.id}` : "",
+					refLabels: {},
+				}),
+			},
 		},
 	});
 	const { tryLLMDecide } = await f.moduleRuntime.import("noname/llm/decide.ts");
@@ -66,9 +80,11 @@ export function choiceEvent(player, name, properties, decide) {
 }
 
 export function stageTool(type, refs) {
-	return (_messages, tools) => {
+	return (messages, tools) => {
 		const definition = tools.find(tool => tool.function.name === `select_${type}s`).function;
-		const stepId = definition.parameters.properties.step_id.description.split("：")[1];
+		const lastUser = [...messages].reverse().find(msg => msg.role === "user");
+		const match = String(lastUser?.content || "").match(/- step_id:\s*([^\s\n]+)/);
+		const stepId = match ? match[1] : "";
 		return { id: "mock-stage", name: definition.name, arguments: { step_id: stepId, [`${type}_refs`]: refs }, reason: "固定后续选择" };
 	};
 }

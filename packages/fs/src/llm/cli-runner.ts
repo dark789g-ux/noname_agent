@@ -30,7 +30,7 @@ export interface CliRunResult {
 	reasoningContent?: string;
 }
 
-const AGY_HEADLESS_INSTRUCTION = "【无头执行约束】请严格仅依据以下牌局信息与可用工具定义，直接返回符合 JSON Schema 的唯一决策 JSON，禁止读取文件、检索目录或执行任何终端命令。";
+export const AGY_HEADLESS_INSTRUCTION = "【无头执行约束】请严格仅依据以下牌局信息与可用工具定义，直接返回符合 JSON Schema 的唯一决策 JSON，禁止读取文件、检索目录或执行任何终端命令。";
 
 /** 将用户填写的附加 CLI 参数拆分为独立参数数组，不经过 shell 展开。 */
 export function splitCliArgs(input?: string): string[] {
@@ -238,6 +238,7 @@ async function executeCliProcess(spec: SpawnSpec, cwd: string, outPath: string, 
 		});
 
 		child.stdout.setEncoding("utf8");
+		child.stdout.on("error", () => {});
 		child.stdout.on("data", (chunk: string) => {
 			stdoutAll += chunk;
 			if (!options.stream) return;
@@ -248,6 +249,7 @@ async function executeCliProcess(spec: SpawnSpec, cwd: string, outPath: string, 
 		});
 
 		child.stderr.setEncoding("utf8");
+		child.stderr.on("error", () => {});
 		child.stderr.on("data", (chunk: string) => {
 			stderrAll += chunk;
 		});
@@ -361,12 +363,13 @@ function appendStreamSegment(existing: string, next: string, isDelta = false): s
 	return `${existing}\n${next}`;
 }
 
-function terminateChildTree(child: ChildProcessByStdio<Writable, Readable, Readable>): void {
+export function terminateChildTree(child: ChildProcessByStdio<Writable, Readable, Readable>): void {
 	const pid = child.pid;
 	if (!pid) return;
 	if (process.platform === "win32") {
 		try {
 			const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { shell: false, windowsHide: true, stdio: "ignore" });
+			killer.on("error", () => {});
 			killer.unref();
 		} catch {
 			try {
@@ -390,7 +393,7 @@ function mapSpawnError(error: any, command: string): Error {
 	return stagedError("fetch", `启动 CLI 失败: ${error?.message || String(error)}`);
 }
 
-function stagedError(stage: "config" | "fetch" | "parse", message: string): Error {
+export function stagedError(stage: "config" | "fetch" | "parse", message: string): Error {
 	return Object.assign(new Error(message), { stage });
 }
 

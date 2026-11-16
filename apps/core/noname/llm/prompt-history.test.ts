@@ -6,9 +6,11 @@ import {
 	buildFallbackRoundSummary,
 	buildRoundSummaryMessages,
 	formatBattleLogArgs,
+	formatIncrementalEvents,
 	formatPileOverview,
 	formatRoundHistory,
 	isRedundantTurnStartLog,
+	sliceEventsSince,
 	type BattleLogAdapter,
 	type RoundLogEntry,
 } from "./prompt-history.js";
@@ -165,4 +167,36 @@ test("buildFallbackRoundSummary 与 buildRoundSummaryMessages 保持有界摘要
 	const fallback = buildFallbackRoundSummary(longPrev, 3, entries, 300);
 	assert.ok([...fallback].length <= 300);
 	assert.match(fallback, /第3轮：.*造成了1点伤害.*发动了【奸雄】/);
+});
+
+test("sliceEventsSince 与 formatIncrementalEvents 精确跟踪游标与截断", () => {
+	const seqLog = [
+		{ seq: 3, roundNumber: 1, turnHeader: "[1号位] 刘备的回合", text: "刘备使用了【桃】" },
+		{ seq: 4, roundNumber: 2, turnHeader: "[2号位] 曹操的回合", text: "曹操摸了两张牌" },
+		{ seq: 5, roundNumber: 2, turnHeader: "[2号位] 曹操的回合", text: "曹操使用了【杀】" },
+	];
+	// firstKept = 3, sinceSeq = 2 没有缺口
+	const exactBoundary = sliceEventsSince(seqLog, 5, 2);
+	assert.equal(exactBoundary.truncated, false);
+	assert.equal(exactBoundary.entries.length, 3);
+	assert.equal(exactBoundary.latestSeq, 5);
+
+	// sinceSeq = 3 只返回 4, 5
+	const partial = sliceEventsSince(seqLog, 5, 3);
+	assert.equal(partial.truncated, false);
+	assert.deepEqual(
+		partial.entries.map(e => e.seq),
+		[4, 5]
+	);
+
+	// sinceSeq = 1 时 seq=2 已丢失，标记 truncated
+	const truncated = sliceEventsSince(seqLog, 5, 1);
+	assert.equal(truncated.truncated, true);
+
+	const formatted = formatIncrementalEvents(seqLog);
+	assert.match(formatted, /## 新增事件（自上次决策）：/);
+	assert.match(formatted, /（进入第 2 轮）/);
+	assert.match(formatted, /### \[2号位\] 曹操的回合/);
+
+	assert.match(formatIncrementalEvents([]), /无新增公开事件/);
 });

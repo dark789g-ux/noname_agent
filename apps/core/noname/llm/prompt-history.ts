@@ -11,6 +11,31 @@ export interface RoundLogEntry {
 	text: string;
 }
 
+export interface SequencedRoundLogEntry extends RoundLogEntry {
+	seq: number;
+	roundNumber: number;
+}
+
+export interface EventWindow {
+	entries: SequencedRoundLogEntry[];
+	earliestAvailableSeq: number;
+	latestSeq: number;
+	truncated: boolean;
+}
+
+/** 纯函数事件窗口切片，供 round-history 与 Harness 单测共用。 */
+export function sliceEventsSince(seqLog: readonly SequencedRoundLogEntry[], latestSeq: number, sinceSeq: number): EventWindow {
+	const firstKept = seqLog[0]?.seq ?? latestSeq + 1;
+	const truncated = sinceSeq < firstKept - 1 && latestSeq >= firstKept;
+	const entries = truncated ? seqLog.slice() : seqLog.filter(item => item.seq > sinceSeq);
+	return {
+		entries,
+		earliestAvailableSeq: firstKept,
+		latestSeq,
+		truncated,
+	};
+}
+
 export interface PileOverviewInput {
 	roundNumber: number;
 	drawPileCount: number;
@@ -141,6 +166,19 @@ export function formatPileOverview(input: PileOverviewInput): string {
 	].join("\n");
 }
 
+/** 按回合标题连续归组格式化事件条目。 */
+function appendGroupedTurnEntries(lines: string[], entries: RoundLogEntry[]): void {
+	let lastHeader = "";
+	for (const entry of entries) {
+		const header = entry.turnHeader || "回合外";
+		if (header !== lastHeader) {
+			lines.push(`### ${header}`);
+			lastHeader = header;
+		}
+		lines.push(`- ${entry.text}`);
+	}
+}
+
 /** 格式化跨轮滚动前情摘要与当前轮次按回合归组的公开事件流水。 */
 export function formatRoundHistory(input: RoundHistoryInput): string {
 	const blocks: string[] = [];
@@ -160,18 +198,34 @@ export function formatRoundHistory(input: RoundHistoryInput): string {
 		if (omitted > 0) {
 			lines.push(`（本轮较早的 ${omitted} 条记录已省略，以下为最近 ${maxEntries} 条）`);
 		}
-		let lastHeader = "";
-		for (const entry of visible) {
-			const header = entry.turnHeader || "回合外";
-			if (header !== lastHeader) {
-				lines.push(`### ${header}`);
-				lastHeader = header;
-			}
-			lines.push(`- ${entry.text}`);
-		}
+		appendGroupedTurnEntries(lines, visible);
 	}
 	blocks.push(lines.join("\n"));
 	return blocks.join("\n\n");
+}
+
+/** 格式化常驻会话增量事件段落（保留轮次切换标记与回合分组）。 */
+export function formatIncrementalEvents(entries: SequencedRoundLogEntry[]): string {
+	if (!entries.length) {
+		return "## 新增事件（自上次决策）：\n- 无新增公开事件";
+	}
+	const lines: string[] = ["## 新增事件（自上次决策）："];
+	let lastRound: number | undefined;
+	let lastHeader = "";
+	for (const entry of entries) {
+		if (lastRound !== undefined && entry.roundNumber !== lastRound && entry.roundNumber > 0) {
+			lines.push(`（进入第 ${entry.roundNumber} 轮）`);
+			lastHeader = "";
+		}
+		lastRound = entry.roundNumber;
+		const header = entry.turnHeader || "回合外";
+		if (header !== lastHeader) {
+			lines.push(`### ${header}`);
+			lastHeader = header;
+		}
+		lines.push(`- ${entry.text}`);
+	}
+	return lines.join("\n");
 }
 
 /** 生成当前弃牌堆全部卡牌的明细与按花色、按牌名统计报告。 */

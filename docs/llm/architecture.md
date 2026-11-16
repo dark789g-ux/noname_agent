@@ -117,3 +117,28 @@ end()
 迁移标记不会屏蔽标记之后的新源记录：仍运行的旧页面若重新向主库 Store 写入，下一次扫描会执行增量迁移和 CAS 清理。独立库最多保留最近 500 条完成记录，持久化初始化、迁移或写入失败都不会阻塞游戏决策。
 
 标签页每 30 秒更新一次、有效期 90 秒的租约，同时通过带配置前缀的 `BroadcastChannel` 响应存活探测，防止仍运行的其他标签页被误判为中断。无法确认 owner 存活的过期检查点会显示为“中断”，表示页面关闭、崩溃或 owner 失活，并不等同于回退本地 AI。日志仅保存在当前浏览器，不会自动上传或跨设备同步；流式 token 和不完整参数只保存在内存。
+
+## 常驻会话 Harness、静态工具集与后端传输层
+
+`decide.ts` 统一通过 `llm/harness/` 维护按 `gameId:seatNum` 索引的座位级常驻长会话（`SeatSession`），配合全局静态 14 工具集（`STATIC_DECISION_TOOLS`）最大化前缀缓存（Prefix Cache）命中率并减少每轮增量 Token 消耗：
+
+```text
+tryLLMDecide(event)
+  ├─ collectDecisionPromptFacts(event) + getEventsSince(lastEventSeq)
+  ├─ resolveAllowedToolNames(...) ──► 仅在 user 消息末尾附加「## 本步允许工具：...」
+  ├─ Harness (SeatSession + PromptPlanner)
+  │     ├─ 首轮 / 重建 / 后端变更 / 窗口截断 ──► full prompt（规则 + 开局档案 + 态势）
+  │     └─ 同会话续接 ─────────────────────────► incremental prompt（lastEventSeq 之后新增事件 + 当前状态与候选）
+  ├─ Transport 调度
+  │     ├─ OpenAI API（OpenAITransport）: 固定传入 STATIC_DECISION_TOOLS（14 个静态工具），浏览器维护不可变 transcript（剔除历史 reasoning_content）
+  │     ├─ agy / codex（RemoteSessionTransport）: 经 SSE 调用 @noname/fs `/_llm/session/turn`；仅 reset=true 时在系统指令内嵌入全量 14 工具手册，增量轮省略工具列表并固定 STATIC_CLI_DECISION_SCHEMA
+  │     └─ 增量轮 session_lost / 进程崩溃 ──► 自动以 reset=true + fullTranscript 原地重建常驻会话
+  ├─ 调度层越界门禁：校验 toolCall.name ∈ allowedToolNames，越界则走 stage:"translate" 同会话内重试
+  └─ 新对局 onGameStart(prevGameId) ──► 清理上一局浏览器会话与远端 CLI 进程
+```
+
+`@noname/fs`（`packages/fs/src/llm/`）承载常驻进程托管：
+- `rpc-stdio.ts`：通用 stdio NDJSON JSON-RPC 客户端（超时、Abort、进程崩溃与 `ENOENT` 错误归因）。
+- `acp-adapter.ts`：常驻 `agy acp` 进程（空临时沙箱目录、自动拒绝 `session/request_permission` 等本地工具请求），流式转发 `agent_thought_chunk`、`agent_message_chunk` 与 `usage_update`。
+- `codex-app-adapter.ts`：常驻 `codex app-server` 进程（`initialize` / `initialized`、`thread/start`、`turn/start` 携带 `outputSchema` 与 `effort`），流式转发 `item/reasoning/summaryTextDelta`、`item/agentMessage/delta` 与 `thread/tokenUsage/updated`。
+- `session-host.ts` / `session-routes.ts`：按 `sessionKey` 串行排队、30 分钟空闲自动回收、提供 `POST /_llm/session/turn`、`DELETE /_llm/session/:key`、`POST /_llm/session/reset-game`（均受本机回环地址与 Origin 白名单校验）。

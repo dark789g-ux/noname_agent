@@ -1,11 +1,13 @@
 import { _status, game, get, lib, ui } from "noname";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
+import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions.js";
 import { llmLogger } from "./logger.js";
 import { llmEnabled, getLLMConfig } from "./index.js";
-import { resolvePlayerBackend, type ResolvedBackend } from "./backends.js";
+import { resolvePlayerBackend, resolvePlayerSeatIndex, type ResolvedBackend } from "./backends.js";
 import { callCliStream, callCliWithTimeout } from "./cli-client.js";
-import { buildContext } from "./context.js";
-import { buildTools, INSPECT_DISCARD_PILE_TOOL } from "./tools.js";
+import { collectDecisionPromptFacts } from "./context.js";
+import { createHarnessDecisionRunner, type HarnessTurnRunner } from "./harness/harness.js";
+import { seatSessionRegistry } from "./harness/session-registry.js";
+import { formatAllowedToolsLine, INSPECT_DISCARD_PILE_TOOL, resolveAllowedToolNames, STATIC_DECISION_TOOLS } from "./tools.js";
 import { assertExecutableSnapshot, buildCandidateSnapshot } from "./action-candidates.js";
 import { getCandidateCards, getCandidateSkills, isSkillEligible } from "./candidates.js";
 import { callLLMWithTimeout, callLLMStream, type StreamCallbacks, type ToolCallResult } from "./client.js";
@@ -13,9 +15,9 @@ import { DecisionSession } from "./apply.js";
 import { MoveDecisionSession } from "./move-session.js";
 import { decisionTrace } from "./decision-trace.js";
 import { assistantToolMessage, isExplicitMultiTurnRejection, remainingTimeoutSec } from "./protocol.js";
-import { appendInspectDiscardHistory, appendPendingHistory, appendRejectedHistory, describeDecisionStage } from "./backup-protocol.js";
+import { describeDecisionStage } from "./backup-protocol.js";
 import { assertLLMURL } from "./config.js";
-import { ensureRoundSummaryReady, getDiscardPileCount, readDiscardPileReport, registerRoundSummaryClient } from "./round-history.js";
+import { ensureRoundSummaryReady, getDiscardPileCount, getEventsSince, readDiscardPileReport, registerRoundSummaryClient } from "./round-history.js";
 
 async function dispatchSummaryStream(messages: any[], tools: any[], configOrBackend: any, callbacks?: StreamCallbacks): Promise<ToolCallResult> {
 	if (configOrBackend?.kind === "agy" || configOrBackend?.kind === "codex") {
@@ -54,6 +56,7 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 					timeoutSec: config.timeoutSec || 30,
 					maxRetries: config.maxRetries || 0,
 					thinkingEffort: config.thinkingEffort || "medium",
+					contextSize: config.openaiContextSize ?? 128_000,
 					url: config.url,
 					apikey: config.apikey,
 				};
@@ -75,6 +78,8 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 		deadline
 	);
 
+	let runner: HarnessTurnRunner | undefined;
+
 	try {
 		if (!llmEnabled()) return fallback(logId, "disabled");
 		if (!backend.configured) return fallback(logId, "no_config");
@@ -94,13 +99,34 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 		}
 		await ensureRoundSummaryReady(deadline);
 		if (Date.now() >= deadline) throw staged("fetch", "LLM decision timed out");
-		const statusObj = _status as { llmMultiTurnUnsupported?: boolean; llmMultiTurnUnsupportedByBackend?: Record<string, boolean> };
+		const statusObj = _status as { llmGameId?: string; llmMultiTurnUnsupported?: boolean; llmMultiTurnUnsupportedByBackend?: Record<string, boolean> };
 		const providerMultiTurnUnsupported = Boolean(statusObj.llmMultiTurnUnsupportedByBackend?.[backend.kind] ?? statusObj.llmMultiTurnUnsupported);
 		const canMultiTurn = config.multiTurn && !providerMultiTurnUnsupported;
 		let discardInspected = false;
-		const { messages } = buildContext(event, snapshot, { canInspectDiscard: canMultiTurn && getDiscardPileCount() > 0 });
-		const history = messages.slice() as ChatCompletionMessageParam[];
-		if (decision.stage) history.push({ role: "user", content: describeDecisionStage(decision.stage) });
+
+		const gameId = statusObj.llmGameId || "game_unknown";
+		const seatNum = resolvePlayerSeatIndex(player);
+		const existingSession = seatSessionRegistry.get(`${gameId}:seat_${seatNum}`);
+		const eventWindow = getEventsSince(existingSession ? existingSession.lastEventSeq : 0);
+		const initialAllowedToolNames = resolveAllowedToolNames(decisionPoint, snapshot, decision.stage, !!event.forced, {
+			allowInspectDiscard: canMultiTurn && getDiscardPileCount() > 0,
+		});
+		if (!initialAllowedToolNames.length) throw staged("translate", `unsupported decision point: ${decisionPoint}`);
+		const facts = collectDecisionPromptFacts(event, snapshot, { canInspectDiscard: canMultiTurn && getDiscardPileCount() > 0 });
+		runner = createHarnessDecisionRunner({
+			gameId,
+			seatNum,
+			logId,
+			backend,
+			facts,
+			eventWindow,
+			stageInstruction: decision.stage ? describeDecisionStage(decision.stage) : undefined,
+			allowedToolNames: initialAllowedToolNames,
+			deadline,
+			logger: llmLogger,
+		});
+
+		const staticTools = STATIC_DECISION_TOOLS as ChatCompletionTool[];
 		const maxTurns = canMultiTurn ? config.maxTurns : 1;
 		let turnIndex = 0;
 		for (let actionTurn = 0; actionTurn < maxTurns; ) {
@@ -108,13 +134,14 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 			decision.revalidate();
 			const stage = decision.stage;
 			const allowInspectDiscard = !discardInspected && canMultiTurn && getDiscardPileCount() > 0;
-			const tools = buildTools(decisionPoint, snapshot, stage, !!event.forced, { allowInspectDiscard });
-			if (!tools.length) throw staged("translate", `unsupported decision point: ${decisionPoint}`);
-			llmLogger.logRequest(logId, history, tools);
+			const allowedToolNames = resolveAllowedToolNames(decisionPoint, snapshot, stage, !!event.forced, { allowInspectDiscard });
+			if (!allowedToolNames.length) throw staged("translate", `unsupported decision point: ${decisionPoint}`);
+			const turnMessages = runner.getTurnRequestMessages();
 			const currentTurnIndex = turnIndex++;
 			let toolCall: ToolCallResult;
 			try {
-				toolCall = await requestToolCall(history, tools, backend, deadline, logId, currentTurnIndex, true);
+				const turnRes = await runner.sendTurn(staticTools, currentTurnIndex, true);
+				toolCall = turnRes.toolCall;
 			} catch (error: any) {
 				if (currentTurnIndex > 0 && isExplicitMultiTurnRejection(error)) {
 					statusObj.llmMultiTurnUnsupportedByBackend ??= {};
@@ -122,11 +149,25 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 				}
 				throw error;
 			}
+			const stats = runner.getLastThinkingStats();
+			const turnMeta = {
+				thinking: stats.thinking || toolCall.reasoningContent,
+				thinkingMs: stats.thinkingMs,
+				usage: stats.usage,
+				refLabels: facts.refLabels,
+				session: { ...runner.sessionMeta },
+			};
 			if (toolCall.name === INSPECT_DISCARD_PILE_TOOL && allowInspectDiscard) {
 				discardInspected = true;
 				const report = readDiscardPileReport();
-				llmLogger.logTurn(logId, { index: currentTurnIndex, stage: stage?.id, request: { messages: history.slice(), tools }, toolCall, result: report });
-				appendInspectDiscardHistory(history, toolCall, report, stage);
+				llmLogger.logTurn(logId, { index: currentTurnIndex, stage: stage?.id, request: { messages: turnMessages, tools: staticTools }, toolCall, result: report, ...turnMeta });
+				const nextAllowed = resolveAllowedToolNames(decisionPoint, snapshot, stage, !!event.forced, { allowInspectDiscard: false });
+				const followUpBase = stage
+					? `已返回当前弃牌堆明细。请继续完成当前选择步骤：\n${describeDecisionStage(stage)}`
+					: "已返回当前弃牌堆明细。请结合牌面与弃牌信息继续选择当前最优动作。";
+				const allowedLine = formatAllowedToolsLine(nextAllowed);
+				const followUp = allowedLine ? `${followUpBase}\n\n${allowedLine}` : followUpBase;
+				runner.appendInteraction(toolCall, { accepted: true, discard_pile: report }, followUp);
 				continue;
 			}
 			actionTurn++;
@@ -134,30 +175,52 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 			const checkpoint = decision.checkpoint();
 			try {
 				if (Date.now() >= deadline) throw staged("fetch", "LLM decision timed out");
+				if (!allowedToolNames.includes(toolCall.name)) {
+					throw staged("translate", `当前步骤不允许调用工具 ${toolCall.name}，请仅从本步允许工具中选择：${allowedToolNames.join(", ")}`);
+				}
 				decision.revalidate();
 				accepted = decision.accept(toolCall);
-				llmLogger.logTurn(logId, { index: currentTurnIndex, stage: stage?.id, request: { messages: history.slice(), tools }, toolCall, result: accepted.result ? decision.toLogResult(accepted.result) : accepted.pending });
+				llmLogger.logTurn(logId, { index: currentTurnIndex, stage: stage?.id, request: { messages: turnMessages, tools: staticTools }, toolCall, result: accepted.result ? decision.toLogResult(accepted.result) : accepted.pending, ...turnMeta });
 			} catch (error: any) {
-				llmLogger.logTurn(logId, { index: currentTurnIndex, stage: stage?.id, request: { messages: history.slice(), tools }, toolCall, error: error?.message || String(error) });
+				llmLogger.logTurn(logId, { index: currentTurnIndex, stage: stage?.id, request: { messages: turnMessages, tools: staticTools }, toolCall, error: error?.message || String(error), ...turnMeta });
 				if (actionTurn < maxTurns && Date.now() < deadline && isRecoverableDecisionError(error)) {
 					decision.rollback(checkpoint);
-					appendRejectedHistory(history, toolCall, error?.message || String(error), decision.stage);
+					const currentStage = decision.stage;
+					const errMsg = error?.message || String(error);
+					const nextAllowed = resolveAllowedToolNames(decisionPoint, snapshot, currentStage, !!event.forced, {
+						allowInspectDiscard: !discardInspected && canMultiTurn && getDiscardPileCount() > 0,
+					});
+					const retryBase = currentStage
+						? `上一步选择未通过规则校验（${errMsg}）。请重新提交：\n${describeDecisionStage(currentStage)}`
+						: `上一步选择未通过规则校验（${errMsg}）。请重新选择合法动作或 pass。`;
+					const allowedLine = formatAllowedToolsLine(nextAllowed);
+					const retryText = allowedLine ? `${retryBase}\n\n${allowedLine}` : retryBase;
+					runner.appendInteraction(toolCall, { accepted: false, error: errMsg, retry_stage: currentStage ?? null }, retryText);
 					continue;
 				}
 				throw error;
 			}
 			if (accepted.result) {
+				runner.commit(toolCall);
 				llmLogger.logResponse(logId, toolCall, decision.toLogResult(accepted.result));
 				llmLogger.end(logId, "success");
 				return { handled: true, result: accepted.result };
 			}
 			if (!config.multiTurn || !accepted.pending) throw staged("translate", "Action requires unsupported additional selection turn");
-			appendPendingHistory(history, toolCall, accepted.pending);
+			const nextAllowed = resolveAllowedToolNames(decisionPoint, snapshot, accepted.pending, !!event.forced, {
+				allowInspectDiscard: !discardInspected && canMultiTurn && getDiscardPileCount() > 0,
+			});
+			const nextAllowedLine = formatAllowedToolsLine(nextAllowed);
+			const nextPrompt = nextAllowedLine
+				? `${describeDecisionStage(accepted.pending)}\n\n${nextAllowedLine}`
+				: describeDecisionStage(accepted.pending);
+			runner.appendInteraction(toolCall, { accepted: true, next_step: accepted.pending }, nextPrompt);
 		}
 		throw staged("fetch", `LLM decision exceeded ${maxTurns} turns`);
 	} catch (error: any) {
 		const stage = error?.stage || "fetch";
 		const message = error?.message || String(error);
+		runner?.rollback(stage);
 		llmLogger.logError(logId, stage, message, error?.httpStatus);
 		llmLogger.endFallback(logId, stage === "fetch" && message.includes("timed out") ? "timeout" : message);
 		return { handled: false };

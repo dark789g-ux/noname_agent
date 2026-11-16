@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGY_MODEL_OPTIONS, buildResolvedBackend, CODEX_MODEL_OPTIONS, deriveOpenAIDisplayName, getCLIModelOptions, readBackendsFromRawConfig, resolveBackendDisplayName, resolvePlayerBackend, resolvePlayerSeatIndex, resolveSummaryBackend } from "./backends.js";
-import { buildCliDecisionJsonSchema, buildCliDecisionPrompt, callCliStream, callCliWithTimeout, parseCliEnvelopeToToolCall } from "./cli-client.js";
+import { AGY_MODEL_OPTIONS, DEFAULT_OPENAI_CONTEXT_SIZE, buildResolvedBackend, CODEX_MODEL_OPTIONS, deriveOpenAIDisplayName, getCLIModelOptions, readBackendsFromRawConfig, resolveBackendDisplayName, resolvePlayerBackend, resolvePlayerSeatIndex, resolveSummaryBackend } from "./backends.js";
+import { buildCliDecisionJsonSchema, buildCliDecisionPrompt, callCliStream, callCliWithTimeout, parseCliEnvelopeToToolCall, STATIC_CLI_DECISION_SCHEMA } from "./cli-client.js";
+import { formatRemoteSessionPrompt } from "./harness/transports/remote-session.js";
 import { buildTools } from "./tools.js";
 
 test("deriveOpenAIDisplayName 与 resolveBackendDisplayName 自动提取及自定义命名", () => {
@@ -184,4 +185,46 @@ test("AGY_MODEL_OPTIONS 与 CODEX_MODEL_OPTIONS 提供预期模型列表", () =>
 	assert.equal(CODEX_MODEL_OPTIONS.includes("gpt-6.1-terra"), true);
 	assert.equal(CODEX_MODEL_OPTIONS.includes("gpt-reserve" as any), false);
 	assert.equal(getCLIModelOptions("codex"), CODEX_MODEL_OPTIONS);
+});
+
+test("常驻 CLI 会话仅在首轮/重建时内置 14 工具手册，增量轮省略工具列表", () => {
+	assert.equal(STATIC_CLI_DECISION_SCHEMA.properties.tool.enum.length, 14);
+
+	const fullPrompt = formatRemoteSessionPrompt(
+		[
+			{ role: "system", content: "系统角色设定" },
+			{ role: "user", content: "首轮场面输入\n\n## 本步允许工具：use_card, pass" },
+		],
+		true
+	);
+	assert.match(fullPrompt, /## 系统指令\n系统角色设定[\s\S]*## 可用工具列表[\s\S]*## 输出格式要求/);
+	assert.match(fullPrompt, /## 决策输入\n首轮场面输入/);
+
+	const incrementalPrompt = formatRemoteSessionPrompt(
+		[{ role: "user", content: "增量事件\n\n## 本步允许工具：use_card, pass" }],
+		false
+	);
+	assert.doesNotMatch(incrementalPrompt, /## 可用工具列表/);
+	assert.match(incrementalPrompt, /## 本步允许工具：use_card, pass/);
+	assert.match(incrementalPrompt, /## 输出格式提醒/);
+});
+
+test("readBackendsFromRawConfig 与 buildResolvedBackend 正确解析并限制 llm_context_size", () => {
+	const defaults = readBackendsFromRawConfig({});
+	assert.equal(defaults.openaiContextSize, DEFAULT_OPENAI_CONTEXT_SIZE);
+
+	const custom = readBackendsFromRawConfig({ llm_context_size: 200_000 });
+	assert.equal(custom.openaiContextSize, 200_000);
+	const resolved = buildResolvedBackend("openai", {
+		url: "https://api.deepseek.com",
+		apikey: "sk-test",
+		model: "deepseek-chat",
+		...custom,
+	});
+	assert.equal(resolved.contextSize, 200_000);
+
+	const clampedLow = readBackendsFromRawConfig({ llm_context_size: 100 });
+	assert.equal(clampedLow.openaiContextSize, 4096);
+	const clampedHigh = readBackendsFromRawConfig({ llm_context_size: 9_999_999 });
+	assert.equal(clampedHigh.openaiContextSize, 2_000_000);
 });

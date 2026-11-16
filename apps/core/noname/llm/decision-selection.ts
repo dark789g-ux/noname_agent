@@ -88,6 +88,17 @@ export class DecisionSelection {
 		return { ...stage, range: inspection.automatic ? [inspection.automaticSelected.length, inspection.automaticSelected.length] : [inspection.range[0], Math.min(inspection.range[1], available.length)], items: available.map((entry: any) => ({ ref: entry.item, label: this.stepItems.get(stage.id)?.has(entry.item) ? labelFor(this.stepItems.get(stage.id)?.get(entry.item), this.runtime.translate) : String(entry.item) })) };
 	}
 
+	isInitialStageImpossible(): boolean {
+		if (this.currentStageIndex !== 0) return false;
+		this.advanceAutomaticStages();
+		const stage = this.stages[this.currentStageIndex];
+		if (!stage) return false;
+		const inspection = this.selection.evaluate(stage.id).inspection;
+		if (!inspection) return false;
+		const availableCount = inspection.entries.filter((entry: any) => entry.available).length;
+		return !inspection.automatic && inspection.range[0] > availableCount;
+	}
+
 	protected advanceAutomaticStages(): void {
 		while (this.currentStageIndex < this.stages.length) {
 			const stage = this.stages[this.currentStageIndex];
@@ -126,7 +137,8 @@ export class DecisionSelection {
 	protected registerSkillSteps(spec: HeadlessSelectionSpec, info: any, plannedSteps?: any[]): DecisionStage[] {
 		const rawSteps = plannedSteps || spec.steps?.slice() || deriveSimpleSteps(info);
 		return rawSteps.map((original, index) => {
-			const id = original.id || `skill:${this.skillName}:${original.type}:${index}`;
+			const prefix = this.skillName ? `skill:${this.skillName}` : `direct:${this.directKind || this.event?.name || "event"}`;
+			const id = original.id || `${prefix}:${original.type}:${index}`;
 			const raw = { ...original, id };
 			const select =
 				raw.select ??

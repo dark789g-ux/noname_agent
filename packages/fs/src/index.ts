@@ -7,6 +7,8 @@ import { cwd } from "process";
 import { exec } from "child_process";
 import { databasePath, isWithin, isStoragePath, registerStorage } from "./storage/routes";
 import { registerLlmCliRoutes } from "./llm/routes";
+import { LlmSessionHost } from "./llm/session-host";
+import { registerLlmSessionRoutes } from "./llm/session-routes";
 
 interface JsonResult<T = any> {
 	success: boolean;
@@ -67,8 +69,13 @@ export default function createApp(config: Partial<typeof defaultConfig> = {}) {
 	});
 
 	const { ensureSafe, wrap } = createFsHandler(cfg.dirname, path.dirname(database));
+	const llmSessionHost = new LlmSessionHost();
 	registerStorage(app, database);
 	registerLlmCliRoutes(app);
+	registerLlmSessionRoutes(app, llmSessionHost);
+	app.addHook("onClose", async () => {
+		llmSessionHost.dispose();
+	});
 	app.addHook("onRequest", async (request, reply) => {
 		const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
 		if (isStoragePath(path.dirname(database), path.resolve(cfg.dirname, `.${pathname}`))) return reply.code(403).send("数据库目录不可通过文件服务访问");
@@ -76,7 +83,7 @@ export default function createApp(config: Partial<typeof defaultConfig> = {}) {
 
 	app.register(cors, {
 		origin: "*",
-		methods: ["GET", "POST", "OPTIONS"],
+		methods: ["GET", "POST", "DELETE", "OPTIONS"],
 	});
 
 	app.register(fastifyStatic, {

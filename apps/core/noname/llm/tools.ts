@@ -9,7 +9,9 @@ export interface BuildToolsOptions {
 	allowInspectDiscard?: boolean;
 }
 
-/** 构造当前选择阶段可调用的工具。 */
+const STATIC_PASS_DESCRIPTION = "放弃、跳过或取消当前可选操作（仅在非强制且本步允许时可调用）。";
+
+/** 构造当前选择阶段可调用的工具（用于计算本步允许工具及兼容单测）。 */
 export function buildTools(decisionPoint: string, candidates: { cards: CandidateCard[]; skills: string[] }, stage?: { id: string; type: SelectionToolType }, forced = false, options?: BuildToolsOptions): ChatCompletionTool[] {
 	const baseTools = buildBaseTools(decisionPoint, candidates, stage, forced);
 	if (!baseTools.length) return [];
@@ -17,15 +19,27 @@ export function buildTools(decisionPoint: string, candidates: { cards: Candidate
 	return baseTools;
 }
 
+/** 解析当前决策步骤真正允许调用的工具名列表。 */
+export function resolveAllowedToolNames(decisionPoint: string, candidates: { cards: CandidateCard[]; skills: string[] }, stage?: { id: string; type: SelectionToolType }, forced = false, options?: BuildToolsOptions): string[] {
+	return buildTools(decisionPoint, candidates, stage, forced, options)
+		.map(tool => (tool.type === "function" ? tool.function?.name : undefined))
+		.filter((name): name is string => typeof name === "string" && name.length > 0);
+}
+
+/** 格式化单步允许工具提示行。 */
+export function formatAllowedToolsLine(toolNames: readonly string[]): string {
+	return toolNames.length ? `## 本步允许工具：${toolNames.join(", ")}` : "";
+}
+
 function buildBaseTools(decisionPoint: string, candidates: { cards: CandidateCard[]; skills: string[] }, stage?: { id: string; type: SelectionToolType }, forced = false): ChatCompletionTool[] {
-	if (stage) return optionalPass([buildSelectionTool(stage)], forced, "取消当前未提交选择。");
+	if (stage) return optionalPass([buildSelectionTool(stage.type)], forced, STATIC_PASS_DESCRIPTION);
 	switch (decisionPoint) {
 		case "chooseToUse":
 			return buildChooseToUseTools(candidates, forced);
 		case "chooseToRespond":
-			return optionalPass([cardTool("respond_card", "使用一张候选牌响应。", false), ...(candidates.skills.length ? [skillTool()] : [])], forced, "不响应，放弃出牌。");
+			return optionalPass([cardTool("respond_card", "使用一张候选牌响应。", false), ...(candidates.skills.length ? [skillTool()] : [])], forced, STATIC_PASS_DESCRIPTION);
 		case "chooseToDiscard":
-			return optionalPass([cardsTool("discard_cards", "弃置候选牌；数量必须满足当前弃牌要求。")], forced, "跳过弃牌。");
+			return optionalPass([cardsTool("discard_cards", "弃置候选牌；数量必须满足当前弃牌要求。")], forced, STATIC_PASS_DESCRIPTION);
 		case "chooseBool":
 			return [boolTool("yes", "选择“是”。"), boolTool("no", "选择“否”。")];
 		default:
@@ -38,7 +52,7 @@ function buildChooseToUseTools(candidates: { cards: CandidateCard[]; skills: str
 	if (candidates.skills.length) {
 		tools.splice(1, 0, skillTool());
 	}
-	if (!forced) tools.push(passTool("跳过当前操作，不使用任何卡牌或技能。"));
+	if (!forced) tools.push(passTool(STATIC_PASS_DESCRIPTION));
 	return tools;
 }
 
@@ -53,8 +67,6 @@ function skillTool(): ChatCompletionTool {
 					skill_name: string("候选技能 ID"),
 					card_refs: strings("可选：已选卡牌短引用 c0/c1"),
 					target_refs: strings("可选：已选目标短引用 p0/p1"),
-					card_ids: strings("兼容旧协议的牌 ID"),
-					target_ids: array("兼容旧协议的目标数组", { type: "integer" }),
 				},
 				["skill_name"]
 			),
@@ -70,11 +82,9 @@ function optionalPass(tools: ChatCompletionTool[], forced: boolean, description:
 function cardTool(name: string, description: string, withTargets: boolean): ChatCompletionTool {
 	const properties: Record<string, any> = {
 		card_ref: string("候选卡牌短引用，例如 c0"),
-		card_id: string("兼容旧协议的卡牌 ID"),
 	};
 	if (withTargets) {
 		properties.target_refs = strings("目标短引用，例如 p0；无目标传 []");
-		properties.target_ids = array("兼容旧协议的目标下标数组", { type: "integer" });
 	}
 	return { type: "function", function: { name, description, parameters: object(properties) } };
 }
@@ -85,13 +95,13 @@ function cardsTool(name: string, description: string): ChatCompletionTool {
 		function: {
 			name,
 			description,
-			parameters: object({ card_refs: strings("候选卡牌短引用数组"), card_ids: strings("兼容旧协议的卡牌 ID 数组") }),
+			parameters: object({ card_refs: strings("候选卡牌短引用数组") }),
 		},
 	};
 }
 
-function buildSelectionTool(stage: { id: string; type: SelectionToolType }): ChatCompletionTool {
-	if (stage.type === "move")
+function buildSelectionTool(type: SelectionToolType): ChatCompletionTool {
+	if (type === "move")
 		return {
 			type: "function",
 			function: {
@@ -107,13 +117,13 @@ function buildSelectionTool(stage: { id: string; type: SelectionToolType }): Cha
 		control: "select_controls",
 		number: "select_numbers",
 	};
-	const refsKey = `${stage.type}_refs`;
+	const refsKey = `${type}_refs`;
 	return {
 		type: "function",
 		function: {
-			name: names[stage.type],
-			description: `完成 ${stage.type} 选择。step_id 必须为 ${stage.id}，只能使用当前候选中的短引用。`,
-			parameters: object({ step_id: string(`当前步骤 ID：${stage.id}`), [refsKey]: array(`选择的 ${stage.type} 短引用数组`, { type: "string" }) }, ["step_id", refsKey]),
+			name: names[type],
+			description: `完成 ${type} 选择；step_id 必须严格填写当前选择步骤给出的 step_id，只能使用当前候选中的短引用。`,
+			parameters: object({ step_id: string("当前选择步骤给出的 step_id"), [refsKey]: array(`选择的 ${type} 短引用数组`, { type: "string" }) }, ["step_id", refsKey]),
 		},
 	};
 }
@@ -136,6 +146,29 @@ function inspectDiscardTool(): ChatCompletionTool {
 		},
 	};
 }
+
+/** 供 OpenAI Prefix Cache 与常驻 CLI 系统手册复用的全量 14 工具不可变定义。 */
+export const STATIC_DECISION_TOOLS: readonly ChatCompletionTool[] = Object.freeze([
+	cardTool("use_card", "使用一张候选牌。", true),
+	cardTool("respond_card", "使用一张候选牌响应。", false),
+	cardsTool("discard_cards", "弃置候选牌；数量必须满足当前弃牌要求。"),
+	skillTool(),
+	passTool(STATIC_PASS_DESCRIPTION),
+	boolTool("yes", "选择“是”。"),
+	boolTool("no", "选择“否”。"),
+	inspectDiscardTool(),
+	buildSelectionTool("button"),
+	buildSelectionTool("card"),
+	buildSelectionTool("target"),
+	buildSelectionTool("control"),
+	buildSelectionTool("number"),
+	buildSelectionTool("move"),
+]);
+
+/** 全量静态决策工具名称列表（与 STATIC_DECISION_TOOLS 顺序一致）。 */
+export const STATIC_DECISION_TOOL_NAMES: readonly string[] = Object.freeze(
+	STATIC_DECISION_TOOLS.map(tool => (tool.type === "function" ? tool.function.name : ""))
+);
 
 function object(properties: Record<string, any>, required: string[] = []): any {
 	return {

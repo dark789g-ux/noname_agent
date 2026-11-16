@@ -151,54 +151,72 @@ export function collectPromptPlayers(runtime: PromptRuntime, observer: any, refe
 	};
 }
 
-/** 生成 user prompt 中既有的决策、候选和弃牌协议，保持其文本段落兼容。 */
-export function buildDecisionSnapshot(decisionPoint: string, event: any, candidates: PromptSnapshotCandidates, states: PromptPlayerState[], options: PromptSnapshotOptions): string {
-	const lines: string[] = [`## 决策类型：${options.decisionDescriptions[decisionPoint] || decisionPoint}`];
-	if (event.prompt) lines.push(`## 提示：${event.prompt}`);
-	if (event.judging) lines.push(`## 当前判定牌：${options.getCardLabel?.(event.judging) || `${event.judging.name} ${event.judging.suit || ""} ${event.judging.number ?? ""}`}`);
-	if (event.source) lines.push(`## 选择来源：${options.getPlayerLabel?.(event.source) || event.source.name || "未知角色"}`);
-	if (event.skill) lines.push(`## 已选择技能：${event.skill}；继续当前材料或目标步骤，无需再次发动。`);
-	if (event.prompt2) lines.push(`## 补充规则：${event.prompt2}`);
-	if (Array.isArray(event.choiceList)) lines.push(`## 选项说明：\n${event.choiceList.map((text: any, index: number) => `${index}: ${text}`).join("\n")}`);
-	if (Array.isArray(event.targetprompt)) lines.push(`## 目标顺序：${event.targetprompt.join(" → ")}`);
-	lines.push(`## 取消：${event.forced ? "必须完成合法选择" : "允许放弃尚未提交的选择"}`);
-	if (event.dialog && typeof event.dialog === "string") lines.push(`## 对话：${event.dialog}`);
+export interface DecisionSnapshotParts {
+	headerText: string;
+	choicesText: string;
+}
+
+/** 拆出决策头部描述与候选动作段，供无状态全量与常驻增量共享。 */
+export function buildDecisionSnapshotParts(decisionPoint: string, event: any, candidates: PromptSnapshotCandidates, options: Omit<PromptSnapshotOptions, "pileOverviewText" | "roundHistoryText">): DecisionSnapshotParts {
+	const headerLines: string[] = [`## 决策类型：${options.decisionDescriptions[decisionPoint] || decisionPoint}`];
+	if (event.prompt) headerLines.push(`## 提示：${event.prompt}`);
+	if (event.judging) headerLines.push(`## 当前判定牌：${options.getCardLabel?.(event.judging) || `${event.judging.name} ${event.judging.suit || ""} ${event.judging.number ?? ""}`}`);
+	if (event.source) headerLines.push(`## 选择来源：${options.getPlayerLabel?.(event.source) || event.source.name || "未知角色"}`);
+	if (event.skill) headerLines.push(`## 已选择技能：${event.skill}；继续当前材料或目标步骤，无需再次发动。`);
+	if (event.prompt2) headerLines.push(`## 补充规则：${event.prompt2}`);
+	if (Array.isArray(event.choiceList)) headerLines.push(`## 选项说明：\n${event.choiceList.map((text: any, index: number) => `${index}: ${text}`).join("\n")}`);
+	if (Array.isArray(event.targetprompt)) headerLines.push(`## 目标顺序：${event.targetprompt.join(" → ")}`);
+	headerLines.push(`## 取消：${event.forced ? "必须完成合法选择" : "允许放弃尚未提交的选择"}`);
+	if (event.dialog && typeof event.dialog === "string") headerLines.push(`## 对话：${event.dialog}`);
 	if (Array.isArray(event.createDialog)) {
 		const shown = visibleDialogItems(event.createDialog, options.getCardLabel);
-		if (shown.length) lines.push(`## 当前决策公开给你的信息：${shown.join("；")}`);
+		if (shown.length) headerLines.push(`## 当前决策公开给你的信息：${shown.join("；")}`);
 	}
+
+	const choiceLines: string[] = [];
+	if (candidates.actions && !event.skill && ["chooseToUse", "chooseToRespond"].includes(decisionPoint)) {
+		choiceLines.push("\n## 可执行动作：");
+		if (!candidates.actions.length) choiceLines.push("- 无");
+		else for (const action of candidates.actions) choiceLines.push(`- ${formatAction(action, candidates, options)}`);
+		if (candidates.cards.length) {
+			choiceLines.push("\n## 动作材料引用：");
+			for (const card of candidates.cards) choiceLines.push(`- ${card.ref}: ${card.name}（${card.id}）`);
+		}
+	} else if (candidates.cards.length) {
+		choiceLines.push("\n## 可用卡牌：");
+		for (const card of candidates.cards) {
+			const scopes = [card.cardAction ? "直接使用" : "", ...(card.skills || []).map(skill => `技能:${skill}`)].filter(Boolean).join("，");
+			choiceLines.push(`- ${card.ref}: ${card.name}（旧 ID: ${card.id}${scopes ? `；${scopes}` : ""}）`);
+		}
+	} else {
+		choiceLines.push("\n## 可用卡牌：无");
+	}
+	if ((!candidates.actions || !["chooseToUse", "chooseToRespond"].includes(decisionPoint)) && candidates.skills.length) {
+		choiceLines.push("\n## 可用技能：");
+		for (const skill of candidates.skills) choiceLines.push(`- ${skill}（${options.getSkillName(skill)}）：${options.getSkillDescription(skill) || "无可用规则描述"}`);
+	}
+	if ((!candidates.actions || !["chooseToUse", "chooseToRespond"].includes(decisionPoint)) && candidates.targets?.length) {
+		choiceLines.push("\n## 当前可选目标：");
+		for (const target of candidates.targets) choiceLines.push(`- ${target.ref}: ${target.name}`);
+	}
+	if (decisionPoint === "chooseToDiscard" && event.selectCard) {
+		if (Array.isArray(event.selectCard)) choiceLines.push(`\n## 弃牌要求：最少 ${event.selectCard[0]} 张，最多 ${event.selectCard[1]} 张`);
+		else if (typeof event.selectCard === "number") choiceLines.push(`\n## 弃牌要求：${event.selectCard} 张`);
+	}
+	return {
+		headerText: headerLines.join("\n"),
+		choicesText: choiceLines.join("\n"),
+	};
+}
+
+/** 生成 user prompt 中既有的决策、候选和弃牌协议，保持其文本段落兼容。 */
+export function buildDecisionSnapshot(decisionPoint: string, event: any, candidates: PromptSnapshotCandidates, states: PromptPlayerState[], options: PromptSnapshotOptions): string {
+	const parts = buildDecisionSnapshotParts(decisionPoint, event, candidates, options);
+	const lines: string[] = [parts.headerText];
 	if (options.pileOverviewText) lines.push("", options.pileOverviewText);
 	lines.push("", formatPlayerStates(states));
 	if (options.roundHistoryText) lines.push("", options.roundHistoryText);
-	if (candidates.actions && !event.skill && ["chooseToUse", "chooseToRespond"].includes(decisionPoint)) {
-		lines.push("\n## 可执行动作：");
-		if (!candidates.actions.length) lines.push("- 无");
-		else for (const action of candidates.actions) lines.push(`- ${formatAction(action, candidates, options)}`);
-		if (candidates.cards.length) {
-			lines.push("\n## 动作材料引用：");
-			for (const card of candidates.cards) lines.push(`- ${card.ref}: ${card.name}（${card.id}）`);
-		}
-	} else if (candidates.cards.length) {
-		lines.push("\n## 可用卡牌：");
-		for (const card of candidates.cards) {
-			const scopes = [card.cardAction ? "直接使用" : "", ...(card.skills || []).map(skill => `技能:${skill}`)].filter(Boolean).join("，");
-			lines.push(`- ${card.ref}: ${card.name}（旧 ID: ${card.id}${scopes ? `；${scopes}` : ""}）`);
-		}
-	} else {
-		lines.push("\n## 可用卡牌：无");
-	}
-	if ((!candidates.actions || !["chooseToUse", "chooseToRespond"].includes(decisionPoint)) && candidates.skills.length) {
-		lines.push("\n## 可用技能：");
-		for (const skill of candidates.skills) lines.push(`- ${skill}（${options.getSkillName(skill)}）：${options.getSkillDescription(skill) || "无可用规则描述"}`);
-	}
-	if ((!candidates.actions || !["chooseToUse", "chooseToRespond"].includes(decisionPoint)) && candidates.targets?.length) {
-		lines.push("\n## 当前可选目标：");
-		for (const target of candidates.targets) lines.push(`- ${target.ref}: ${target.name}`);
-	}
-	if (decisionPoint === "chooseToDiscard" && event.selectCard) {
-		if (Array.isArray(event.selectCard)) lines.push(`\n## 弃牌要求：最少 ${event.selectCard[0]} 张，最多 ${event.selectCard[1]} 张`);
-		else if (typeof event.selectCard === "number") lines.push(`\n## 弃牌要求：${event.selectCard} 张`);
-	}
+	if (parts.choicesText) lines.push(parts.choicesText);
 	return lines.join("\n");
 }
 

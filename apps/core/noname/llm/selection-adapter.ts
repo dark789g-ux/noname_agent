@@ -1,3 +1,6 @@
+import { evalFilterTargetValue } from "./generic-skill-plan.js";
+import { matchesSelectionFilter } from "./selection-filter.js";
+
 export type HeadlessSelectionType = "button" | "card" | "target" | "control" | "number";
 
 export interface HeadlessSelectionStep {
@@ -18,7 +21,7 @@ export interface HeadlessSelectionSpec {
 	finalPredicate?: (context: any, event: any, player: any) => boolean;
 	/** Audited replacement of legacy selection flags, never inferred. */
 	orderedTargets?: boolean;
-	move?: "guanxing" | "xunxun" | "gongxin";
+	move?: "guanxing" | "xunxun" | "gongxin" | "swap";
 }
 
 export function resolveSelectionSpec(selectionSpec: any, event: any, player: any): HeadlessSelectionSpec | undefined {
@@ -81,14 +84,33 @@ export function directSelectionDefinition(
 		isTargetCurrent: (target: any) => boolean;
 		selectedCard: () => any;
 		selectedNumbers: () => number[];
+		normalizeFilter?: (filter: any) => Function;
+		hasLegalDirectTarget?: (value: any, kind: "card" | "button") => boolean;
 	}
 ): { kind: string; steps: any[]; filterOk?: () => boolean } | undefined {
 	if (event?.selectionSpec === false) return undefined;
 	const player = event.player;
 	const cardMode = event.complexSelect || event.complexCard ? "sequential" : undefined;
 	const targetMode = event.complexSelect || event.complexTarget ? "sequential" : undefined;
-	const card: any = { type: "card", selectionMode: cardMode, select: event.selectCard, required: event.cardRequired ? true : undefined, filter: (value: any) => callbacks.isCardOwned(value) && event.filterCard?.(value, player) !== false };
-	const target: any = { type: "target", selectionMode: targetMode, select: event.selectTarget, required: event.targetRequired ? true : undefined, filter: (value: any) => callbacks.isTargetCurrent(value) && event.filterTarget?.(callbacks.selectedCard(), player, value) !== false };
+	const isSingleSelect = (select: any) => {
+		if (typeof select === "function") return false;
+		const range = normalizeRange(select);
+		return range[0] === 1 && range[1] === 1;
+	};
+	const card: any = {
+		type: "card",
+		selectionMode: cardMode,
+		select: event.selectCard,
+		required: event.cardRequired ? true : undefined,
+		filter: (value: any) => callbacks.isCardOwned(value) && matchesSelectionFilter(event.filterCard, value, player, event, callbacks.normalizeFilter, event),
+	};
+	const target: any = {
+		type: "target",
+		selectionMode: targetMode,
+		select: event.selectTarget,
+		required: event.targetRequired ? true : undefined,
+		filter: (value: any) => callbacks.isTargetCurrent(value) && evalFilterTargetValue(event.filterTarget, callbacks.selectedCard(), player, value),
+	};
 	let steps = eventSpec?.steps?.slice();
 	if (!steps?.length)
 		switch (event.name) {
@@ -98,9 +120,11 @@ export function directSelectionDefinition(
 			case "chooseTarget":
 				steps = [target];
 				break;
-			case "chooseCardTarget":
-				steps = [card, target];
+			case "chooseCardTarget": {
+				const precheckCard = !cardMode && isSingleSelect(event.selectCard) && callbacks.hasLegalDirectTarget;
+				steps = [precheckCard ? { ...card, filter: (value: any) => card.filter(value) && callbacks.hasLegalDirectTarget!(value, "card") } : card, target];
 				break;
+			}
 			case "chooseToGive":
 				steps = [card];
 				break;
@@ -124,9 +148,20 @@ export function directSelectionDefinition(
 					},
 				];
 				break;
-			case "chooseButtonTarget":
-				steps = [{ type: "button", selectionMode: event.complexSelect ? "sequential" : undefined, select: event.selectButton, items: dialogButtons(event), filter: (button: any) => event.filterButton?.(button, player) !== false }, target];
+			case "chooseButtonTarget": {
+				const precheckButton = !event.complexSelect && isSingleSelect(event.selectButton) && callbacks.hasLegalDirectTarget;
+				steps = [
+					{
+						type: "button",
+						selectionMode: event.complexSelect ? "sequential" : undefined,
+						select: event.selectButton,
+						items: dialogButtons(event),
+						filter: (button: any) => event.filterButton?.(button, player) !== false && (!precheckButton || callbacks.hasLegalDirectTarget!(button, "button")),
+					},
+					target,
+				];
 				break;
+			}
 			case "chooseControl":
 				steps = [{ type: "control", select: 1, items: Array.isArray(event.controls) ? event.controls : [] }];
 				break;
@@ -135,7 +170,11 @@ export function directSelectionDefinition(
 			default:
 				return undefined;
 		}
-	return { kind: event.name, steps: steps || [] };
+	steps = (steps || []).map((step, index) => ({
+		...step,
+		id: step.id || `direct:${event.name}:${step.type}:${index}`,
+	}));
+	return { kind: event.name, steps };
 }
 
 export function labelFor(value: any, translate?: (value: any) => string): string {

@@ -2,6 +2,39 @@ export type LogStatus = "success" | "fallback" | "error" | "timeout" | "interrup
 export type ErrorStage = "config" | "fetch" | "parse" | "translate" | "translate/action-resolution";
 export type RequestTransport = "stream" | "nonstream";
 export type RequestOutcome = "pending" | "success" | "error";
+export type StreamPhase = "idle" | "thinking" | "responding" | "tool_calling";
+
+export interface StreamUsage {
+	inputTokens?: number;
+	outputTokens?: number;
+	thoughtTokens?: number;
+	contextUsed?: number;
+	contextSize?: number;
+}
+
+export interface LogSessionMeta {
+	mode: "full" | "incremental";
+	rebuilt?: boolean;
+	rebuildReason?: string;
+	degraded?: boolean;
+	degradeReason?: string;
+	contextUsed?: number;
+	contextSize?: number;
+	addedEventsCount?: number;
+	sessionKey?: string;
+}
+
+export interface StreamProgressPayload {
+	logId: string;
+	turnIndex: number;
+	thought: string;
+	text: string;
+	phase: StreamPhase;
+	thinkingStartedAt?: number;
+	thinkingMs?: number;
+	usage?: StreamUsage;
+	ts: number;
+}
 
 /** 单次 provider 请求的时序；startedAtOffsetMs 相对日志开始，其余时长相对本次请求开始。 */
 export interface RequestTiming {
@@ -23,6 +56,11 @@ export interface LogTurn {
 	toolCall?: { id?: string; name: string; reason?: string; reasoningContent?: string; arguments: any };
 	result?: any;
 	error?: string;
+	thinking?: string;
+	thinkingMs?: number;
+	usage?: StreamUsage;
+	refLabels?: Record<string, string>;
+	session?: LogSessionMeta;
 }
 
 export interface LogEntry {
@@ -37,6 +75,8 @@ export interface LogEntry {
 	status: LogStatus;
 	fallbackReason?: string;
 	meta: { enabled: boolean; configured: boolean; model?: string; backend?: string; providerLabel?: string; traceId?: string; skill?: string };
+	session?: LogSessionMeta;
+	refLabels?: Record<string, string>;
 	request?: { messages: any[]; tools: any[] };
 	response?: { toolCall?: { name: string; reason?: string; reasoningContent?: string; arguments: any }; translatedResult?: any; execution?: "automatic" };
 	error?: { stage: ErrorStage; message: string; httpStatus?: number };
@@ -50,6 +90,7 @@ export interface ActiveLogSnapshot {
 	entry: LogEntry;
 	partialArgs: string;
 	startedAt: number;
+	stream?: StreamProgressPayload;
 }
 
 export interface GameSession {

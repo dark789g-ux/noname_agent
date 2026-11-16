@@ -131,6 +131,13 @@ LLMPlayerLogPanel.vue     先订阅 start/chunk/end
 
 “清空”会清除所有 AI 玩家已完成的日志，但不会清理 `activeLogs`、取消请求或隐藏进行中区域；活动调用结束后会重新进入历史。
 
-## 多轮日志
+## 多轮日志与 Session Timeline 视图
 
-多轮决策可在 `LogEntry.turns`（可选字段）中记录每轮的阶段、候选短引用、tool call、校验结论和降级原因；新日志会在每轮及最终响应的 `toolCall` 顶层保存 `reason`。旧日志的 `reason` 缺失时按兼容数据处理。敏感牌面和完整内部对象不写入轮次日志，仅保留面向模型的短引用和标签。
+多轮决策可在 `LogEntry.turns`（可选字段）中记录每轮的阶段、候选短引用、`thinking`（思维链正文）、`thinkingMs`（思考耗时）、`usage`（token 与上下文占用）、tool call、校验结论和降级原因；`LogEntry.session` 记录 `mode`（`"full"` / `"incremental"`）、`rebuilt`、`degraded`、`addedEventsCount` 及上下文水位；新日志会在每轮及最终响应的 `toolCall` 顶层保存 `reason`。敏感牌面和完整内部对象不写入轮次日志，仅保留面向模型的短引用和标签。
+
+`LLMPlayerLogPanel.vue` 默认以 Session Timeline 时间线展示单玩家本局决策流（`llm-timeline/`）：
+- 顶部 `LLMSessionStatusBar` 显示当前后端、模型、会话模式与上下文占用条；
+- 时间线按时间顺序平铺 `LLMSessionMarker`（会话建立 / 会话重建 / 增量事件数 / 已降级提示）与 `LLMDecisionBlock`；
+- 思考块（`LLMThinkingBlock`）在生成中实时展示 `✻ 思考中… (Ns)` 与 Markdown 流式思维链，完成后自动折叠为 `∴ 已思考 Ns ▸`，点击可展开；
+- 决策摘要（`LLMToolCallLine`）将 `cardRef` / `targetRefs` 等短引用反解为可读名称并附带 `⎿ reason`，任意已完成决策可点击「详情」进入 `LLMLogDetailView` 查看完整原始请求/尝试表/Turn JSON。
+- `llm_log_stream` 广播结构化 `StreamProgressPayload`（阶段、累计思考与正文、思考计时、token 用量），同时保留 `llm_log_chunk` 向后兼容。

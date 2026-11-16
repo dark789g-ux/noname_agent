@@ -58,7 +58,7 @@ test("fanjian decisions belong to the target and unknown hand buttons remain ano
 	f.queue.push(stageTool("control", ["o0"]), stageTool("button", ["b0"]));
 	await f.lib.skill.fanjian.content({ target }, {}, owner);
 	assert.equal(damage, 1);
-	for (const request of f.requests) assert.ok(request.messages[0].content.includes('"actor":"target"'));
+	for (const request of f.requests) assert.ok(request.messages.some(msg => msg.role === "user" && msg.content.includes('"actor":"target"')));
 	const stageText = f.requests[1].messages.at(-1).content;
 	assert.ok(stageText.includes("未知牌"));
 	assert.equal(stageText.includes("tao"), false);

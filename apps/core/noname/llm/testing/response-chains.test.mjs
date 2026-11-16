@@ -41,8 +41,8 @@ for (const id of ["jijiang1", "hujia"]) {
 			await f.lib.skill[id].content({}, trigger, leader);
 			assert.deepEqual(order.slice(0, 2), ["first", "second"]);
 			assert.equal(f.requests.length, 2);
-			assert.ok(f.requests[0].messages[0].content.includes('"actor":"first"'));
-			assert.ok(f.requests[1].messages[0].content.includes('"actor":"second"'));
+			assert.ok(f.requests[0].messages.some(msg => msg.role === "user" && msg.content.includes('"actor":"first"')));
+			assert.ok(f.requests[1].messages.some(msg => msg.role === "user" && msg.content.includes('"actor":"second"')));
 			if (success) assert.equal(id === "hujia" ? trigger.responded : trigger.card.name === "sha", true);
 			else if (id === "jijiang1") assert.deepEqual(order.slice(-3), ["jijiang3", "cancel", "goto:0"]);
 			assert.equal(

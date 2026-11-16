@@ -112,6 +112,22 @@
 					@keyup.stop
 				/>
 			</div>
+
+			<div class="llm-field">
+				<label class="llm-field-label">上下文窗口（Tokens）</label>
+				<input
+					v-model.number="state.contextSize"
+					type="number"
+					min="4096"
+					max="2000000"
+					step="1024"
+					class="llm-input"
+					@blur="commitContextSize"
+					@change="commitContextSize"
+					@keydown.stop
+					@keyup.stop
+				/>
+			</div>
 		</div>
 	</div>
 </template>
@@ -119,7 +135,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 import { game, lib, ui } from "noname";
-import { readBackendsFromRawConfig, resolveBackendDisplayName } from "@/llm/backends.js";
+import { DEFAULT_OPENAI_CONTEXT_SIZE, readBackendsFromRawConfig, resolveBackendDisplayName } from "@/llm/backends.js";
 import { llmURLProblem, normalizeLLMText } from "@/llm/config.js";
 
 const emit = defineEmits<{
@@ -143,6 +159,7 @@ const state = reactive({
 	thinkingEffort: String(lib.config.llm_thinking_effort || "medium"),
 	maxRetries: String(lib.config.llm_max_retries ?? "0"),
 	timeoutSec: clampInt(lib.config.llm_timeout, 30, 1, 300),
+	contextSize: initialExtra.openaiContextSize,
 });
 
 const openaiPreviewName = computed(() =>
@@ -183,6 +200,11 @@ function handleUrlChange(commitClean: boolean) {
 function commitTimeout() {
 	state.timeoutSec = clampInt(state.timeoutSec, 30, 1, 300);
 	game.saveConfig("llm_timeout", state.timeoutSec);
+}
+
+function commitContextSize() {
+	state.contextSize = clampInt(state.contextSize, DEFAULT_OPENAI_CONTEXT_SIZE, 4096, 2_000_000);
+	game.saveConfig("llm_context_size", state.contextSize);
 }
 </script>
 

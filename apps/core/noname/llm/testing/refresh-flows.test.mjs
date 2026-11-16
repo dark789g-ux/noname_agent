@@ -26,7 +26,7 @@ for (const suit of ["heart", "spade"]) {
 		if (suit === "heart") assert.deepEqual(calls, ["reveal", target.cards[0], "recover"]);
 		else assert.ok(calls.includes("fengyin") && calls.includes("new_yijue_effect"));
 		assert.equal(f.requests.length, suit === "heart" ? 2 : 1);
-		assert.ok(f.requests[0].messages[0].content.includes('"actor":"target"'));
+		assert.ok(f.requests[0].messages.some(msg => msg.role === "user" && msg.content.includes('"actor":"target"')));
 		assert.equal(
 			f.logs.some(log => log[0] === "endFallback"),
 			false

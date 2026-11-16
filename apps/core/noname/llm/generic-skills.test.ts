@@ -382,6 +382,10 @@ test("Stage 4: MoveDecisionSession 支持无 selectionSpec 的通用分区排序
 	const ok = session.accept(makeCall("move_cards", { piles: [["m0"], ["m1", "m2"]] }));
 	assert.deepEqual(ok.result, { bool: true, moved: [[c0], [c1, c2]] });
 
+	const defaultFilterMove = Object.assign(() => true, { [Symbol.for("noname.defaultMoveFilter")]: true });
+	const withDefaultFilter = new MoveDecisionSession({ ...genericEvent, filterMove: defaultFilterMove }, runtime);
+	assert.equal(withDefaultFilter.stage.piles.length, 2);
+
 	assert.throws(() => new MoveDecisionSession({ ...genericEvent, filterMove: () => true }, runtime), /UI-dependent filterMove/);
 	assert.throws(() => new MoveDecisionSession({ ...genericEvent, selectionSpec: false }, runtime), /selectionSpec: false/);
 });

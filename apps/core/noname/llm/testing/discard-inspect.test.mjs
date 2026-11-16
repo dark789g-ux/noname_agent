@@ -40,11 +40,14 @@ test("inspect_discard_pile returns full discard report, removes itself after 1 c
 	const outcome = await f.decide(event);
 	assert.equal(outcome.handled, true, JSON.stringify(f.logs));
 	assert.equal(f.requests.length, 2);
+	assert.equal(f.requests[0].tools.length, 14);
+	assert.equal(f.requests[0].tools, f.requests[1].tools);
 
-	const firstToolNames = f.requests[0].tools.map(item => item.function.name);
-	const secondToolNames = f.requests[1].tools.map(item => item.function.name);
-	assert.equal(firstToolNames.includes("inspect_discard_pile"), true);
-	assert.equal(secondToolNames.includes("inspect_discard_pile"), false);
+	const firstUser = String(f.requests[0].messages.find(item => item.role === "user")?.content || "");
+	const secondUser = String(f.requests[1].messages.at(-1)?.content || "");
+	assert.match(firstUser, /## 本步允许工具：[^\n]*inspect_discard_pile/);
+	assert.match(secondUser, /## 本步允许工具：/);
+	assert.doesNotMatch(secondUser, /## 本步允许工具：[^\n]*inspect_discard_pile/);
 
 	const assistantMsg = f.requests[1].messages.find(item => item.role === "assistant");
 	assert.equal(assistantMsg.reasoning_content, "先查一下弃牌堆里出了多少张桃");
@@ -70,9 +73,10 @@ test("inspect_discard_pile is omitted when discard pile is empty or multiTurn is
 		filterCard: () => true,
 		filterTarget: (_c, p, t) => p !== t,
 	});
-	assert.equal(
-		emptyDiscardRuntime.requests[0].tools.some(item => item.function.name === "inspect_discard_pile"),
-		false
+	assert.equal(emptyDiscardRuntime.requests[0].tools.length, 14);
+	assert.doesNotMatch(
+		String(emptyDiscardRuntime.requests[0].messages.find(item => item.role === "user")?.content || ""),
+		/## 本步允许工具：[^\n]*inspect_discard_pile/
 	);
 
 	const singleTurnRuntime = await createDeciderRuntime({ multiTurn: false, maxTurns: 2 });
@@ -86,10 +90,31 @@ test("inspect_discard_pile is omitted when discard pile is empty or multiTurn is
 		filterCard: () => true,
 		filterTarget: (_c, p, t) => p !== t,
 	});
-	assert.equal(
-		singleTurnRuntime.requests[0].tools.some(item => item.function.name === "inspect_discard_pile"),
-		false
+	assert.equal(singleTurnRuntime.requests[0].tools.length, 14);
+	assert.doesNotMatch(
+		String(singleTurnRuntime.requests[0].messages.find(item => item.role === "user")?.content || ""),
+		/## 本步允许工具：[^\n]*inspect_discard_pile/
 	);
+});
+
+test("disallowed tool call triggers recoverable in-session retry with allowed tools hint", async () => {
+	const f = await createDeciderRuntime({ multiTurn: true, maxTurns: 3 });
+	const owner = f.player("owner", [{ name: "sha", suit: "spade", number: 7, cardid: "c0" }]);
+	f.player("target", []);
+	f.queue.push(tool("yes"), tool("pass"));
+
+	const outcome = await f.decide({
+		name: "chooseToUse",
+		player: owner,
+		filterCard: () => true,
+		filterTarget: (_c, p, t) => p !== t,
+	});
+	assert.equal(outcome.handled, true);
+	assert.equal(outcome.result.bool, false);
+	assert.equal(f.requests.length, 2);
+	const retryUser = String(f.requests[1].messages.at(-1)?.content || "");
+	assert.match(retryUser, /当前步骤不允许调用工具 yes/);
+	assert.match(retryUser, /## 本步允许工具：use_card, pass/);
 });
 
 test("round-history masks $giveAuto private cards and merges round summaries across roundStart transitions", async () => {

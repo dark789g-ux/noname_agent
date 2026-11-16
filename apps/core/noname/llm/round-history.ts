@@ -13,21 +13,29 @@ import {
 	cleanBattleLogText,
 	formatBattleLogArgs,
 	isRedundantTurnStartLog,
+	sliceEventsSince,
 	SUBMIT_ROUND_SUMMARY_TOOL,
 	submitRoundSummaryTool,
 	type DiscardCardInput,
 	type DiscardPileReport,
+	type EventWindow,
 	type RoundHistoryInput,
 	type RoundLogEntry,
+	type SequencedRoundLogEntry,
 } from "./prompt-history.js";
+
+export type { EventWindow };
 
 const MAX_ROUND_SUMMARY_WAIT_MS = 12_000;
 const ROUND_SUMMARY_TIMEOUT_CAP_SEC = 30;
 const MAX_BUFFER_PER_ROUND = 240;
+const MAX_SEQ_LOG_ENTRIES = 400;
 
 interface RoundHistoryState {
 	currentRound: number;
 	currentEntries: RoundLogEntry[];
+	seqCounter: number;
+	seqLog: SequencedRoundLogEntry[];
 	rollingSummary: string;
 	summarizedThroughRound: number;
 	pendingFallbackSummary?: string;
@@ -54,6 +62,8 @@ function createInitialState(): RoundHistoryState {
 	return {
 		currentRound: 0,
 		currentEntries: [],
+		seqCounter: 0,
+		seqLog: [],
 		rollingSummary: "",
 		summarizedThroughRound: 0,
 		summaryChain: null,
@@ -144,6 +154,16 @@ export function getPromptHistorySnapshot(): RoundHistoryInput {
 		currentRound,
 		entries: state.currentEntries.slice(),
 	};
+}
+
+/** 读取本局最新公开事件的单调递增序号（无事件时为 0）。 */
+export function getLatestEventSeq(): number {
+	return state.seqCounter;
+}
+
+/** 读取 sinceSeq 之后的增量公开事件；若旧事件已被窗口淘汰则标记 truncated。 */
+export function getEventsSince(sinceSeq: number): EventWindow {
+	return sliceEventsSince(state.seqLog, state.seqCounter, sinceSeq);
 }
 
 /** 若存在后台在途轮次总结，按剩余决策超时预算有限等待；超时立即放行并使用兜底摘要。 */
@@ -255,6 +275,10 @@ function captureGameLog(args: unknown[]): void {
 	state.currentEntries.push({ turnHeader, text });
 	if (state.currentEntries.length > MAX_BUFFER_PER_ROUND) {
 		state.currentEntries.splice(0, state.currentEntries.length - MAX_BUFFER_PER_ROUND);
+	}
+	state.seqLog.push({ seq: ++state.seqCounter, roundNumber: effectiveRound, turnHeader, text });
+	if (state.seqLog.length > MAX_SEQ_LOG_ENTRIES) {
+		state.seqLog.splice(0, state.seqLog.length - MAX_SEQ_LOG_ENTRIES);
 	}
 }
 

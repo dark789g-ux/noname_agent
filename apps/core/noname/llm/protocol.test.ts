@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildBackupStepDefinitions, materializeViewAsResult, mergeBackupSelectionSpecs, resolveCardTargetSelect, resolveViewAs } from "./backup-protocol.js";
 import { assertActionAllowed, assistantToolMessage, isExplicitMultiTurnRejection, materializeDirectShape, parseActionProposal, plainLogValue, remainingTimeoutSec, selectionRequired, uniqueLegacyMatch } from "./protocol.js";
-import { buildTools } from "./tools.js";
+import { buildTools, formatAllowedToolsLine, resolveAllowedToolNames, STATIC_DECISION_TOOL_NAMES, STATIC_DECISION_TOOLS } from "./tools.js";
 
 test("legacy tool arguments normalize to refs", () => {
 	assert.deepEqual(parseActionProposal({ id: "t1", name: "use_card", arguments: { card_id: "sha_spade_7", target_ids: [0, 2] } }), {
@@ -20,6 +20,20 @@ test("forced action schemas do not expose pass", () => {
 		const tools = buildTools(name, { cards: [], skills: [] }, undefined, true);
 		assert.equal(tools.some(tool => tool.function.name === "pass"), false);
 	}
+});
+
+test("STATIC_DECISION_TOOLS exposes all 14 static tools without dynamic or legacy schema fields", () => {
+	assert.equal(STATIC_DECISION_TOOLS.length, 14);
+	assert.equal(STATIC_DECISION_TOOL_NAMES.length, 14);
+	const serialized = JSON.stringify(STATIC_DECISION_TOOLS);
+	assert.equal(serialized.includes("card_id"), false);
+	assert.equal(serialized.includes("target_ids"), false);
+	assert.deepEqual(resolveAllowedToolNames("chooseToUse", { cards: [], skills: [] }, undefined, false, { allowInspectDiscard: true }), [
+		"use_card",
+		"pass",
+		"inspect_discard_pile",
+	]);
+	assert.equal(formatAllowedToolsLine(["use_card", "pass"]), "## 本步允许工具：use_card, pass");
 });
 
 test("selection required follows dynamic minimum while allowing zero", () => {

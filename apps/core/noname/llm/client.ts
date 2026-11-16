@@ -9,13 +9,23 @@ import type {
 	ChatCompletionTool,
 } from "openai/resources/chat/completions.js";
 import type { LLMConfig } from "./index.js";
+import type { StreamPhase, StreamUsage } from "./logger-types.js";
 import { assertLLMURL } from "./config.js";
 import { parseToolCallResult, type ToolCallResult } from "./tool-call-parser.js";
 
 export { parseToolCallResult, type ToolCallResult };
 
+export interface StreamProgressUpdate {
+	thought: string;
+	text: string;
+	phase: StreamPhase;
+	usage?: StreamUsage;
+}
+
 export interface StreamCallbacks {
 	onChunk?: (partialArgs: string) => void;
+	onStreamProgress?: (progress: StreamProgressUpdate) => void;
+	onUsage?: (usage: StreamUsage) => void;
 	onFirstChunk?: () => void;
 	onFirstToken?: () => void;
 	onError?: (stage: string, message: string, httpStatus?: number) => void;
@@ -29,6 +39,7 @@ export async function callLLMWithTimeout(
 	messages: ChatCompletionMessageParam[],
 	tools: ChatCompletionTool[],
 	config: LLMConfig,
+	callbacks?: Pick<StreamCallbacks, "onUsage">,
 ): Promise<ToolCallResult> {
 	assertLLMURL(config.url);
 	const client = new OpenAI({
@@ -53,6 +64,12 @@ export async function callLLMWithTimeout(
 		}
 
 		const resp = await client.chat.completions.create(body);
+		const usage = extractOpenAIUsage((resp as any)?.usage);
+		if (usage) {
+			try {
+				callbacks?.onUsage?.(usage);
+			} catch {}
+		}
 		const msg = resp.choices?.[0]?.message;
 		if (!msg) {
 			throwErr("parse", "No message in LLM response");
@@ -144,8 +161,8 @@ export async function callLLMStream(
 			body.reasoning_effort = config.thinkingEffort;
 		}
 
-		// openai SDK 的 stream 请求需要通过 stream_options 启用 function arguments 流式
-		body.stream_options = { include_usage: false };
+		// openai SDK 的 stream 请求需要通过 stream_options 启用 usage 与流式信息
+		body.stream_options = { include_usage: true };
 
 		// as any: openai SDK 的 create() 根据 body 参数重载推断返回类型，
 		// Record<string, any> 导致推断为 non-streaming 的 ChatCompletion 类型。
@@ -159,6 +176,7 @@ export async function callLLMStream(
 		let toolCallId = "";
 		let argumentsBuffer = "";
 		let reasoningBuffer = "";
+		let latestUsage: StreamUsage | undefined;
 		let firstChunkReported = false;
 		let firstTokenReported = false;
 
@@ -166,6 +184,11 @@ export async function callLLMStream(
 			if (!firstChunkReported) {
 				firstChunkReported = true;
 				notify("onFirstChunk");
+			}
+			const chunkUsage = extractOpenAIUsage(chunk?.usage);
+			if (chunkUsage) {
+				latestUsage = chunkUsage;
+				notifyUsage(chunkUsage);
 			}
 			const deltaMessage = chunk.choices?.[0]?.delta;
 			const calls = deltaMessage?.tool_calls;
@@ -194,7 +217,13 @@ export async function callLLMStream(
 				streamUpdated = true;
 			}
 			if (streamUpdated) {
-				notify("onChunk", formatStreamPreview(reasoningBuffer, argumentsBuffer));
+				notify("onChunk", argumentsBuffer);
+				notifyProgress({
+					thought: reasoningBuffer,
+					text: argumentsBuffer,
+					phase: argumentsBuffer ? "tool_calling" : "thinking",
+					usage: latestUsage,
+				});
 			}
 		}
 
@@ -268,6 +297,35 @@ export async function callLLMStream(
 			// 遥测回调不能影响 provider 请求。
 		}
 	}
+
+	function notifyProgress(progress: StreamProgressUpdate): void {
+		try {
+			callbacks.onStreamProgress?.(progress);
+		} catch {
+			// 遥测回调不能影响 provider 请求。
+		}
+	}
+
+	function notifyUsage(usage: StreamUsage): void {
+		try {
+			callbacks.onUsage?.(usage);
+		} catch {
+			// 遥测回调不能影响 provider 请求。
+		}
+	}
+}
+
+function extractOpenAIUsage(raw: any): StreamUsage | undefined {
+	if (!raw || typeof raw !== "object") return undefined;
+	const inputTokens = typeof raw.prompt_tokens === "number" ? raw.prompt_tokens : undefined;
+	const outputTokens = typeof raw.completion_tokens === "number" ? raw.completion_tokens : undefined;
+	const thoughtTokens = typeof raw.completion_tokens_details?.reasoning_tokens === "number" ? raw.completion_tokens_details.reasoning_tokens : undefined;
+	const total = typeof raw.total_tokens === "number" ? raw.total_tokens : undefined;
+	const contextUsed = total ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : inputTokens);
+	if (inputTokens === undefined && outputTokens === undefined && thoughtTokens === undefined && contextUsed === undefined) {
+		return undefined;
+	}
+	return { inputTokens, outputTokens, thoughtTokens, contextUsed };
 }
 
 function extractReasoningText(message: any): string {

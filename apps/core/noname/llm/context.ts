@@ -3,9 +3,27 @@ import { getRegisteredSkill } from "../library/skillRegistry.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
 import type { DecisionCandidateSnapshot } from "./action-candidates.js";
-import { buildDecisionSnapshot, cleanPromptText, collectPromptPlayers, formatPlayerProfiles, promptTranslation, selectPromptDescription, translatePromptValue, type PromptRuntime } from "./prompt-format.js";
-import { formatPileOverview, formatRoundHistory } from "./prompt-history.js";
-import { getCurrentRoundNumber, getDiscardPileCount, getDrawPileCount, getPromptHistorySnapshot, getShuffleCount } from "./round-history.js";
+import {
+	buildFactsSnapshotParts,
+	buildRefLabels,
+	renderStatelessContextMessages,
+	type PromptFacts,
+} from "./prompt-facts.js";
+import {
+	cleanPromptText,
+	collectPromptPlayers,
+	promptTranslation,
+	selectPromptDescription,
+	translatePromptValue,
+	type PromptRuntime,
+} from "./prompt-format.js";
+import {
+	getCurrentRoundNumber,
+	getDiscardPileCount,
+	getDrawPileCount,
+	getPromptHistorySnapshot,
+	getShuffleCount,
+} from "./round-history.js";
 
 /** 决策点的人类可读描述映射。 */
 const DECISION_DESCRIPTIONS: Record<string, string> = {
@@ -16,54 +34,60 @@ const DECISION_DESCRIPTIONS: Record<string, string> = {
 };
 
 /**
- * 构造发送给 LLM 的上下文消息。
- * 返回 { messages } 数组，包含 system prompt 和 user message（场面快照）。
+ * 采集当前决策的结构化牌局事实（供 Harness 与无状态渲染共用）。
  */
-export function buildContext(event: any, candidates: DecisionCandidateSnapshot | { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] }, options?: { canInspectDiscard?: boolean }): { messages: ChatCompletionMessageParam[] } {
+export function collectDecisionPromptFacts(
+	event: any,
+	candidates: DecisionCandidateSnapshot | { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] },
+	options?: { canInspectDiscard?: boolean }
+): PromptFacts {
 	const decisionPoint = event.name || "unknown";
 	const runtime = createPromptRuntime();
 	const referencedPlayers = "targetPool" in candidates ? candidates.targetPool.map(target => target.player) : undefined;
 	const snapshot = collectPromptPlayers(runtime, event.player, referencedPlayers);
 	const states = "targetPool" in candidates ? snapshot.states.map((state, index) => ({ ...state, ref: candidates.targetPool[index]?.ref })) : snapshot.states;
-	const historySnapshot = getPromptHistorySnapshot();
-	const roundNumber = historySnapshot.currentRound || getCurrentRoundNumber();
-	const pileOverviewText = formatPileOverview({
-		roundNumber,
-		drawPileCount: getDrawPileCount(),
-		discardPileCount: getDiscardPileCount(),
-		shuffleNumber: getShuffleCount(),
-		canInspectDiscard: options?.canInspectDiscard,
-	});
-	const roundHistoryText = formatRoundHistory(historySnapshot);
-	return {
-		messages: [
-			{
-				role: "system",
-				content: `你是三国杀的 AI 玩家。根据当前场面从可用工具中选择最优动作，只返回一个工具调用。重要要求：你的整个内部思考过程（reasoning_content）与工具参数中的原因说明（reason），除了必要的短引用代号与工具名外，必须全程使用简体中文。\n\n${formatPlayerProfiles(snapshot.profiles)}`,
-			},
-			{
-				role: "user",
-				content: `${buildDecisionSnapshot(
-					decisionPoint,
-					event,
-					{
-						...candidates,
-						targets: "targetPool" in candidates && candidates.actions.length ? candidates.targetPool : (candidates as any).targets,
-					},
-					states,
-					{
-						decisionDescriptions: DECISION_DESCRIPTIONS,
-						getSkillName: skillName,
-						getSkillDescription: skill => engineSkillDescription(skill, undefined),
-						getCardLabel: card => `${get.translation(card)} ${get.suit(card)} ${get.number(card)}`,
-						getPlayerLabel: player => displayText(get.translation(player) || player.name),
-						pileOverviewText,
-						roundHistoryText,
-					}
-				)}\n\n请务必全程使用简体中文进行内部思考（reasoning_content）并填写中文原因（reason）。`,
-			},
-		],
+	const normalizedCandidates = {
+		...candidates,
+		targets: "targetPool" in candidates && candidates.actions.length ? candidates.targetPool : (candidates as any).targets,
 	};
+	const roundHistory = getPromptHistorySnapshot();
+	const roundNumber = roundHistory.currentRound || getCurrentRoundNumber();
+	const parts = buildFactsSnapshotParts(decisionPoint, event, normalizedCandidates, {
+		decisionDescriptions: DECISION_DESCRIPTIONS,
+		getSkillName: skillName,
+		getSkillDescription: skill => engineSkillDescription(skill, undefined),
+		getCardLabel: card => `${get.translation(card)} ${get.suit(card)} ${get.number(card)}`,
+		getPlayerLabel: player => displayText(get.translation(player) || player.name),
+	});
+	return {
+		decisionPoint,
+		profiles: snapshot.profiles,
+		states,
+		pileOverview: {
+			roundNumber,
+			drawPileCount: getDrawPileCount(),
+			discardPileCount: getDiscardPileCount(),
+			shuffleNumber: getShuffleCount(),
+			canInspectDiscard: options?.canInspectDiscard,
+		},
+		roundHistory,
+		decisionHeaderText: parts.headerText,
+		decisionChoicesText: parts.choicesText,
+		refLabels: buildRefLabels(normalizedCandidates, states),
+	};
+}
+
+/**
+ * 构造发送给 LLM 的上下文消息。
+ * 返回 { messages } 数组，包含 system prompt 和 user message（场面快照）。
+ */
+export function buildContext(
+	event: any,
+	candidates: DecisionCandidateSnapshot | { cards: CandidateCard[]; skills: string[]; targets?: CandidateTarget[] },
+	options?: { canInspectDiscard?: boolean }
+): { messages: ChatCompletionMessageParam[] } {
+	const facts = collectDecisionPromptFacts(event, candidates, options);
+	return { messages: renderStatelessContextMessages(facts) };
 }
 
 function createPromptRuntime(): PromptRuntime {

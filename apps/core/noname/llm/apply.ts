@@ -1,7 +1,7 @@
 import { SelectionContext, SelectionSession, SelectionStep } from "@/library/selection/index.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
 import { assertSupportedTargetRules, resolveAuthoritativeTargetRange, resolveSkillActionPlan, type ActionCandidateRuntime, type CandidateAction, type DecisionCandidateSnapshot } from "./action-candidates.js";
-import { assertActionTargets, assertCardLegal, assertTargetLegal, buildDecisionLogResult, isCardOwned, isTargetCurrent, materializeResponseResult, requireAction, resolveActionCardRefs, resolveCandidateCards, resolveCandidateTargets, resolveCurrentAction, type ValidationRuntime } from "./decision-validation.js";
+import { assertActionTargets, assertCardLegal, assertTargetLegal, buildDecisionLogResult, hasLegalDirectTargetCandidate, isCardOwned, isTargetCurrent, materializeResponseResult, requireAction, resolveActionCardRefs, resolveCandidateCards, resolveCandidateTargets, resolveCurrentAction, type ValidationRuntime } from "./decision-validation.js";
 import type { ToolCallResult } from "./client.js";
 import { buildBackupStepDefinitions, getViewAsSource, materializeViewAsResult, mergeBackupSelectionSpecs, resolveViewAs, type BackupDecisionKind } from "./backup-protocol.js";
 import { materializeDirectResult } from "./direct-materializer.js";
@@ -20,6 +20,9 @@ export class DecisionSession extends DecisionSelection {
 	}
 
 	completeAutomatic(): { result: any } | undefined {
+		if ((this.directKind || this.backupKind) && !this.event.forced && !(this.directKind && this.event.skill) && this.isInitialStageImpossible()) {
+			return { result: { bool: false } };
+		}
 		if (!(this.backupKind || (this.directKind && this.event.forced)) || !this.stages.length || this.stage) return;
 		this.revalidate();
 		this.finalizeOrFail();
@@ -283,7 +286,14 @@ export class DecisionSession extends DecisionSelection {
 
 	private initializeDirectSelection(): void {
 		if (this.event.name === "chooseToUse" || this.event.name === "chooseToRespond") return;
-		const definition = directSelectionDefinition(this.event, this.eventSpec, { isCardOwned: card => isCardOwned(this.event, card, this.runtime), isTargetCurrent: target => isTargetCurrent(this.event, target, this.runtime), selectedCard: () => this.selectedDirectCard(), selectedNumbers: () => this.selectedNumbers() });
+		const definition = directSelectionDefinition(this.event, this.eventSpec, {
+			isCardOwned: card => isCardOwned(this.event, card, this.runtime),
+			isTargetCurrent: target => isTargetCurrent(this.event, target, this.runtime),
+			selectedCard: () => this.selectedDirectCard(),
+			selectedNumbers: () => this.selectedNumbers(),
+			normalizeFilter: this.runtime.normalizeFilter,
+			hasLegalDirectTarget: (value, kind) => hasLegalDirectTargetCandidate(this.event, this.targetMap.values(), this.runtime, value, kind),
+		});
 		if (!definition) return;
 		this.directKind = definition.kind;
 		if (definition.filterOk) {

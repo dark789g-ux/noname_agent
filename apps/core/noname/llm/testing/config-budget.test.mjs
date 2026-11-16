@@ -11,6 +11,7 @@ test("enabling LLM allows multiple turns despite a saved legacy false and honors
 		{
 			[fileURLToPath(new URL("../logger.js", import.meta.url))]: { llmLogger: {} },
 			[fileURLToPath(new URL("../decide.js", import.meta.url))]: { tryLLMDecide: async () => ({ handled: false }) },
+			[fileURLToPath(new URL("../harness/harness.js", import.meta.url))]: { resetAllHarnessSessions() {} },
 		}
 	);
 	const { getLLMConfig } = await runtime.import("noname/llm/index.ts");
@@ -20,10 +21,12 @@ test("enabling LLM allows multiple turns despite a saved legacy false and honors
 	assert.equal(current.maxTurns, 2);
 	assert.equal(current.timeoutSec, 12);
 	assert.equal(current.decisionTimeoutSec, 42);
+	assert.equal(Object.hasOwn(current, "sessionMode"), false);
 	Reflect.deleteProperty(config, "llm_max_turns");
 	assert.equal(getLLMConfig().maxTurns, 4);
 	const { createConfigMenuLlm } = await runtime.import("noname/library/configuration/options/llm.ts");
 	assert.equal(Object.hasOwn(createConfigMenuLlm().config, "llm_multi_turn"), false);
+	assert.equal(Object.hasOwn(createConfigMenuLlm().config, "llm_session_mode"), false);
 	assert.equal(Object.hasOwn(createConfigMenuLlm().config, "llm_control_self"), true);
 });
 
@@ -80,6 +83,7 @@ test("llm_control_self depends on llm_enabled, activates at gameStart snapshot, 
 		{
 			[fileURLToPath(new URL("../logger.js", import.meta.url))]: { llmLogger: {} },
 			[fileURLToPath(new URL("../decide.js", import.meta.url))]: { tryLLMDecide: async () => ({ handled: false }) },
+			[fileURLToPath(new URL("../harness/harness.js", import.meta.url))]: { resetAllHarnessSessions() {} },
 			[fileURLToPath(new URL("../round-history.js", import.meta.url))]: { initRoundHistoryHooks() {}, resetRoundHistory() {} },
 		}
 	);

@@ -14,6 +14,7 @@ import {
 import { llmLogger } from "./logger.js";
 import { end, reset, start, type PlayerButtonLogEntry } from "./player-button-state.js";
 import { normalizeLLMText } from "./config.js";
+import { resetAllHarnessSessions } from "./harness/harness.js";
 import { initRoundHistoryHooks, resetRoundHistory } from "./round-history.js";
 
 export interface LLMConfig extends BackendsConfigFields {
@@ -51,6 +52,7 @@ function readLLMConfig(): LLMConfig {
 			: {
 					defaultBackend: "openai",
 					openaiDisplayName: "",
+					openaiContextSize: 128_000,
 					agy: { displayName: "agy", command: "agy", model: "", thinkingEffort: "default", timeoutSec: 60, extraArgs: "" },
 					codex: { displayName: "codex", command: "codex", model: "", thinkingEffort: "default", timeoutSec: 60, extraArgs: "" },
 					seatBackends: {},
@@ -141,8 +143,12 @@ function clearLLMSelfControlLock(): void {
 
 function onGameStart(): void {
 	const status = _status as LLMGameStatus;
+	const prevGameId = status.llmGameId;
 	reset();
 	resetRoundHistory();
+	if (typeof resetAllHarnessSessions === "function") {
+		resetAllHarnessSessions(prevGameId);
+	}
 	delete status.llmConfigAtGameStart;
 	const raw = readLLMConfig();
 	const snapshot = Object.freeze({

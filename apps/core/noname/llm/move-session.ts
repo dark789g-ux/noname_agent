@@ -1,7 +1,12 @@
 import { withVirtualSelection, type LegacyBridgeHost } from "./legacy-bridge.js";
-import { fail, resolveSelectionSpec } from "./selection-adapter.js";
+import { fail, resolveSelectionSpec, type HeadlessSelectionSpec } from "./selection-adapter.js";
 
-type MoveMode = "guanxing" | "xunxun" | "gongxin" | "generic";
+type MoveMode = "guanxing" | "xunxun" | "gongxin" | "swap" | "generic";
+const DEFAULT_MOVE_FILTER_SYMBOL = Symbol.for("noname.defaultMoveFilter");
+
+function isCustomFilterMove(filterMove: unknown): boolean {
+	return typeof filterMove === "function" && !(filterMove as Record<symbol, unknown>)[DEFAULT_MOVE_FILTER_SYMBOL];
+}
 interface MoveRuntime {
 	translate(value: any): string;
 	cardLabel?(card: any): string;
@@ -14,6 +19,7 @@ export class MoveDecisionSession {
 	private readonly piles: { title: string; cards: any[] }[];
 	private readonly cards: any[];
 	private readonly mode: MoveMode;
+	private readonly spec: HeadlessSelectionSpec | null;
 	readonly stage: any;
 
 	constructor(
@@ -22,22 +28,26 @@ export class MoveDecisionSession {
 	) {
 		if (event?.selectionSpec === false) fail("move event disabled by selectionSpec: false");
 		const spec = resolveSelectionSpec(event.selectionSpec, event, event.player);
+		this.spec = spec;
 		const reviewedMode = spec?.move;
-		if (reviewedMode && !["guanxing", "xunxun", "gongxin"].includes(reviewedMode)) {
+		if (reviewedMode && !["guanxing", "xunxun", "gongxin", "swap"].includes(reviewedMode)) {
 			fail("move event has no reviewed partition contract");
 		}
-		if (!reviewedMode && typeof event.filterMove === "function") {
+		if (!reviewedMode && isCustomFilterMove(event.filterMove)) {
 			fail("move event has UI-dependent filterMove");
 		}
 		this.mode = (reviewedMode as MoveMode) || "generic";
 		this.piles = flattenMoveList(event.list);
 		this.cards = this.piles.flatMap(pile => pile.cards);
 		if (new Set(this.cards).size !== this.cards.length) fail("move candidates contain duplicate cards");
-		if (reviewedMode && this.piles.length !== (this.mode === "gongxin" ? 3 : 2)) fail("unexpected partition count");
+		if ((this.mode === "guanxing" || this.mode === "xunxun") && this.piles.length !== 2) fail("unexpected partition count");
+		if (this.mode === "gongxin" && this.piles.length !== 3) fail("unexpected partition count");
 		if (!this.piles.length) fail("unexpected partition count");
+		const cleanPrompt = event.prompt ? String(event.prompt).replace(/<[^>]+>/g, "").trim() : "";
 		const initialSummary = this.piles
 			.map((pile, index) => `堆${index}(${pile.title})=[${pile.cards.map(card => `m${this.cards.indexOf(card)}`).join(",")}]`)
 			.join("，");
+		const pileLimits = this.piles.map((pile, index) => `堆${index}(${pile.title})保持 ${pile.cards.length} 张`).join("、");
 		const instruction =
 			this.mode === "gongxin"
 				? "从手牌中选择恰好一张红桃放入弃置或置顶堆，其余留在原堆；允许取消。"
@@ -45,7 +55,9 @@ export class MoveDecisionSession {
 					? "顶堆和底堆各两张，堆内从左向右排列，左侧先摸到。"
 					: this.mode === "guanxing"
 						? "第一堆置于牌堆顶，第二堆置于牌堆底；堆内从左向右排列，左侧先摸到。"
-						: `按规则在各牌堆间分配并排序全部卡牌（必须守恒）。${event.prompt ? `提示：${String(event.prompt).replace(/<[^>]+>/g, "")}。` : ""}初始分布：${initialSummary}`;
+						: this.mode === "swap"
+							? `在各牌堆间进行等量交换或堆内排序（允许保持原样）。${cleanPrompt ? `提示：${cleanPrompt}。` : ""}固定容量：${pileLimits}。初始分布：${initialSummary}`
+							: `按规则在各牌堆间分配并排序全部卡牌（必须守恒）。${cleanPrompt ? `提示：${cleanPrompt}。` : ""}初始分布：${initialSummary}`;
 		this.stage = {
 			id: "move",
 			type: "move",
@@ -81,12 +93,23 @@ export class MoveDecisionSession {
 		const allowed = this.stage.items.map(item => item.ref);
 		if (flat.length !== allowed.length || new Set(flat).size !== flat.length || flat.some(ref => !allowed.includes(ref))) fail("move must conserve every card exactly once");
 		const moved = refs.map(pile => pile.map(ref => this.cards[allowed.indexOf(ref)]));
+		if (this.mode === "swap" && moved.some((pile, index) => pile.length !== this.piles[index].cards.length)) {
+			fail("swap requires each pile to preserve its initial card count");
+		}
 		if (this.mode === "xunxun" && moved.some(pile => pile.length !== 2)) fail("xunxun requires two cards in each pile");
 		if (this.mode === "gongxin") {
 			const selected = [...moved[1], ...moved[2]];
 			if (selected.length !== 1 || this.runtime.getSuit(selected[0]) !== "heart") fail("gongxin requires exactly one heart");
 			const unchanged = this.cards.filter(card => card !== selected[0]);
 			if (moved[0].some((card, index) => card !== unchanged[index])) fail("gongxin must preserve the remaining hand order");
+		}
+		if (typeof this.spec?.finalPredicate === "function") {
+			const ok = withVirtualSelection(
+				this.runtime.legacyBridgeHost,
+				{ event: this.event, player: this.event.player, cards: [], targets: [] },
+				() => !!this.spec!.finalPredicate!({ event: this.event, player: this.event.player, moved }, this.event, this.event.player)
+			);
+			if (!ok) fail("move final predicate rejected proposal");
 		}
 		if (typeof this.event.filterOk === "function") {
 			const ok = withVirtualSelection(

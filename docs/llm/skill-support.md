@@ -8,7 +8,7 @@
 - `true` 使用已审核的普通选牌、目标和视为牌规则；未声明 `selectionSpec` 的主动技能、`viewAs`/装备技能（如丈八蛇矛）、`chooseButton.backup`（含无 `viewAs` 的纯技能确认与额外目标）、`_recasting`、零目标重铸切换、`singleCard + filterAddedTarget`、`complexSelect`/`complexTarget`/`changeTarget` 及未自定义 `filterMove` 的 `chooseToMove`/`chooseToMove_new` 均由 `generic-skill-plan.ts` 与 `legacy-bridge.ts` 通用承接。
 - 通用路径对读取 `ui.selected`、`_status.event` 与 `event._backup` 的传统过滤器通过 `withVirtualSelection` 提供同步虚拟上下文并在 `finally` 中完整恢复；通用单项失败隔离到 `skippedActions`，仅显式 `selectionSpec` 报错或强制事件零可执行动作时回退原生 AI。
 - 动态步骤在前一步完成后生成；短引用按对象身份保持稳定，会前校验与提交前 `revalidate()` 继续在实时事件上严格重验，且不会自动放宽。
-- 观星、恂恂、攻心使用显式 `move` 声明；其余未设置 `selectionSpec: false` 且无自定义 `filterMove` 的 `chooseToMove`/`chooseToMove_new` 可由通用移动会话完成守恒分堆并运行 `filterOk`。
+- 观星、恂恂、攻心及等量交换类（`"swap"`）事件使用显式 `move` 声明（`"swap"` 强校验各堆保持初始张数并允许任意 `>= 1` 堆）；其余未设置 `selectionSpec: false` 且无自定义 `filterMove`（引擎默认占位函数会通过内部 Symbol 自动识别放行）的 `chooseToMove`/`chooseToMove_new` 可由通用移动会话完成守恒分堆并运行 `filterOk`。
 - 每个子事件按实际决策者重新建立私有上下文。他人区域的 `blank` 按钮、`x`/`s` 扩展区未明置且未对当前角色公开的牌均只输出匿名数量，不泄露牌面内容。
 - 已提交的技能效果继续由原引擎结算；后续模型失败只回退当前未提交选择，不重跑父技能。日志的 `traceId`、`skill` 和 `automatic_steps` 用于区分关联选择与引擎自动推进。
 - 提示包含当前判定牌、触发来源及实际可见的材料牌信息；已经选定的 backup 若只剩自动步骤，由引擎直接完成，日志记录 `execution: "automatic"`，不增加模型请求。

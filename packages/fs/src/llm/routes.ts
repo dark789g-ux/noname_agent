@@ -29,7 +29,7 @@ export function isAllowedLocalOrigin(origin?: string): boolean {
 	}
 }
 
-function validateAccess(request: FastifyRequest, reply: FastifyReply): boolean {
+export function validateAccess(request: FastifyRequest, reply: FastifyReply): boolean {
 	const clientIp = request.ip || request.raw.socket?.remoteAddress;
 	if (!isLoopbackIp(clientIp)) {
 		reply.code(403).send({ ok: false, stage: "config", message: "仅允许本机回环地址调用本地 CLI 桥接服务" });
@@ -42,16 +42,16 @@ function validateAccess(request: FastifyRequest, reply: FastifyReply): boolean {
 	return true;
 }
 
-function parseProvider(value: unknown): CliProvider | null {
+export function parseProvider(value: unknown): CliProvider | null {
 	return value === "agy" || value === "codex" ? value : null;
 }
 
-function parseThinkingEffort(value: unknown): CliThinkingEffort {
+export function parseThinkingEffort(value: unknown): CliThinkingEffort {
 	if (value === "none" || value === "low" || value === "medium" || value === "high") return value;
 	return "default";
 }
 
-function sendSseEvent(reply: FastifyReply, payload: Record<string, unknown>): void {
+export function sendSseEvent(reply: FastifyReply, payload: Record<string, unknown>): void {
 	if (reply.raw.writableEnded || reply.raw.destroyed) return;
 	reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
 }

@@ -4,10 +4,38 @@ import { LLMLogPersistenceQueue, retryLLMLogPersistence, retryPendingActiveCheck
 import { LLMLogStore, type ActiveCheckpointSnapshot, type ActiveLogRecord } from "./logger-store.js";
 import { plainLogValue } from "./protocol.js";
 import { buildGameSessions } from "./logger-sessions.js";
-import type { ActiveLogSnapshot, ErrorStage, GameSession, LogEntry, LogStatus, LogTurn, RequestOutcome, RequestTiming, RequestTransport } from "./logger-types.js";
+import type {
+	ActiveLogSnapshot,
+	ErrorStage,
+	GameSession,
+	LogEntry,
+	LogSessionMeta,
+	LogStatus,
+	LogTurn,
+	RequestOutcome,
+	RequestTiming,
+	RequestTransport,
+	StreamPhase,
+	StreamProgressPayload,
+	StreamUsage,
+} from "./logger-types.js";
 import { createRequestTiming, finishRequestTiming, markRequestTiming } from "./logger-timing.js";
 
-export type { ActiveLogSnapshot, ErrorStage, GameSession, LogEntry, LogStatus, LogTurn, RequestOutcome, RequestTiming, RequestTransport } from "./logger-types.js";
+export type {
+	ActiveLogSnapshot,
+	ErrorStage,
+	GameSession,
+	LogEntry,
+	LogSessionMeta,
+	LogStatus,
+	LogTurn,
+	RequestOutcome,
+	RequestTiming,
+	RequestTransport,
+	StreamPhase,
+	StreamProgressPayload,
+	StreamUsage,
+} from "./logger-types.js";
 
 type InternalActiveLog = ActiveLogSnapshot & { deadlineAt: number; ownerId: string; revision: number; startedAtMonotonic: number; attemptStartedAt: Map<string, number> };
 type PersistedActive = ActiveLogRecord<LogEntry>;
@@ -169,7 +197,19 @@ export class LLMLogger {
 		for (const active of this.activeLogs.values()) {
 			if (this.matchesGameAndPlayer(active.entry, gameId, playerName, seatNum) && (!latest || active.startedAt > latest.startedAt)) latest = active;
 		}
-		return latest && { entry: cloneEntry(latest.entry), partialArgs: latest.partialArgs, startedAt: latest.startedAt };
+		return latest && { entry: cloneEntry(latest.entry), partialArgs: latest.partialArgs, startedAt: latest.startedAt, ...(latest.stream ? { stream: plainLogValue(latest.stream) } : {}) };
+	}
+
+	logSessionMeta(id: string, session: LogSessionMeta): void {
+		const active = this.activeLogs.get(id);
+		if (!active) return;
+		active.entry.session = plainLogValue(session);
+		this.publishTiming(active);
+	}
+
+	logRefLabels(id: string, refLabels: Record<string, string>): void {
+		const entry = this.getActive(id);
+		if (entry) entry.refLabels = plainLogValue(refLabels);
 	}
 
 	logRequest(id: string, messages: any[], tools: any[]): void {
@@ -290,6 +330,23 @@ export class LLMLogger {
 		const active = this.activeLogs.get(logId);
 		if (active) active.partialArgs = partialArgs;
 		this.publish("llm_log_chunk", { logId, partialArgs, ts: Date.now() });
+	}
+
+	/** 结构化流式进度（思考文本、输出文本、阶段与用量），同步兼容旧版 llm_log_chunk。 */
+	logStreamProgress(
+		logId: string,
+		progress: { turnIndex: number; thought: string; text: string; phase: StreamPhase; thinkingStartedAt?: number; thinkingMs?: number; usage?: StreamUsage }
+	): void {
+		const now = Date.now();
+		const preview = progress.text || "";
+		const payload: StreamProgressPayload = { logId, ...progress, ts: now };
+		const active = this.activeLogs.get(logId);
+		if (active) {
+			active.partialArgs = preview;
+			active.stream = payload;
+		}
+		this.publish("llm_log_stream", payload);
+		this.publish("llm_log_chunk", { logId, partialArgs: preview, ts: now });
 	}
 
 	logTurn(id: string, turn: LogTurn): void {

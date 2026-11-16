@@ -2,6 +2,7 @@ import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/reso
 import type { ResolvedBackend } from "./backends.js";
 import type { StreamCallbacks } from "./client.js";
 import { parseToolCallResult, type ToolCallResult } from "./tool-call-parser.js";
+import { STATIC_DECISION_TOOLS } from "./tools.js";
 
 const LEGACY_PARAM_KEYS = new Set(["card_id", "card_ids", "target_ids", "reason"]);
 
@@ -33,6 +34,26 @@ export function buildCliDecisionJsonSchema(tools: ChatCompletionTool[]): CliDeci
 	};
 }
 
+/** 供常驻 CLI 会话复用的 14 工具静态 JSON Schema。 */
+export const STATIC_CLI_DECISION_SCHEMA: CliDecisionSchema = buildCliDecisionJsonSchema(STATIC_DECISION_TOOLS as ChatCompletionTool[]);
+
+const CLI_OUTPUT_FORMAT_RULES = [
+	"## 输出格式要求（务必严格遵守）",
+	"只返回 1 个符合 JSON Schema 的 JSON 对象，不要输出任何额外解释文字或 Markdown 代码块：",
+	"- `tool`：必须从当前步骤「本步允许工具」及上方「可用工具列表」的枚举名中选择 1 个。",
+	"- `reason`：1~200 字的简体中文选择原因说明。",
+	'- `arguments_json`：该工具所需参数序列化后的 JSON 对象字符串（无额外参数时填 `"{}"`；请使用 c0/p0 等短引用，不要填兼容旧协议字段）。',
+].join("\n");
+
+/** 常驻 CLI 会话增量轮次的单行输出格式提醒，避免重复输出完整工具手册。 */
+export const CLI_INCREMENTAL_JSON_REMINDER =
+	"## 输出格式提醒\n仅输出 1 个符合约定 JSON Schema 的对象（tool / reason / arguments_json），勿输出多余文本或代码块，且 tool 必须来自上方「本步允许工具」。";
+
+/** 生成写入 CLI 首轮/重建系统指令中的全量 14 工具手册与输出规范。 */
+export function formatCliSystemToolsManual(): string {
+	return `${formatCliToolsSection(STATIC_DECISION_TOOLS as ChatCompletionTool[])}\n\n${CLI_OUTPUT_FORMAT_RULES}`;
+}
+
 /** 将多轮对话历史与工具定义组装为适合 CLI stdin 传入的单段完整 Prompt。 */
 export function buildCliDecisionPrompt(messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): string {
 	const sections: string[] = [];
@@ -40,15 +61,7 @@ export function buildCliDecisionPrompt(messages: ChatCompletionMessageParam[], t
 		sections.push(formatPromptMessage(msg));
 	}
 	sections.push(formatCliToolsSection(tools));
-	sections.push(
-		[
-			"## 输出格式要求（务必严格遵守）",
-			"只返回 1 个符合 JSON Schema 的 JSON 对象，不要输出任何额外解释文字或 Markdown 代码块：",
-			'- `tool`：必须从上方「可用工具列表」的枚举名中选择 1 个。',
-			'- `reason`：1~200 字的简体中文选择原因说明。',
-			'- `arguments_json`：该工具所需参数序列化后的 JSON 对象字符串（无额外参数时填 `"{}"`；请使用 c0/p0 等短引用，不要填兼容旧协议字段）。',
-		].join("\n")
-	);
+	sections.push(CLI_OUTPUT_FORMAT_RULES);
 	return sections.filter(Boolean).join("\n\n");
 }
 
