@@ -3,21 +3,23 @@
 		<LLMLogDetailView
 			v-if="selectedDetail"
 			:entry="selectedDetail"
-			@back="selectedDetail = null"
+			:loading="detailLoading"
+			@back="closeDetail"
 		/>
 		<LLMSessionTimeline
 			v-else
 			:player-seat-num="playerSeatNum"
 			:game-id="gameId"
 			:player-name="playerName"
-			@select-detail="selectedDetail = $event"
+			@select-detail="openDetail"
 		/>
 	</div>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
-import type { LogEntry } from "@/llm/logger-types.js";
+import { llmLogger, type LogEntry } from "@/llm/logger.js";
+import { loadLogDetailEntry } from "./llmLogStatus.js";
 import LLMLogDetailView from "./LLMLogDetailView.vue";
 import LLMSessionTimeline from "./llm-timeline/LLMSessionTimeline.vue";
 
@@ -28,6 +30,26 @@ defineProps<{
 }>();
 
 const selectedDetail = ref<LogEntry | null>(null);
+const detailLoading = ref(false);
+let detailGeneration = 0;
+
+function closeDetail(): void {
+	detailGeneration++;
+	detailLoading.value = false;
+	selectedDetail.value = null;
+}
+
+async function openDetail(entry: LogEntry): Promise<void> {
+	const generation = ++detailGeneration;
+	selectedDetail.value = entry;
+	await loadLogDetailEntry(
+		entry,
+		id => llmLogger.getLogDetail(id),
+		value => (detailLoading.value = value),
+		() => generation === detailGeneration && selectedDetail.value?.id === entry.id,
+		full => (selectedDetail.value = full)
+	);
+}
 </script>
 
 <style scoped>

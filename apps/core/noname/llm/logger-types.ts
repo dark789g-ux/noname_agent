@@ -52,7 +52,7 @@ export interface RequestTiming {
 export interface LogTurn {
 	index: number;
 	stage?: string;
-	request: { messages: any[]; tools: any[] };
+	request?: { messages: any[]; tools: any[] };
 	toolCall?: { id?: string; name: string; reason?: string; reasoningContent?: string; arguments: any };
 	result?: any;
 	error?: string;
@@ -84,6 +84,8 @@ export interface LogEntry {
 	turns?: LogTurn[];
 	/** 每轮的 provider 请求尝试；缺省代表旧版本或非遥测日志。 */
 	requestTimings?: RequestTiming[];
+	/** 标记当前对象是否已包含完整请求上下文（摘要查询返回 false）。 */
+	detailLoaded?: boolean;
 }
 
 export interface ActiveLogSnapshot {

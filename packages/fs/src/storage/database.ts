@@ -2,6 +2,19 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { ensureLLMLogsSchema, LLMLogStorage } from "./llm-logs";
+import { migrateLegacyLLMLogs } from "./migrate-llm-logs";
+
+const READ_ONLY_ACTIONS = new Set([
+	"status",
+	"get",
+	"entries",
+	"count",
+	"snapshot",
+	"llm_logs_sessions",
+	"llm_logs_query",
+	"llm_logs_get_detail",
+]);
 
 export type Namespace = "main" | "logs";
 export interface RecordData {
@@ -25,6 +38,7 @@ function validateStore(namespace: string, store: string) {
 
 export class SqliteStorage {
 	readonly db: Database.Database;
+	private readonly llmLogs: LLMLogStorage;
 
 	constructor(filename: string) {
 		mkdirSync(path.dirname(filename), { recursive: true });
@@ -46,6 +60,9 @@ export class SqliteStorage {
 			);
 			CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, result TEXT NOT NULL);
 		`);
+			ensureLLMLogsSchema(this.db);
+			this.llmLogs = new LLMLogStorage(this.db, (ns, st) => this.touch(ns, st));
+			if (this.initialized()) migrateLegacyLLMLogs(this.db);
 		} catch (error) {
 			this.db.close();
 			throw error;
@@ -88,12 +105,15 @@ export class SqliteStorage {
 	/** Includes the response in the write transaction, so retrying a lost response cannot repeat a commit. */
 	execute(id: string, input: any): any {
 		if (typeof id !== "string" || !/^[\w-]{16,80}$/.test(id)) throw new Error("无效的请求标识");
+		if (READ_ONLY_ACTIONS.has(input?.action)) {
+			return this.dispatch(input);
+		}
 		return this.db
 			.transaction(() => {
 				const previous = this.db.prepare("SELECT result FROM requests WHERE id = ?").get(id) as { result: string } | undefined;
 				if (previous) return JSON.parse(previous.result);
 				const result = this.dispatch(input);
-				if (!["status", "get", "entries", "count", "snapshot"].includes(input.action)) this.db.prepare("INSERT INTO requests VALUES (?, ?)").run(id, JSON.stringify(result));
+				this.db.prepare("INSERT INTO requests VALUES (?, ?)").run(id, JSON.stringify(result));
 				return result;
 			})
 			.immediate();
@@ -125,6 +145,7 @@ export class SqliteStorage {
 			if (imported) {
 				this.db.prepare("INSERT INTO records SELECT namespace, store, key, value FROM staged_records WHERE migration = ?").run(input.token);
 				this.db.prepare("INSERT INTO metadata VALUES ('initialized', ?)").run(JSON.stringify({ at: Date.now(), source: String(input.source || "") }));
+				migrateLegacyLLMLogs(this.db);
 			}
 			this.db.prepare("DELETE FROM staged_records WHERE migration = ?").run(input.token);
 			this.db.prepare("DELETE FROM migrations WHERE id = ?").run(input.token);
@@ -152,6 +173,13 @@ export class SqliteStorage {
 			}
 			return { committed: true };
 		}
+		if (action === "llm_logs_sessions") return this.llmLogs.sessions();
+		if (action === "llm_logs_query") return this.llmLogs.query(input);
+		if (action === "llm_logs_get_detail") return { entry: this.llmLogs.getDetail(input.logId) };
+		if (action === "llm_logs_put") return this.llmLogs.put(input.entry);
+		if (action === "llm_logs_finalize") return this.llmLogs.finalize(input);
+		if (action === "llm_logs_prune") return this.llmLogs.pruneEntries(input.keep);
+		if (action === "llm_logs_clear") return this.llmLogs.clear();
 		validateStore(namespace, store);
 		if (input.revision !== undefined && input.revision !== this.revision(namespace, store)) throw new StorageConflict("事务读取的数据已变化");
 		if (action === "count") return (this.db.prepare("SELECT COUNT(*) AS count FROM records WHERE namespace = ? AND store = ?").get(namespace, store) as { count: number }).count;

@@ -1,3 +1,5 @@
+import type { LogEntry } from "@/llm/logger-types.js";
+
 export interface LLMLogStatusPresentation {
 	className: string;
 	icon: string;
@@ -33,4 +35,25 @@ export function getLLMLogStatusDetail(status: string, fallbackReason?: string): 
 export function stripToolCallReasoning<T extends Record<string, any>>(toolCall: T): Omit<T, "reasoningContent"> {
 	const { reasoningContent: _reasoningContent, ...rest } = toolCall;
 	return rest;
+}
+
+/** 摘要条目按需加载完整请求上下文，并在并发切换时通过 isCurrent 丢弃过期回调。 */
+export async function loadLogDetailEntry(
+	entry: LogEntry,
+	fetchDetail: (id: string) => Promise<LogEntry | undefined>,
+	setLoading: (loading: boolean) => void,
+	isCurrent: () => boolean,
+	onLoaded: (full: LogEntry) => void
+): Promise<void> {
+	if (entry.detailLoaded === true || entry.request !== undefined) {
+		setLoading(false);
+		return;
+	}
+	setLoading(true);
+	try {
+		const full = await fetchDetail(entry.id);
+		if (full && isCurrent()) onLoaded(full);
+	} finally {
+		if (isCurrent()) setLoading(false);
+	}
 }

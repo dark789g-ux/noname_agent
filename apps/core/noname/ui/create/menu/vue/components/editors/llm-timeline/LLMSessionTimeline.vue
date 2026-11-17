@@ -4,7 +4,10 @@
 
 		<div class="timeline-scroll-wrap">
 			<div ref="timelineEl" class="timeline-scroll" @scroll="handleScroll">
-				<div v-if="history.length === 0 && !currentCall" class="timeline-empty">
+				<div v-if="isLoading && history.length === 0 && !currentCall" class="timeline-empty">
+					正在加载决策记录…
+				</div>
+				<div v-else-if="history.length === 0 && !currentCall" class="timeline-empty">
 					暂无决策时间线，等待该玩家下次决策…
 				</div>
 
@@ -83,6 +86,7 @@ const {
 	history,
 	elapsedMs,
 	liveThinkingMs,
+	isLoading,
 	isClearing,
 	isFollowing,
 	hasNewBelow,

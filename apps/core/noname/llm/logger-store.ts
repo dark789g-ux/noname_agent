@@ -1,5 +1,12 @@
 /** Transactional persistence for completed and in-flight LLM decision logs. */
-import { request, transaction, type PersistenceDatabase, type PersistenceStore } from "../storage/database.js";
+import { request, transaction, type PersistenceDatabase, type PersistenceStore, type SqliteDatabase } from "../storage/database.js";
+import { matchesGameAndPlayerEntry, stripLogEntrySummary } from "./logger-cache.js";
+import { buildGameSessions } from "./logger-sessions.js";
+import type { GameSession, LogEntry } from "./logger-types.js";
+
+function isSqliteStorage(database: PersistenceDatabase): database is SqliteDatabase {
+	return "llmLogsQuery" in database && typeof database.llmLogsQuery === "function";
+}
 
 export const LLM_LOG_STORE = "llm_logs";
 export const LLM_LOG_ACTIVE_STORE = "llm_log_active";
@@ -235,7 +242,9 @@ export class LLMLogStore {
 
 	async finalize<T extends LLMLogEntryRecord>(active: ActiveCheckpointSnapshot, entry: T): Promise<boolean> {
 		if (!isRecoveryEntryForActive(active, entry)) throw new Error("Completed LLM log id does not match its active checkpoint");
-		return transaction(await this.database(), [LLM_LOG_STORE, LLM_LOG_ACTIVE_STORE], "readwrite", async idbTransaction => {
+		const db = await this.database();
+		if (isSqliteStorage(db)) return db.llmLogsFinalize(active, entry, "finalize");
+		return transaction(db, [LLM_LOG_STORE, LLM_LOG_ACTIVE_STORE], "readwrite", async idbTransaction => {
 			const logStore = idbTransaction.objectStore(LLM_LOG_STORE);
 			const completedExists = !!(await request(logStore.get(entry.id)));
 			const current = (await request(idbTransaction.objectStore(LLM_LOG_ACTIVE_STORE).get(active.id))) as ActiveLogRecord | undefined;
@@ -249,7 +258,9 @@ export class LLMLogStore {
 
 	async recover<T extends LLMLogEntryRecord>(active: ActiveCheckpointSnapshot, interruptedEntry: T): Promise<boolean> {
 		if (!isRecoveryEntryForActive(active, interruptedEntry)) throw new Error("Interrupted LLM log id does not match its active checkpoint");
-		return transaction(await this.database(), [LLM_LOG_STORE, LLM_LOG_ACTIVE_STORE], "readwrite", async idbTransaction => {
+		const db = await this.database();
+		if (isSqliteStorage(db)) return db.llmLogsFinalize(active, interruptedEntry, "recover");
+		return transaction(db, [LLM_LOG_STORE, LLM_LOG_ACTIVE_STORE], "readwrite", async idbTransaction => {
 			const current = (await request(idbTransaction.objectStore(LLM_LOG_ACTIVE_STORE).get(active.id))) as ActiveLogRecord | undefined;
 			const completedExists = !!(await request(idbTransaction.objectStore(LLM_LOG_STORE).get(interruptedEntry.id)));
 			if (!canRecoverActive(active, current, completedExists)) return false;
@@ -286,28 +297,77 @@ export class LLMLogStore {
 	}
 
 	async listEntries<T extends LLMLogEntryRecord = LLMLogEntryRecord>(): Promise<T[]> {
-		return transaction(await this.database(), [LLM_LOG_STORE], "readonly", async idbTransaction => {
+		const db = await this.database();
+		if (isSqliteStorage(db)) return (await db.llmLogsQuery({})) as T[];
+		return transaction(db, [LLM_LOG_STORE], "readonly", async idbTransaction => {
 			const entries = (await request(idbTransaction.objectStore(LLM_LOG_STORE).getAll())) as T[];
 			return entries.sort((a, b) => b.timestamp - a.timestamp);
 		});
 	}
 
 	async listEntriesByGame<T extends LLMLogEntryRecord = LLMLogEntryRecord>(gameId: string): Promise<T[]> {
-		return transaction(await this.database(), [LLM_LOG_STORE], "readonly", async idbTransaction => {
+		const db = await this.database();
+		if (isSqliteStorage(db)) return (await db.llmLogsQuery({ gameId })) as T[];
+		return transaction(db, [LLM_LOG_STORE], "readonly", async idbTransaction => {
 			const entries = (await request(idbTransaction.objectStore(LLM_LOG_STORE).index("gameId").getAll(gameId))) as T[];
 			return entries.sort((a, b) => b.timestamp - a.timestamp);
 		});
 	}
 
+	async listSessions(): Promise<GameSession[]> {
+		const db = await this.database();
+		if (isSqliteStorage(db)) return db.llmLogsSessions();
+		const entries = await this.listEntries<LogEntry>();
+		return buildGameSessions(entries);
+	}
+
+	async listSummariesByGame(gameId: string): Promise<LogEntry[]> {
+		const db = await this.database();
+		if (isSqliteStorage(db)) return (await db.llmLogsQuery({ gameId })).map(entry => ({ ...entry, detailLoaded: false }));
+		const entries = await this.listEntriesByGame<LogEntry>(gameId);
+		return entries.map(stripLogEntrySummary);
+	}
+
+	async listSummariesByGameAndPlayer(gameId: string, playerName: string, seatNum?: number): Promise<LogEntry[]> {
+		const db = await this.database();
+		if (isSqliteStorage(db)) {
+			return (await db.llmLogsQuery({ gameId, playerName, ...(seatNum !== undefined ? { playerSeatNum: seatNum } : {}) })).map(entry => ({
+				...entry,
+				detailLoaded: false,
+			}));
+		}
+		const entries = await this.listEntriesByGame<LogEntry>(gameId);
+		return entries.filter(entry => matchesGameAndPlayerEntry(entry, gameId, playerName, seatNum)).map(stripLogEntrySummary);
+	}
+
+	async getEntryDetail(id: string): Promise<LogEntry | undefined> {
+		const db = await this.database();
+		if (isSqliteStorage(db)) {
+			const entry = await db.llmLogsGetDetail(id);
+			return entry ? { ...entry, detailLoaded: true } : undefined;
+		}
+		return transaction(db, [LLM_LOG_STORE], "readonly", async idbTransaction => {
+			const entry = (await request(idbTransaction.objectStore(LLM_LOG_STORE).get(id))) as LogEntry | undefined;
+			return entry ? { ...entry, detailLoaded: true } : undefined;
+		});
+	}
+
 	async clearEntries(): Promise<void> {
-		await transaction(await this.database(), [LLM_LOG_STORE], "readwrite", async idbTransaction => {
+		const db = await this.database();
+		if (isSqliteStorage(db)) {
+			await db.llmLogsClear();
+			return;
+		}
+		await transaction(db, [LLM_LOG_STORE], "readwrite", async idbTransaction => {
 			await request(idbTransaction.objectStore(LLM_LOG_STORE).clear());
 		});
 	}
 
 	/** Prunes completed logs to `keep` records and returns the number removed. */
 	async pruneOldest(keep = MAX_LOG_ENTRIES): Promise<number> {
-		return transaction(await this.database(), [LLM_LOG_STORE], "readwrite", async idbTransaction => this.pruneCompleted(idbTransaction.objectStore(LLM_LOG_STORE), Math.max(0, keep)));
+		const db = await this.database();
+		if (isSqliteStorage(db)) return db.llmLogsPrune(Math.max(0, keep));
+		return transaction(db, [LLM_LOG_STORE], "readwrite", async idbTransaction => this.pruneCompleted(idbTransaction.objectStore(LLM_LOG_STORE), Math.max(0, keep)));
 	}
 
 	/** Frees space for a retry after QuotaExceededError without clearing recent diagnostics. */

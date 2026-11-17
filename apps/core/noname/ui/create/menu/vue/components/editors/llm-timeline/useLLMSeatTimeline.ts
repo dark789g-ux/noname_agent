@@ -1,5 +1,6 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { lib } from "noname";
+import { buildResolvedBackend, resolveSeatBackendKind } from "@/llm/backends.js";
 import { llmLogger, type ActiveLogSnapshot, type LogEntry, type StreamProgressPayload } from "@/llm/logger.js";
 import { deriveSessionStatusInfo } from "./types.js";
 
@@ -17,6 +18,7 @@ export function useLLMSeatTimeline(props: UseLLMSeatTimelineProps) {
 	const history = ref<LogEntry[]>([]);
 	const elapsedMs = ref(0);
 	const liveThinkingMs = ref(0);
+	const isLoading = ref(false);
 	const isClearing = ref(false);
 
 	const timelineEl = ref<HTMLElement | null>(null);
@@ -26,9 +28,15 @@ export function useLLMSeatTimeline(props: UseLLMSeatTimelineProps) {
 	let elapsedTimer: number | null = null;
 	let historyQueryGeneration = 0;
 
-	const sessionStatus = computed(() =>
-		deriveSessionStatusInfo(props.playerName, props.playerSeatNum, currentCall.value, history.value)
-	);
+	const sessionStatus = computed(() => {
+		const llmConfig = (lib.config?.llm || {}) as Record<string, any>;
+		const resolved = llmConfig.enabled
+			? buildResolvedBackend(resolveSeatBackendKind(props.playerSeatNum, llmConfig), llmConfig)
+			: undefined;
+		return deriveSessionStatusInfo(props.playerName, props.playerSeatNum, currentCall.value, history.value, resolved
+			? { backendLabel: resolved.label || resolved.kind, model: resolved.model, configured: resolved.configured }
+			: undefined);
+	});
 
 	function matchesPlayer(entry: LogEntry): boolean {
 		if ((entry.gameId || "game_unknown") !== props.gameId) return false;
@@ -166,14 +174,19 @@ export function useLLMSeatTimeline(props: UseLLMSeatTimelineProps) {
 	async function refresh(): Promise<void> {
 		if (isClearing.value) return;
 		const generation = ++historyQueryGeneration;
-		const logs = await llmLogger.getLogsByGameAndPlayer(
-			props.gameId,
-			props.playerName,
-			props.playerSeatNum
-		);
-		if (generation !== historyQueryGeneration) return;
-		mergeHistory(logs);
-		await maybeAutoScroll(false);
+		isLoading.value = true;
+		try {
+			const logs = await llmLogger.getLogSummariesByGameAndPlayer(
+				props.gameId,
+				props.playerName,
+				props.playerSeatNum
+			);
+			if (generation !== historyQueryGeneration) return;
+			mergeHistory(logs);
+			await maybeAutoScroll(false);
+		} finally {
+			if (generation === historyQueryGeneration) isLoading.value = false;
+		}
 	}
 
 	async function clearLogs(): Promise<boolean> {
@@ -236,6 +249,7 @@ export function useLLMSeatTimeline(props: UseLLMSeatTimelineProps) {
 		history,
 		elapsedMs,
 		liveThinkingMs,
+		isLoading,
 		isClearing,
 		isFollowing,
 		hasNewBelow,

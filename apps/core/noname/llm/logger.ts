@@ -3,7 +3,7 @@ import { LLMLogLease } from "./logger-lease.js";
 import { LLMLogPersistenceQueue, retryLLMLogPersistence, retryPendingActiveCheckpoints, shouldRetryPendingLogWrites } from "./logger-queue.js";
 import { LLMLogStore, type ActiveCheckpointSnapshot, type ActiveLogRecord } from "./logger-store.js";
 import { plainLogValue } from "./protocol.js";
-import { buildGameSessions } from "./logger-sessions.js";
+import { LLMLogMemoryCache, matchesGameAndPlayerEntry, mergeSessionsWithPending, recoverInterruptedLogs } from "./logger-cache.js";
 import type {
 	ActiveLogSnapshot,
 	ErrorStage,
@@ -74,6 +74,7 @@ export class LLMLogger {
 	private migrationRetryQueued = false;
 	private recoveryTimer?: ReturnType<typeof setInterval>;
 	private pagehideInstalled = false;
+	private readonly cache = new LLMLogMemoryCache();
 
 	/** Initializes migration, the tab lease and interrupted-decision recovery. Idempotent. */
 	init(): Promise<void> {
@@ -186,10 +187,7 @@ export class LLMLogger {
 	}
 
 	private matchesGameAndPlayer(entry: LogEntry, gameId: string, playerName: string, seatNum?: number): boolean {
-		if ((entry.gameId || "game_unknown") !== gameId) return false;
-		if (seatNum === undefined) return entry.playerName === playerName;
-		if (entry.playerSeatNum !== undefined) return entry.playerSeatNum === seatNum;
-		return entry.playerName === playerName;
+		return matchesGameAndPlayerEntry(entry, gameId, playerName, seatNum);
 	}
 
 	getActiveLogByGameAndPlayer(gameId: string, playerName: string, seatNum?: number): ActiveLogSnapshot | undefined {
@@ -293,6 +291,7 @@ export class LLMLogger {
 		const entry = cloneEntry(active.entry);
 		this.activeLogs.delete(id);
 		this.pendingActives.delete(id);
+		this.cache.recordCompleted(entry);
 		this.retryPendingFinals();
 		const generation = this.clearGeneration;
 		const persistedActive = this.snapshotActive(active);
@@ -394,7 +393,6 @@ export class LLMLogger {
 	}
 
 	async getLogs(): Promise<LogEntry[]> {
-		await this.flush();
 		try {
 			return this.mergePending(await this.store.listEntries<LogEntry>());
 		} catch (error) {
@@ -405,6 +403,7 @@ export class LLMLogger {
 
 	async clearLogs(): Promise<void> {
 		this.clearGeneration++;
+		this.cache.clear();
 		const abandoned = Array.from(this.pendingFinals.values())
 			.filter(pending => pending.generation < this.clearGeneration)
 			.map(pending => ({ id: pending.active.id, ownerId: pending.active.ownerId, revision: pending.active.revision, updatedAt: pending.active.updatedAt }));
@@ -417,16 +416,48 @@ export class LLMLogger {
 	}
 
 	async getGameSessions(): Promise<GameSession[]> {
-		return buildGameSessions(await this.getLogs());
+		try {
+			return mergeSessionsWithPending(await this.store.listSessions(), this.pendingFinals.values(), this.clearGeneration);
+		} catch (error) {
+			this.announcePersistenceError("read", error);
+			return mergeSessionsWithPending([], this.pendingFinals.values(), this.clearGeneration);
+		}
+	}
+
+	async getLogSummariesByGame(gameId: string): Promise<LogEntry[]> {
+		return this.cache.readGameSummaries(
+			gameId,
+			() => this.store.listSummariesByGame(gameId),
+			this.pendingFinals.values(),
+			this.clearGeneration,
+			error => this.announcePersistenceError("read", error)
+		);
+	}
+
+	async getLogSummariesByGameAndPlayer(gameId: string, playerName: string, seatNum?: number): Promise<LogEntry[]> {
+		const gameSummaries = await this.getLogSummariesByGame(gameId);
+		return gameSummaries.filter(entry => matchesGameAndPlayerEntry(entry, gameId, playerName, seatNum));
+	}
+
+	async getLogDetail(id: string): Promise<LogEntry | undefined> {
+		const active = this.activeLogs.get(id);
+		if (active) return { ...cloneEntry(active.entry), detailLoaded: true };
+		const pending = this.pendingFinals.get(id);
+		if (pending && pending.generation === this.clearGeneration) return { ...cloneEntry(pending.entry), detailLoaded: true };
+		const detail = await this.cache.readDetail(
+			id,
+			() => this.store.getEntryDetail(id),
+			error => this.announcePersistenceError("read", error)
+		);
+		return detail ? cloneEntry(detail) : undefined;
 	}
 
 	async getLogsByGame(gameId: string): Promise<LogEntry[]> {
-		const all = await this.getLogs();
-		return all.filter(entry => (entry.gameId || "game_unknown") === gameId);
+		return this.getLogSummariesByGame(gameId);
 	}
 
 	async getLogsByGameAndPlayer(gameId: string, playerName: string, seatNum?: number): Promise<LogEntry[]> {
-		return (await this.getLogsByGame(gameId)).filter(entry => this.matchesGameAndPlayer(entry, gameId, playerName, seatNum));
+		return this.getLogSummariesByGameAndPlayer(gameId, playerName, seatNum);
 	}
 
 	/** Compatibility entry point retained for callers from the previous logger. */
@@ -436,33 +467,15 @@ export class LLMLogger {
 
 	private async recoverInterrupted(): Promise<void> {
 		if (!this.lease) return;
-		let active: PersistedActive[];
-		try {
-			active = await this.store.listActive<LogEntry>();
-		} catch (error) {
-			this.announcePersistenceError("scan_active", error);
-			return;
-		}
-		const owners = active.map(record => record.ownerId).filter(ownerId => ownerId !== this.lease!.instanceId);
-		const alive = await this.lease.confirmAlive(owners, 300);
-		const now = Date.now();
-		for (const record of active) {
-			if (record.ownerId === this.lease.instanceId || alive.has(record.ownerId)) continue;
-			let expired = false;
-			try {
-				expired = await this.store.isLeaseExpired(record.ownerId, now);
-			} catch (error) {
-				this.announcePersistenceError("check_lease", error);
-				continue;
-			}
-			const deadline = typeof record.deadlineAt === "number" ? record.deadlineAt + RECOVERY_GRACE : record.updatedAt + LEGACY_ACTIVE_TIMEOUT;
-			if (!expired || now <= deadline) continue;
-			const entry = cloneEntry({ ...record.entry, id: record.id, turns: (record.turns || record.entry.turns) as LogTurn[], status: "interrupted", fallbackReason: "page_reload_or_crash" });
-			entry.durationMs = Math.max(entry.durationMs || 0, now - entry.timestamp);
-			this.enqueue("recover", async () => {
-				await this.store.recover({ id: record.id, ownerId: record.ownerId, revision: record.revision, updatedAt: record.updatedAt }, entry);
-			});
-		}
+		await recoverInterruptedLogs({
+			store: this.store,
+			lease: this.lease,
+			graceMs: RECOVERY_GRACE,
+			legacyTimeoutMs: LEGACY_ACTIVE_TIMEOUT,
+			cloneEntry,
+			onError: (stage, error) => this.announcePersistenceError(stage, error),
+			enqueueRecover: task => this.enqueue("recover", task),
+		});
 	}
 
 	private installPagehideHandler(): void {

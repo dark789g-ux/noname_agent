@@ -61,11 +61,11 @@ export function buildTimelineMarkers(entry: LogEntry, index: number): TimelineMa
 			icon: "↻",
 			label: `会话重建${session.rebuildReason ? `（${session.rebuildReason}）` : ""}`,
 		});
-	} else if (index === 0 && session.mode === "full") {
+	} else if (session.mode === "full") {
 		markers.push({
 			kind: "session_start",
 			icon: "↻",
-			label: "会话建立（首次全量上下文）",
+			label: entry.decisionPoint === "chooseCharacter" ? "选将独立会话（结束后清理）" : "对局会话建立（全量上下文）",
 		});
 	} else if (session.mode === "incremental") {
 		const count = session.addedEventsCount ?? 0;
@@ -100,6 +100,10 @@ export function formatToolCallSummary(
 	if (!args || typeof args !== "object") return name;
 	const record = args as Record<string, unknown>;
 	const detailParts: string[] = [];
+	if (name === "select_character" && Array.isArray(record.characters)) {
+		detailParts.push(record.characters.map((choice: any) => resolveRef(choice.version, refLabels)).join(" / "));
+		if (typeof record.group === "string") detailParts.push(`势力: ${record.group}`);
+	}
 
 	if (typeof record.skill === "string") detailParts.push(record.skill);
 	if (typeof record.cardRef === "string") {
@@ -128,19 +132,32 @@ export function formatToolCallSummary(
 	return `${name}(${detailParts.join(" ")})`;
 }
 
+export function formatCharacterSelectionResult(result: any, refLabels?: Record<string, string>): string {
+	if (!Array.isArray(result?.characters)) return "";
+	return result.characters.map((name: unknown) => resolveRef(name, refLabels)).join(" / ") + (result.group ? ` · 势力 ${result.group}` : "");
+}
+
+export interface SessionStatusFallback {
+	backendLabel?: string;
+	model?: string;
+	configured?: boolean;
+}
+
 export function deriveSessionStatusInfo(
 	playerName: string,
 	playerSeatNum: number,
 	currentCall: LogEntry | null,
-	history: LogEntry[]
+	history: LogEntry[],
+	fallback?: SessionStatusFallback
 ): SessionStatusInfo {
 	const latest = currentCall || history[history.length - 1] || null;
-	const backendLabel = latest?.meta.providerLabel || latest?.meta.backend || "LLM";
-	const model = latest?.meta.model || "(未设置模型)";
+	const backendLabel = latest?.meta.providerLabel || latest?.meta.backend || fallback?.backendLabel || "LLM";
+	const model = latest?.meta.model || fallback?.model || "(未设置模型)";
 	const session = latest?.session;
-	let modeText = "未连接";
+	let modeText = fallback?.configured ? "已就绪" : "未连接";
 	if (session) {
-		if (session.degraded) modeText = "已降级无状态";
+		if (latest?.decisionPoint === "chooseCharacter") modeText = currentCall ? "选将独立会话" : "选将会话已结束";
+		else if (session.degraded) modeText = "已降级无状态";
 		else if (session.mode === "incremental" || session.sessionKey) modeText = "常驻会话";
 		else modeText = "全量/无状态";
 	} else if (latest) {

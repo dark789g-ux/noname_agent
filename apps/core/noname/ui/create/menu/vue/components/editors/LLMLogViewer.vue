@@ -63,7 +63,7 @@
 							v-for="entry in currentLogs"
 							:key="entry.id"
 							class="llm-log-row"
-							@click="view = { kind: 'logDetail', gameId: view.gameId, session: view.session, entry }"
+							@click="openDetail(entry)"
 						>
 							<td class="llm-log-cell-time">{{ formatTime(entry.timestamp) }}</td>
 							<td>{{ entry.decisionPoint }}</td>
@@ -118,6 +118,10 @@
 				</div>
 
 				<!-- ② 调用元信息 -->
+				<div v-if="detailLoading && !view.entry.request" class="llm-log-section">
+					<div class="llm-log-section-title">请求上下文</div>
+					<div class="llm-log-section-body">正在加载完整请求上下文…</div>
+				</div>
 				<div class="llm-log-section">
 					<div class="llm-log-section-title">调用元信息</div>
 					<div class="llm-log-section-body">
@@ -211,7 +215,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { llmLogger, type LogEntry, type GameSession } from "@/llm/logger.js";
-import { getLLMLogStatusDetail, getLLMLogStatusPresentation, stripToolCallReasoning } from "./llmLogStatus.js";
+import { getLLMLogStatusDetail, getLLMLogStatusPresentation, loadLogDetailEntry, stripToolCallReasoning } from "./llmLogStatus.js";
 import LLMLogContent from "./LLMLogContent.vue";
 
 type View =
@@ -235,10 +239,20 @@ async function loadSessions() {
 	}
 }
 
+const detailLoading = ref(false);
+let detailGeneration = 0;
+async function openDetail(entry: LogEntry) {
+	if (view.value.kind !== "logList") return;
+	const { gameId, session } = view.value;
+	const generation = ++detailGeneration;
+	view.value = { kind: "logDetail", gameId, session, entry };
+	await loadLogDetailEntry(entry, id => llmLogger.getLogDetail(id), value => (detailLoading.value = value), () => generation === detailGeneration && view.value.kind === "logDetail" && view.value.entry.id === entry.id, full => (view.value = { kind: "logDetail", gameId, session, entry: full }));
+}
+
 async function openSession(session: GameSession) {
 	loading.value = true;
 	try {
-		currentLogs.value = await llmLogger.getLogsByGame(session.gameId);
+		currentLogs.value = await llmLogger.getLogSummariesByGame(session.gameId);
 		view.value = { kind: "logList", gameId: session.gameId, session };
 	} catch (e) {
 		currentLogs.value = [];

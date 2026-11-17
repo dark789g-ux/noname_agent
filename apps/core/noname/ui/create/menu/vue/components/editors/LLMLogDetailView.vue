@@ -52,6 +52,10 @@
 		</div>
 
 		<!-- 3. 请求 Prompt（可折叠） -->
+		<div v-if="loading && !entry.request" class="detail-card">
+			<div class="detail-card-title">请求 Prompt</div>
+			<div class="detail-card-body">正在加载完整请求上下文…</div>
+		</div>
 		<div v-if="entry.request" class="detail-card">
 			<div class="detail-card-title">请求 Prompt</div>
 			<div class="detail-card-body">
@@ -159,6 +163,7 @@ import { formatCompactTokens, formatDurationSec, formatUsageSummary } from "./ll
 
 defineProps<{
 	entry: LogEntry;
+	loading?: boolean;
 }>();
 
 const emit = defineEmits<{

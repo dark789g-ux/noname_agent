@@ -48,6 +48,9 @@ export class SqliteDatabase {
 	}
 
 	async get(store: string, key: IDBValidKey): Promise<any> {
+		if (this.namespace === "logs" && store === "llm_logs") {
+			return (await this.llmLogsGetDetail(String(key))) ?? undefined;
+		}
 		await this.queue;
 		const result = await this.transport.request<{ value: string | null }>({ action: "get", namespace: this.namespace, store, key: encodeKey(key) });
 		return result.value === null ? undefined : decode(result.value);
@@ -84,6 +87,46 @@ export class SqliteDatabase {
 
 	run<T>(stores: string[], mode: IDBTransactionMode, operation: (transaction: PersistenceTransaction) => Promise<T>): Promise<T> {
 		return this.enqueue(() => this.runTransaction(stores, mode, operation));
+	}
+
+	/** Read-only LLM log RPCs bypass the client write queue so WAL reads never stall behind checkpoints. */
+	llmLogsSessions(): Promise<any[]> {
+		return this.transport.request<any[]>({ action: "llm_logs_sessions", namespace: this.namespace });
+	}
+
+	llmLogsQuery(query: { gameId?: string; playerSeatNum?: number; playerName?: string; limit?: number } = {}): Promise<any[]> {
+		return this.transport.request<any[]>({ action: "llm_logs_query", namespace: this.namespace, ...query });
+	}
+
+	async llmLogsGetDetail(logId: string): Promise<any | null> {
+		const res = await this.transport.request<{ entry: any | null }>({ action: "llm_logs_get_detail", namespace: this.namespace, logId });
+		return res.entry;
+	}
+
+	llmLogsPut(entry: any): Promise<void> {
+		return this.enqueue(async () => {
+			await this.transport.request({ action: "llm_logs_put", namespace: this.namespace, entry });
+		});
+	}
+
+	llmLogsFinalize(active: any, entry: any, mode: "finalize" | "recover" = "finalize"): Promise<boolean> {
+		return this.enqueue(async () => {
+			const res = await this.transport.request<{ finalized: boolean }>({ action: "llm_logs_finalize", namespace: this.namespace, active, entry, mode });
+			return res.finalized;
+		});
+	}
+
+	llmLogsClear(): Promise<void> {
+		return this.enqueue(async () => {
+			await this.transport.request({ action: "llm_logs_clear", namespace: this.namespace });
+		});
+	}
+
+	llmLogsPrune(keep = 500): Promise<number> {
+		return this.enqueue(async () => {
+			const res = await this.transport.request<{ removed: number }>({ action: "llm_logs_prune", namespace: this.namespace, keep });
+			return res.removed;
+		});
 	}
 
 	/** Optimistic transactions rerun their isolated callback when another page changes a read dependency. */
