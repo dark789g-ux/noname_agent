@@ -104,6 +104,11 @@ export interface SeatSubjectLike {
 	dataset?: { position?: string };
 }
 
+export interface MonarchSeatAnchor {
+	monarch?: SeatSubjectLike | null;
+	playerCount?: number;
+}
+
 const KNOWN_MODEL_FAMILIES: Array<[RegExp, string]> = [
 	[/^deepseek/i, "deepseek"],
 	[/^(gpt|chatgpt)/i, "gpt"],
@@ -232,21 +237,40 @@ export function resolveBackendDisplayName(kind: LLMBackendKind, config: BackendC
 	return custom || deriveOpenAIDisplayName(config.model, config.url);
 }
 
-/** 优先读取已结算行动顺位（1..N），未结算前按开局桌位 dataset.position + 1 推算。 */
+function parseDatasetPosition(player?: SeatSubjectLike | null): number | undefined {
+	const rawPos = player?.dataset?.position;
+	if (rawPos === undefined || rawPos === "") return undefined;
+	const pos = Number(rawPos);
+	return Number.isFinite(pos) && pos >= 0 ? Math.floor(pos) : undefined;
+}
+
+/** 根据首家锚点（主公）与总人数计算玩家行动顺位（1..N），无效时返回 undefined。 */
+export function computeSeatIndexFromMonarch(player: SeatSubjectLike | null | undefined, monarch: SeatSubjectLike | null | undefined, playerCount: number): number | undefined {
+	const count = Math.floor(Number(playerCount));
+	if (!Number.isFinite(count) || count <= 0) return undefined;
+	const playerPos = parseDatasetPosition(player);
+	const monarchPos = parseDatasetPosition(monarch);
+	if (playerPos === undefined || monarchPos === undefined) return undefined;
+	return (((playerPos - monarchPos) % count) + count) % count + 1;
+}
+
+/** 优先读取已结算行动顺位（1..N）或冻结的主公基准位次，未结算前可按主公锚点或桌位推算。 */
 export function resolvePlayerSeatIndex(
 	player?: SeatSubjectLike | null,
-	status?: { llmInitialSeatIndices?: WeakMap<object, number> }
+	status?: { llmInitialSeatIndices?: WeakMap<object, number> },
+	anchor?: MonarchSeatAnchor
 ): number {
+	const settled = typeof player?.getSeatNum === "function" ? Number(player.getSeatNum()) : 0;
+	if (Number.isFinite(settled) && settled > 0) return Math.floor(settled);
 	if (player && typeof player === "object" && status?.llmInitialSeatIndices?.has(player)) {
 		return status.llmInitialSeatIndices.get(player)!;
 	}
-	const settled = typeof player?.getSeatNum === "function" ? Number(player.getSeatNum()) : 0;
-	if (Number.isFinite(settled) && settled > 0) return Math.floor(settled);
-	const rawPos = player?.dataset?.position;
-	if (rawPos !== undefined && rawPos !== "") {
-		const pos = Number(rawPos);
-		if (Number.isFinite(pos) && pos >= 0) return Math.floor(pos) + 1;
+	if (anchor?.monarch && anchor?.playerCount) {
+		const byMonarch = computeSeatIndexFromMonarch(player, anchor.monarch, anchor.playerCount);
+		if (byMonarch !== undefined) return byMonarch;
 	}
+	const pos = parseDatasetPosition(player);
+	if (pos !== undefined) return pos + 1;
 	return 1;
 }
 

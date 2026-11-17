@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGY_MODEL_OPTIONS, DEFAULT_OPENAI_CONTEXT_SIZE, buildResolvedBackend, CODEX_MODEL_OPTIONS, deriveOpenAIDisplayName, getCLIModelOptions, readBackendsFromRawConfig, resolveBackendDisplayName, resolvePlayerBackend, resolvePlayerSeatIndex, resolveSummaryBackend } from "./backends.js";
+import { AGY_MODEL_OPTIONS, DEFAULT_OPENAI_CONTEXT_SIZE, buildResolvedBackend, CODEX_MODEL_OPTIONS, computeSeatIndexFromMonarch, deriveOpenAIDisplayName, getCLIModelOptions, readBackendsFromRawConfig, resolveBackendDisplayName, resolvePlayerBackend, resolvePlayerSeatIndex, resolveSummaryBackend } from "./backends.js";
 import { buildCliDecisionJsonSchema, buildCliDecisionPrompt, callCliStream, callCliWithTimeout, parseCliEnvelopeToToolCall, STATIC_CLI_DECISION_SCHEMA } from "./cli-client.js";
 import { formatRemoteSessionPrompt } from "./harness/transports/remote-session.js";
 import { buildTools } from "./tools.js";
@@ -48,6 +48,15 @@ test("resolvePlayerBackend 按行动顺位、桌位回退与玩家自控开关�
 	// seat 4 指定本地规则 AI
 	const localAi = { getSeatNum: () => 4, isUnderControl: () => false, dataset: { position: "3" } };
 	assert.equal(resolvePlayerBackend(localAi, cfg).kind, "local");
+
+	// 主公在非 0 号物理桌位时，按主公为 1 号位环形推算顺位
+	const monarch = { getSeatNum: () => 0, dataset: { position: "2" } };
+	const seat2 = { getSeatNum: () => 0, dataset: { position: "3" } };
+	const seat6 = { getSeatNum: () => 0, dataset: { position: "1" } };
+	assert.equal(computeSeatIndexFromMonarch(monarch, monarch, 6), 1);
+	assert.equal(resolvePlayerSeatIndex(monarch, undefined, { monarch, playerCount: 6 }), 1);
+	assert.equal(resolvePlayerSeatIndex(seat2, undefined, { monarch, playerCount: 6 }), 2);
+	assert.equal(resolvePlayerSeatIndex(seat6, undefined, { monarch, playerCount: 6 }), 6);
 });
 
 test("resolveSummaryBackend 优先默认外部后端，回退场上首个已配置外部后端", () => {

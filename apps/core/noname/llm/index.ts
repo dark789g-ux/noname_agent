@@ -1,5 +1,6 @@
 import { game, lib, _status, ui } from "noname";
 import {
+	computeSeatIndexFromMonarch,
 	hasAnyConfiguredBackend,
 	readBackendsFromRawConfig,
 	resolveBackendDisplayName,
@@ -16,6 +17,7 @@ import { end, reset, start, type PlayerButtonLogEntry } from "./player-button-st
 import { normalizeLLMText } from "./config.js";
 import { resetAllHarnessSessions } from "./harness/harness.js";
 import { initRoundHistoryHooks, resetRoundHistory } from "./round-history.js";
+import { resetOpeningSummaries } from "./character-selection/summary.js";
 
 export interface LLMConfig extends BackendsConfigFields {
 	enabled: boolean;
@@ -40,6 +42,7 @@ type LLMGameStatus = {
 	llmGameId?: string;
 	llmMultiTurnUnsupported?: boolean;
 	llmMultiTurnUnsupportedByBackend?: Record<string, boolean>;
+	llmOpeningPrepared?: boolean;
 };
 
 export function getLLMConfig(): Readonly<LLMConfig> {
@@ -143,16 +146,18 @@ function clearLLMSelfControlLock(): void {
 	ui?.shortcut?.autobutton?.classList?.remove?.("forcehide");
 }
 
-function onGameStart(): void {
+/** 普通身份选将前准备本局，但不提前启用真人全局托管锁。 */
+export function prepareLLMGame(reusePrepared = false, retainOpeningResults = false): void {
 	const status = _status as LLMGameStatus;
+	const reuse = reusePrepared && !!status.llmOpeningPrepared;
 	const prevGameId = status.llmGameId;
 	reset();
 	resetRoundHistory();
-	if (typeof resetAllHarnessSessions === "function") {
+	if (!reuse || !retainOpeningResults) resetOpeningSummaries();
+	if (!reuse && typeof resetAllHarnessSessions === "function") {
 		resetAllHarnessSessions(prevGameId);
 	}
-	delete status.llmConfigAtGameStart;
-	const raw = readLLMConfig();
+	const raw = reuse && status.llmConfigAtGameStart ? status.llmConfigAtGameStart : readLLMConfig();
 	const snapshot = Object.freeze({
 		...raw,
 		agy: Object.freeze({ ...raw.agy }),
@@ -160,23 +165,32 @@ function onGameStart(): void {
 		seatBackends: Object.freeze({ ...raw.seatBackends }),
 	});
 	status.llmConfigAtGameStart = snapshot;
-	status.llmGameId = `game_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-	status.llmEnabledAtGameStart = snapshot.enabled;
-	const selfControlled = snapshot.enabled && snapshot.controlSelf;
-	status.llmSelfControlledAtGameStart = selfControlled;
+	if (!reuse) status.llmGameId = `game_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+	// 专用选将入口直接读取快照；普通牌局决策要等 gameStart 才启用。
+	delete status.llmEnabledAtGameStart;
+	// isMine 等引擎入口以此标记锁定真人；选将期间不能提前置 true。
+	delete status.llmSelfControlledAtGameStart;
 	status.llmInitialHumanPlayer = game?.me;
+	const allPlayers = [...(game?.players || []), ...(game?.dead || [])];
+	const monarch = (game as any)?.zhong || game?.zhu;
+	const monarchAnchor = monarch && allPlayers.includes(monarch) ? monarch : undefined;
 	const seatMap = new WeakMap<object, number>();
-	for (const p of [...(game?.players || []), ...(game?.dead || [])]) {
+	for (const p of allPlayers) {
 		if (p && typeof p === "object") {
 			const settled = typeof p.getSeatNum === "function" ? Number(p.getSeatNum()) : 0;
 			if (Number.isFinite(settled) && settled > 0) {
 				seatMap.set(p, Math.floor(settled));
 			} else {
-				const rawPos = p.dataset?.position;
-				if (rawPos !== undefined && rawPos !== "") {
-					const pos = Number(rawPos);
-					if (Number.isFinite(pos) && pos >= 0) {
-						seatMap.set(p, Math.floor(pos) + 1);
+				const byMonarch = monarchAnchor ? computeSeatIndexFromMonarch(p, monarchAnchor, allPlayers.length) : undefined;
+				if (byMonarch !== undefined) {
+					seatMap.set(p, byMonarch);
+				} else {
+					const rawPos = p.dataset?.position;
+					if (rawPos !== undefined && rawPos !== "") {
+						const pos = Number(rawPos);
+						if (Number.isFinite(pos) && pos >= 0) {
+							seatMap.set(p, Math.floor(pos) + 1);
+						}
 					}
 				}
 			}
@@ -185,12 +199,30 @@ function onGameStart(): void {
 	status.llmInitialSeatIndices = seatMap;
 	delete status.llmMultiTurnUnsupported;
 	delete status.llmMultiTurnUnsupportedByBackend;
+	status.llmOpeningPrepared = true;
+	clearLLMSelfControlLock();
+	ui.updateLLMLogButtons?.();
+}
+
+/** 新选将流程不再使用预备状态时，正式开局重新读取本局配置。 */
+export function discardLLMOpeningPreparation(): void {
+	delete (_status as LLMGameStatus).llmOpeningPrepared;
+}
+
+function onGameStart(): void {
+	const status = _status as LLMGameStatus;
+	if (!status.llmOpeningPrepared) prepareLLMGame();
+	delete status.llmOpeningPrepared;
+	resetRoundHistory();
+	const selfControlled = !!status.llmConfigAtGameStart?.enabled && !!status.llmConfigAtGameStart?.controlSelf;
+	status.llmEnabledAtGameStart = !!status.llmConfigAtGameStart?.enabled;
+	status.llmSelfControlledAtGameStart = selfControlled;
 	if (selfControlled) {
 		activateLLMSelfControl();
 	} else {
 		clearLLMSelfControlLock();
 	}
-	ui.updateLLMLogButtons();
+	ui.updateLLMLogButtons?.();
 }
 
 function onLLMLogStart(entry: PlayerButtonLogEntry): void {
