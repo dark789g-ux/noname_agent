@@ -15,6 +15,7 @@ export function createIdentityOpening(event: any, retainOpeningResults = false):
 		discardLLMOpeningPreparation();
 		return;
 	}
+	if (!retainOpeningResults) delete event.llmRemainingChoices;
 	prepareLLMGame(!!event.llmOpening, retainOpeningResults);
 	const controller = new CharacterOpeningController(event);
 	if (skipped) controller.state.skip();
@@ -37,22 +38,65 @@ export async function selectOpeningMonarch(event: any, monarchCandidates: string
 	return true;
 }
 
+function identityCandidateCount(player: any): number {
+	return Number(get.config(`choice_${player.identity}`));
+}
+
+function releaseUnusedSources(event: any, sources: readonly string[], usedSources: readonly string[]): void {
+	const used = new Set(usedSources);
+	event.list.push(...sources.filter(source => !used.has(get.sourceCharacter(source))));
+}
+
 export async function selectOpeningSelf(event: any, sources: string[]): Promise<boolean> {
 	const opening = event.llmOpening as CharacterOpeningController | undefined;
 	if (!opening?.eligible(game.me) || event.chosen.length || event.modchosen) return false;
-	event.llmChoice = await opening.decide(
-		opening.prepare(
-			game.me,
-			sources,
-			game.me === game.zhu
-				? sources.filter(name => {
-						const versions = lib.characterReplace[name] || [name];
-						return versions.some(version => lib.character[version]?.isZhugong);
-					})
-				: []
-		)
-	);
-	// 真正初始化仍交给 identity 的下一阶段，避免重复初始化与主公加血。
+	delete event.llmRemainingChoices;
+	if (game.me === game.zhu) {
+		const monarchPreferred = sources.filter(name => {
+			const versions = lib.characterReplace[name] || [name];
+			return versions.some(version => lib.character[version]?.isZhugong);
+		});
+		event.llmChoice = await opening.decide(opening.prepare(game.me, sources, monarchPreferred));
+		// 真正初始化仍交给 identity 的下一阶段，避免重复初始化与主公加血。
+		return true;
+	}
+	// 非主公自身位受 LLM 接管时，主公已初始化并公开；与其余非主公 LLM 座位同批并发。
+	for (const source of sources) event.list.remove(source);
+	const others = game.players.filter(player => player !== game.me && player !== game.zhu && opening.eligible(player));
+	const remainingChoices = new Map<any, SelectedOpening>();
+	const sourcesByJob = new Map<PreparedSelection, string[]>();
+	const selectedByJob = new Map<PreparedSelection, SelectedOpening>();
+	const need = (player: any) => (player === game.me ? 0 : identityCandidateCount(player));
+	await runSelectionBatches<any, PreparedSelection, SelectedOpening>([game.me, ...others], {
+		eligible: () => true,
+		local: () => {},
+		canBatch: (batch, next) => event.list.length >= batch.reduce((sum, player) => sum + need(player), need(next)),
+		prepare: player => {
+			if (player === game.me) {
+				const job = opening.prepare(game.me, sources);
+				sourcesByJob.set(job, sources);
+				return job;
+			}
+			event.list.randomSort();
+			const playerSources = event.list.splice(0, identityCandidateCount(player));
+			const job = opening.prepare(player, playerSources);
+			sourcesByJob.set(job, playerSources);
+			return job;
+		},
+		decide: job => opening.decide(job),
+		commit: (job, selected) => {
+			selectedByJob.set(job, selected);
+			if (job.player === game.me) {
+				event.llmChoice = selected;
+			} else {
+				remainingChoices.set(job.player, selected);
+			}
+		},
+		release: job => {
+			releaseUnusedSources(event, sourcesByJob.get(job)!, selectedByJob.get(job)!.result.sources);
+		},
+	});
+	event.llmRemainingChoices = remainingChoices;
 	return true;
 }
 
@@ -67,30 +111,41 @@ export async function selectRemainingOpening(event: any): Promise<boolean> {
 		if (!prepared) return false;
 	}
 	const opening = prepared;
+	const remainingChoices: Map<any, SelectedOpening> | undefined = event.llmRemainingChoices;
+	delete event.llmRemainingChoices;
 	const players = game.players.filter(player => player !== game.me && player !== game.zhu);
-	const count = (player: any) => Number(get.config(`choice_${player.identity}`));
 	const sourcesByJob = new Map<PreparedSelection, string[]>();
+	const selectedByJob = new Map<PreparedSelection, SelectedOpening>();
 	try {
-		await runSelectionBatches<any, PreparedSelection, SelectedOpening>(players, {
+		if (remainingChoices?.size) {
+			for (const player of players) {
+				const preDecided = remainingChoices.get(player);
+				if (preDecided) opening.apply(preDecided);
+			}
+		}
+		const pending = players.filter(player => !remainingChoices?.has(player));
+		await runSelectionBatches<any, PreparedSelection, SelectedOpening>(pending, {
 			eligible: player => opening.eligible(player),
 			local: player => {
 				opening.assertCurrent();
 				event.list.randomSort();
-				event.ai(player, event.list.splice(0, count(player)), null, event.list);
+				event.ai(player, event.list.splice(0, identityCandidateCount(player)), null, event.list);
 			},
-			canPair: (first, second) => event.list.length >= count(first) + count(second),
+			canBatch: (batch, next) => event.list.length >= batch.reduce((sum, player) => sum + identityCandidateCount(player), identityCandidateCount(next)),
 			prepare: player => {
 				event.list.randomSort();
-				const sources = event.list.splice(0, count(player));
+				const sources = event.list.splice(0, identityCandidateCount(player));
 				const job = opening.prepare(player, sources);
 				sourcesByJob.set(job, sources);
 				return job;
 			},
 			decide: job => opening.decide(job),
-			commit: (_job, selected) => opening.apply(selected),
+			commit: (job, selected) => {
+				selectedByJob.set(job, selected);
+				opening.apply(selected);
+			},
 			release: job => {
-				const used = new Set([get.sourceCharacter(job.player.name1), get.sourceCharacter(job.player.name2)]);
-				event.list.push(...sourcesByJob.get(job)!.filter(source => !used.has(get.sourceCharacter(source))));
+				releaseUnusedSources(event, sourcesByJob.get(job)!, selectedByJob.get(job)!.result.sources);
 			},
 		});
 	} finally {

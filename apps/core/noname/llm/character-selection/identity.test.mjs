@@ -4,14 +4,14 @@ import { setImmediate } from "node:timers";
 import { identityFixture, selectionResponse } from "./identity-fixture.mjs";
 
 for (const double of [false, true]) {
-	test(`实际身份选将 ${double ? "双将" : "单将"}：主公先选、至多两并发、无人工补选、每座位只初始化一次`, async t => {
+	test(`实际身份选将 ${double ? "双将" : "单将"}：主公先选、其余全量并发、无人工补选、每座位只初始化一次`, async t => {
 		const fixture = await identityFixture({ double });
 		t.after(() => fixture.close());
 		await fixture.run();
 		assert.equal(fixture.event.waitCalls, 3, "保留准备、结果和收尾阶段之间的子事件队列边界");
 		assert.equal(fixture.requests.length, 6);
 		assert.equal(fixture.requests[0].seatNum, 1);
-		assert.equal(fixture.maximum(), 2);
+		assert.equal(fixture.maximum(), 5);
 		assert.equal(fixture.manual(), 0);
 		assert.equal(fixture.game.zhu.group, "qun");
 		assert.equal(fixture.game.zhu.maxHp, 5);
@@ -26,6 +26,20 @@ for (const double of [false, true]) {
 		assert.equal(fixture.status.auto, true);
 	});
 }
+
+test("AI 主公先选，受接管的非主公自身位与其余非主公座位同批全量并发", async t => {
+	const fixture = await identityFixture({ controlSelf: true, humanIsMonarch: false });
+	t.after(() => fixture.close());
+	await fixture.run();
+	assert.equal(fixture.event.waitCalls, 3, "保留准备、结果和收尾阶段之间的子事件队列边界");
+	assert.equal(fixture.requests.length, 6);
+	assert.equal(fixture.requests[0].seatNum, 1);
+	assert.equal(fixture.maximum(), 5);
+	assert.equal(fixture.manual(), 0);
+	const sources = fixture.game.players.flatMap(player => [player.name1, player.name2].filter(Boolean));
+	assert.equal(new Set(sources).size, sources.length);
+	assert.ok(fixture.game.players.every(player => player.initCalls === 1));
+});
 
 test("AI 主公先于未接管真人；手动真人和本地 AI 座位保留原路径", async t => {
 	const fixture = await identityFixture({ controlSelf: false, humanIsMonarch: false, seatBackends: { 4: "local" } });
@@ -114,7 +128,7 @@ test("并发批次中跳过时保留已返回的合法选择，仅未完成请�
 	});
 	t.after(() => fixture.close());
 	await fixture.run();
-	assert.equal(fixture.requests.length, 3);
+	assert.equal(fixture.requests.length, 6);
 	assert.equal(fixture.logs.filter(log => log.method === "end" && log.args[1] === "success").length, 2);
 	assert.equal(fixture.logs.filter(log => log.method === "endFallback").length, 4);
 	assert.ok(fixture.game.players.every(player => player.initCalls === 1));

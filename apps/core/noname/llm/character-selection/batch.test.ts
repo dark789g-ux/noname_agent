@@ -5,18 +5,18 @@ import { OpeningState } from "./state.js";
 import { abortable } from "./abort.js";
 import { deferred } from "./fixtures.js";
 
-test("两人候选互斥、最多两个并发、固定顺序提交且整批才释放", async () => {
+test("候选互斥、池充足时单批全量并发、池不足时贪心分批，固定顺序提交且整批才释放", async () => {
 	const pool = ["a", "b", "c", "d", "e", "f"];
 	const pending = new Map<number, ReturnType<typeof deferred<string>>>();
 	const prepared: string[][] = [];
 	const commits: number[] = [];
-	const thirdPrepared = deferred<void>();
+	const fourthPrepared = deferred<void>();
 	let active = 0,
 		maximum = 0;
-	const running = runSelectionBatches([1, 2, 3], {
+	const running = runSelectionBatches([1, 2, 3, 4], {
 		eligible: () => true,
 		local: () => {},
-		canPair: () => pool.length >= 4,
+		canBatch: batch => pool.length >= (batch.length + 1) * 2,
 		prepare: seat => {
 			const choices = pool.splice(0, 2);
 			prepared.push(choices);
@@ -27,7 +27,7 @@ test("两人候选互斥、最多两个并发、固定顺序提交且整批才�
 			maximum = Math.max(maximum, active);
 			const next = deferred<string>();
 			pending.set(job.seat, next);
-			if (job.seat === 3) thirdPrepared.resolve();
+			if (job.seat === 4) fourthPrepared.resolve();
 			return next.promise.finally(() => {
 				active--;
 			});
@@ -37,25 +37,60 @@ test("两人候选互斥、最多两个并发、固定顺序提交且整批才�
 			commits.push(job.seat);
 		},
 		release: job => {
-			assert.deepEqual(commits.slice(0, 2), [1, 2]);
+			assert.deepEqual(commits.slice(0, 3), [1, 2, 3]);
 			pool.push(job.choices[1]);
 		},
 	});
 	assert.deepEqual(prepared, [
 		["a", "b"],
 		["c", "d"],
+		["e", "f"],
 	]);
+	pending.get(3)!.resolve("e");
 	pending.get(2)!.resolve("c");
 	await Promise.resolve();
 	assert.deepEqual(commits, []);
 	pending.get(1)!.resolve("a");
-	// 第三座位 prepare 是第一个批次全部提交与回收后的事件。
-	await thirdPrepared.promise;
-	assert.deepEqual(prepared[2], ["e", "f"]);
-	pending.get(3)!.resolve("e");
+	// 第四座位 prepare 是第一批全部提交与回收后的事件。
+	await fourthPrepared.promise;
+	assert.deepEqual(prepared[3], ["b", "d"]);
+	pending.get(4)!.resolve("b");
 	await running;
-	assert.equal(maximum, 2);
-	assert.deepEqual(commits, [1, 2, 3]);
+	assert.equal(maximum, 3);
+	assert.deepEqual(commits, [1, 2, 3, 4]);
+});
+
+test("池充足时本地座位不拆散并发批次", async () => {
+	const trace: string[] = [];
+	let active = 0,
+		maximum = 0;
+	await runSelectionBatches([1, 2, 3, 4], {
+		eligible: seat => seat !== 2,
+		local: seat => {
+			trace.push(`local${seat}`);
+		},
+		canBatch: () => true,
+		prepare: seat => {
+			trace.push(`prepare${seat}`);
+			return seat;
+		},
+		decide: async seat => {
+			active++;
+			maximum = Math.max(maximum, active);
+			trace.push(`request${seat}`);
+			await Promise.resolve();
+			active--;
+			return seat;
+		},
+		commit: seat => {
+			trace.push(`commit${seat}`);
+		},
+		release: seat => {
+			trace.push(`release${seat}`);
+		},
+	});
+	assert.equal(maximum, 3);
+	assert.deepEqual(trace, ["prepare1", "prepare3", "prepare4", "request1", "request3", "request4", "commit1", "commit3", "commit4", "release1", "release3", "release4", "local2"]);
 });
 
 test("候选池不足时串行，本地座位不进入请求且保留原处理", async () => {
@@ -65,7 +100,7 @@ test("候选池不足时串行，本地座位不进入请求且保留原处理",
 		local: seat => {
 			trace.push(`local${seat}`);
 		},
-		canPair: () => false,
+		canBatch: () => false,
 		prepare: seat => {
 			trace.push(`prepare${seat}`);
 			return seat;

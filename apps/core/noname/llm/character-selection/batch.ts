@@ -7,24 +7,30 @@ export async function runSelectionBatches<P, J, R>(
 	runtime: {
 		eligible(player: P): boolean;
 		local(player: P): void;
-		canPair(first: P, second: P): boolean;
+		canBatch(batch: readonly P[], next: P): boolean;
 		prepare(player: P): J;
 		decide(job: J): Promise<R>;
 		commit(job: J, result: R): void;
 		release(job: J): void;
 	}
 ): Promise<void> {
-	for (let index = 0; index < players.length; ) {
-		const first = players[index++];
+	const queue = [...players];
+	while (queue.length > 0) {
+		const first = queue.shift()!;
 		if (!runtime.eligible(first)) {
 			runtime.local(first);
 			continue;
 		}
 		const batch = [first];
-		const second = players[index];
-		if (second !== undefined && runtime.eligible(second) && runtime.canPair(first, second)) {
-			batch.push(second);
-			index++;
+		for (let i = 0; i < queue.length; ) {
+			const next = queue[i];
+			if (!runtime.eligible(next)) {
+				i++;
+				continue;
+			}
+			if (!runtime.canBatch(batch, next)) break;
+			batch.push(next);
+			queue.splice(i, 1);
 		}
 		const jobs = batch.map(player => runtime.prepare(player));
 		const results = await Promise.all(jobs.map(job => runtime.decide(job)));
