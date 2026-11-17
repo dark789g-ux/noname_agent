@@ -1,3 +1,6 @@
+import { assistantToolMessage } from "./protocol.js";
+import { normalizeViewAsDefinition, resolveBaseEvent } from "./skill-backup-semantics.js";
+
 export type BackupDecisionKind = "chooseToUse" | "chooseToRespond";
 
 export interface BackupSelectionSpec {
@@ -55,10 +58,12 @@ export function getViewAsSource(spec: BackupSelectionSpec | undefined, info: any
  * 因而动态函数、多牌范围及 -1 自动全选都由 SelectionValidator 统一解释。
  */
 export function buildBackupStepDefinitions(event: any, info: any, spec: BackupSelectionSpec, callbacks: BackupStepCallbacks): any[] {
+	const baseEvent = resolveBaseEvent(event);
 	const viewAs = getViewAsSource(spec, info);
-	const cardSelect = event.selectCard ?? info.selectCard ?? (viewAs ? 1 : undefined);
-	const cardMode = event.complexCard || event.complexSelect || info?.complexCard || info?.complexSelect ? "sequential" : undefined;
-	const targetMode = event.complexTarget || event.complexSelect || info?.complexTarget || info?.complexSelect ? "sequential" : undefined;
+	const hasViewAs = Boolean(viewAs);
+	const cardSelect = info?.selectCard !== undefined ? info.selectCard : hasViewAs ? (baseEvent.selectCard ?? 1) : undefined;
+	const cardMode = info?.complexCard || info?.complexSelect || (hasViewAs && (baseEvent.complexCard || baseEvent.complexSelect)) ? "sequential" : undefined;
+	const targetMode = info?.complexTarget || info?.complexSelect || (hasViewAs && (baseEvent.complexTarget || baseEvent.complexSelect)) ? "sequential" : undefined;
 	const initialTargetSelect = callbacks.deferTarget ? undefined : callbacks.targetSelect();
 	const targetSelect = () => callbacks.targetSelect();
 	const steps =
@@ -67,21 +72,32 @@ export function buildBackupStepDefinitions(event: any, info: any, spec: BackupSe
 			if (step.type === "target") return { ...step, select: step.select ?? targetSelect, filter: step.filter ?? callbacks.targetFilter };
 			return { ...step };
 		}) ?? [];
-	const hasCardRule = cardSelect !== undefined || typeof event.filterCard === "function" || event.filterCard === true || info?.filterCard === true || !!viewAs;
+	const hasCardRule =
+		cardSelect !== undefined ||
+		typeof info?.filterCard === "function" ||
+		info?.filterCard === true ||
+		(hasViewAs && (typeof baseEvent.filterCard === "function" || baseEvent.filterCard === true || Boolean(viewAs)));
 	if (!steps.some(step => step.type === "card") && hasCardRule) {
 		steps.push({ id: `backup:${event.skill}:card`, type: "card", selectionMode: cardMode, select: cardSelect ?? 1, required: event.cardRequired ? true : undefined, filter: callbacks.cardFilter });
 	}
-	const hasTargetRule = typeof event.filterTarget === "function" || event.filterTarget === true || typeof info?.filterTarget === "function" || info?.filterTarget === true || event.selectTarget !== undefined || info?.selectTarget !== undefined || event.targetRequired;
-	if (event.name === "chooseToUse" && !steps.some(step => step.type === "target") && targetRangeAllowsSelection(initialTargetSelect) && hasTargetRule) {
-		steps.push({ id: `backup:${event.skill}:target`, type: "target", selectionMode: targetMode, select: targetSelect, required: event.targetRequired ? true : undefined, filter: callbacks.targetFilter, deferredFromCards: !!(viewAs || targetMode) });
+	const hasOwnTargetRule = typeof info?.filterTarget === "function" || info?.filterTarget === true || info?.selectTarget !== undefined;
+	const hasOuterTargetRule = hasViewAs && (typeof baseEvent.filterTarget === "function" || baseEvent.filterTarget === true || baseEvent.selectTarget !== undefined || baseEvent.targetRequired);
+	if ((event.name === "chooseToUse" || hasOwnTargetRule) && !steps.some(step => step.type === "target") && targetRangeAllowsSelection(initialTargetSelect) && (hasOwnTargetRule || hasOuterTargetRule)) {
+		if (info?.singleCard && typeof info?.filterAddedTarget === "function") {
+			steps.push({ id: `backup:${event.skill}:target:0`, type: "target", selectionMode: targetMode, select: targetSelect, role: "primary", filter: callbacks.targetFilter, deferredFromCards: !!(viewAs || targetMode) });
+			steps.push({ id: `backup:${event.skill}:target:1`, type: "target", select: 1, role: "added", addedTargetFilter: true, required: true });
+		} else {
+			steps.push({ id: `backup:${event.skill}:target`, type: "target", selectionMode: targetMode, select: targetSelect, required: event.targetRequired ? true : undefined, filter: callbacks.targetFilter, deferredFromCards: !!(viewAs || targetMode) });
+		}
 	}
 	return steps;
 }
 
 /** chooseToUse 与 chooseToRespond 共用同一种 viewAs 结果形状；非 viewAs 的 backup 技能不伪造 card 字段。 */
 export function materializeViewAsResult(skill: string, definition: any, cards: any[], targets: any[], createCard: (definition: any, cards: any[]) => any): any {
-	if (!definition) return { bool: true, skill, cards, targets };
-	const card = createCard(definition, cards);
+	const normalized = normalizeViewAsDefinition(definition);
+	if (!normalized) return { bool: true, skill, cards, targets };
+	const card = createCard(normalized, cards);
 	if (!card) throw new Error(`backup ${skill} did not materialize a card`);
 	return { bool: true, skill, card, cards, targets };
 }
@@ -124,4 +140,3 @@ export function appendInspectDiscardHistory(
 		}
 	);
 }
-import { assistantToolMessage } from "./protocol.js";

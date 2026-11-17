@@ -1,7 +1,7 @@
 import { SelectionContext, SelectionSession, SelectionStep } from "@/library/selection/index.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
 import { assertSupportedTargetRules, resolveAuthoritativeTargetRange, type ActionCandidateRuntime, type CandidateAction, type DecisionCandidateSnapshot } from "./action-candidates.js";
-import { buildDecisionLogResult, directCardTargetLiveness, formatTargetInstruction, isCardOwned, isTargetCurrent, resolveActionCardRefs, resolveAddedTargetPreTarget, resolveCandidateCards, resolveCurrentAction, type ValidationRuntime } from "./decision-validation.js";
+import { buildDecisionLogResult, captureSelectionCheckpoint, directCardTargetLiveness, formatTargetInstruction, isCardOwned, isTargetCurrent, resolveActionCardRefs, resolveAddedTargetPreTarget, resolveCandidateCards, resolveCurrentAction, restoreSelectionCheckpoint, type ValidationRuntime } from "./decision-validation.js";
 import { matchesSelectionFilter } from "./selection-filter.js";
 import { getViewAsSource, resolveViewAs, type BackupDecisionKind } from "./backup-protocol.js";
 import { evaluateSelectionSpec } from "./generic-skill-plan.js";
@@ -368,16 +368,13 @@ export class DecisionSelection {
 						const activeCard = this.directUseCard || semantics.resolveActiveCard(selectedCards);
 						const cardInfo = activeCard ? this.runtime.getCardInfo?.(activeCard) : undefined;
 						const addedFn = info?.filterAddedTarget ?? (semantics.hasViewAs ? (cardInfo?.filterAddedTarget ?? semantics.baseEvent?.filterAddedTarget) : undefined);
-						const currentIndex = this.stages.findIndex(stage => stage.id === raw.id);
-						const priorTargetRefs = this.stages.slice(0, currentIndex >= 0 ? currentIndex : undefined).filter(stage => stage.type === "target").flatMap(stage => this.selection.context.getStepSelected(stage.id));
-						const preTarget = priorTargetRefs.length ? this.targetMap.get(priorTargetRefs[priorTargetRefs.length - 1])?.player : undefined;
+						const preTarget = resolveAddedTargetPreTarget(this.stages, raw.id, id => this.selection.context.getStepSelected(id), this.targetMap);
 						return typeof addedFn === "function" ? !!addedFn(activeCard, this.event.player, value, preTarget) : true;
 					}
 					return semantics.isSkillTargetFilterMatch(value, selectedCards, raw, context, selected);
 				}
 			}
-			const directCardInfo = this.directUseCard ? this.runtime.getCardInfo?.(this.directUseCard) : undefined;
-			const directLiveness = directCardInfo ? { deadTarget: !!(this.event.deadTarget || directCardInfo.deadTarget), includeOut: !!(this.event.includeOut || directCardInfo.includeOut), chessForceAll: !!(this.event.chessForceAll || directCardInfo.chessForceAll) } : undefined;
+			const directLiveness = directCardTargetLiveness(this.event, this.directUseCard, this.runtime.getCardInfo);
 			if (raw.type === "card" && !isCardOwned(this.event, value, this.runtime)) return false;
 			if (raw.type === "target" && !isTargetCurrent(this.event, value, this.runtime, directLiveness)) return false;
 			if (typeof raw.filter === "function") return !!raw.filter(value, this.event.player, context, selected);
@@ -385,12 +382,7 @@ export class DecisionSelection {
 			if (raw.type === "target" && raw.addedTargetFilter) {
 				const addedFn = info?.filterAddedTarget ?? this.event.filterAddedTarget;
 				const activeCard = this.directUseCard || this.selectedCard();
-				const currentIndex = this.stages.findIndex(stage => stage.id === raw.id);
-				const priorTargetRefs = this.stages
-					.slice(0, currentIndex >= 0 ? currentIndex : undefined)
-					.filter(stage => stage.type === "target")
-					.flatMap(stage => this.selection.context.getStepSelected(stage.id));
-				const preTarget = priorTargetRefs.length ? this.targetMap.get(priorTargetRefs[priorTargetRefs.length - 1])?.player : undefined;
+				const preTarget = resolveAddedTargetPreTarget(this.stages, raw.id, id => this.selection.context.getStepSelected(id), this.targetMap);
 				return typeof addedFn === "function" ? !!addedFn(activeCard, this.event.player, value, preTarget) : true;
 			}
 			return true;
@@ -411,9 +403,13 @@ export class DecisionSelection {
 
 	protected viewAsTargetRange(info: any, spec?: HeadlessSelectionSpec): any {
 		const semantics = this.skillSemantics || this.resolveSkillSemantics(info, spec);
+		if (!semantics.hasViewAs) {
+			return info?.selectTarget ?? (info?.filterTarget !== undefined ? 1 : 0);
+		}
+		if (info?.selectTarget !== undefined) return info.selectTarget;
 		const card = semantics.resolveActiveCard(this.selectedCards());
 		if (!card) {
-			return info?.selectTarget ?? (info?.filterTarget !== undefined ? 1 : semantics.baseEvent.selectTarget !== this.runtime.defaultSelectTarget ? semantics.baseEvent.selectTarget : semantics.baseEvent.filterTarget !== undefined ? 1 : 0);
+			return semantics.baseEvent.selectTarget !== this.runtime.defaultSelectTarget ? semantics.baseEvent.selectTarget : semantics.baseEvent.filterTarget !== undefined ? 1 : 0;
 		}
 		const explicit = !!(spec && Object.keys(spec).length) || evaluateSelectionSpec(info?.selectionSpec, this.event, this.event.player, this.skillName || "skill", fail).mode === "explicit";
 		if (explicit) {
@@ -446,71 +442,11 @@ export class DecisionSelection {
 	}
 
 	checkpoint(): any {
-		const selectionSteps = Array.from((this.selection as any).steps.entries());
-		const contextSelections = Array.from(this.selection.context.selections.entries()).map(([stepId, entry]: [string, any]) => [
-			stepId,
-			{ type: entry.type, items: entry.items.slice() },
-		]);
-		const stepItems = Array.from(this.stepItems.entries()).map(([stepId, map]) => [stepId, new Map(map)]);
-		const stepIdentities = Array.from(this.stepIdentities.entries()).map(([stepId, map]) => [
-			stepId,
-			new Map(Array.from(map.entries()).map(([key, value]) => [key, { ...value }])),
-		]);
-		return {
-			selectionSteps,
-			selectionFilterOk: this.selection.filterOk,
-			contextSelections,
-			stepItems,
-			stepIdentities,
-			stages: this.stages.slice(),
-			currentStageIndex: this.currentStageIndex,
-			automaticSteps: this.automaticSteps.slice(),
-			skillName: this.skillName,
-			directKind: this.directKind,
-			backupKind: this.backupKind,
-			backupInfo: this.backupInfo,
-			backupSpec: this.backupSpec,
-			skillInfo: this.skillInfo,
-			skillSpec: this.skillSpec,
-			skillSemantics: this.skillSemantics,
-			skillFilterInstalled: this.skillFilterInstalled,
-			hasExplicitFinalPredicate: this.hasExplicitFinalPredicate,
-			activeAction: this.activeAction,
-			responseCard: this.responseCard,
-			directUseCard: this.directUseCard,
-		};
+		return captureSelectionCheckpoint(this, this.selection, this.stepItems, this.stepIdentities, this.stages, this.automaticSteps);
 	}
 
 	rollback(snap: any): void {
-		const rawSelection = this.selection as any;
-		rawSelection.steps.clear();
-		for (const [id, step] of snap.selectionSteps) rawSelection.steps.set(id, step);
-		this.selection.filterOk = snap.selectionFilterOk;
-		this.selection.context.selections.clear();
-		for (const [stepId, entry] of snap.contextSelections) {
-			this.selection.context.selections.set(stepId, { type: entry.type, items: entry.items.slice() });
-		}
-		this.stepItems.clear();
-		for (const [stepId, map] of snap.stepItems) this.stepItems.set(stepId, new Map(map));
-		this.stepIdentities.clear();
-		for (const [stepId, map] of snap.stepIdentities) this.stepIdentities.set(stepId, new Map(map));
-		this.stages = snap.stages.slice();
-		this.currentStageIndex = snap.currentStageIndex;
-		this.automaticSteps.length = 0;
-		this.automaticSteps.push(...snap.automaticSteps);
-		this.skillName = snap.skillName;
-		this.directKind = snap.directKind;
-		this.backupKind = snap.backupKind;
-		this.backupInfo = snap.backupInfo;
-		this.backupSpec = snap.backupSpec;
-		this.skillInfo = snap.skillInfo;
-		this.skillSpec = snap.skillSpec;
-		this.skillSemantics = snap.skillSemantics;
-		this.skillFilterInstalled = snap.skillFilterInstalled;
-		this.hasExplicitFinalPredicate = snap.hasExplicitFinalPredicate;
-		this.activeAction = snap.activeAction;
-		this.responseCard = snap.responseCard;
-		this.directUseCard = snap.directUseCard;
+		this.stages = restoreSelectionCheckpoint(snap, this, this.selection, this.stepItems, this.stepIdentities, this.automaticSteps);
 	}
 
 	protected refsForTargets(targets: any[]): string[] {

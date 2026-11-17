@@ -1,6 +1,6 @@
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
 import { resolveAuthoritativeTargetRange, resolveSkillActionPlan, type DecisionCandidateSnapshot } from "./action-candidates.js";
-import { assertActionTargets, assertCardLegal, assertTargetLegal, hasLegalDirectTargetCandidate, isCardOwned, isTargetCurrent, materializeResponseResult, requireAction, resolveCandidateCards, resolveCandidateTargets } from "./decision-validation.js";
+import { assertActionTargets, assertCardLegal, assertTargetLegal, directCardTargetLiveness, hasLegalDirectTargetCandidate, isCardOwned, isTargetCurrent, materializeResponseResult, requireAction, resolveCandidateCards, resolveCandidateTargets } from "./decision-validation.js";
 import type { ToolCallResult } from "./client.js";
 import { buildBackupStepDefinitions, materializeViewAsResult, mergeBackupSelectionSpecs, resolveViewAs } from "./backup-protocol.js";
 import { materializeDirectResult } from "./direct-materializer.js";
@@ -24,7 +24,7 @@ export class DecisionSession extends DecisionSelection {
 		if (!(this.backupKind || (this.directKind && this.event.forced)) || !this.stages.length || this.stage) return;
 		this.revalidate();
 		this.finalizeOrFail();
-		return { result: this.backupKind ? this.materializeBackup() : this.materializeDirect() };
+		return { result: this.backupKind ? this.materializeSkillDecision("backup") : this.materializeDirect() };
 	}
 	get isPending(): boolean {
 		return !!this.stage;
@@ -57,9 +57,10 @@ export class DecisionSession extends DecisionSelection {
 		const action = requireAction(this.snapshot, "use_card", cardRef);
 		return withVirtualSelection(this.runtime.legacyBridgeHost, { event: this.event, player: this.event.player, cards: [], targets: [] }, () => {
 			assertCardLegal(this.event, card, this.runtime);
+			const directLiveness = directCardTargetLiveness(this.event, card, this.runtime.getCardInfo);
 			if (action?.target.mode !== "dynamic") {
 				let targets = resolveCandidateTargets(this.targetMap, assertActionTargets(action, proposal.targetRefs, "use_card"), "use_card");
-				for (const target of targets) assertTargetLegal(this.event, target, card, this.runtime);
+				for (const target of targets) assertTargetLegal(this.event, target, card, this.runtime, directLiveness);
 				this.registerProposalSelection(cards, targets, "card");
 				this.finalizeOrFail();
 				targets = this.selectedValues("target")
@@ -89,7 +90,7 @@ export class DecisionSession extends DecisionSelection {
 					selectionMode: "sequential",
 					select: primaryRange,
 					required: true,
-					filter: (target: any) => isTargetCurrent(this.event, target, this.runtime) && this.event.filterTarget?.(card, this.event.player, target) !== false,
+					filter: (target: any) => isTargetCurrent(this.event, target, this.runtime, directLiveness) && this.event.filterTarget?.(card, this.event.player, target) !== false,
 				});
 				steps.push({
 					id: `card:${cardRef}:target:1`,
@@ -104,7 +105,7 @@ export class DecisionSession extends DecisionSelection {
 					type: "target",
 					selectionMode: "sequential",
 					select: () => resolveAuthoritativeTargetRange(this.event, card, this.event.player, this.runtime),
-					filter: (target: any) => isTargetCurrent(this.event, target, this.runtime) && this.event.filterTarget?.(card, this.event.player, target) !== false,
+					filter: (target: any) => isTargetCurrent(this.event, target, this.runtime, directLiveness) && this.event.filterTarget?.(card, this.event.player, target) !== false,
 				});
 			}
 			this.stages = this.registerSkillSteps({ steps }, info);
@@ -134,17 +135,18 @@ export class DecisionSession extends DecisionSelection {
 			.map(ref => this.targetMap.get(ref)?.player)
 			.filter(Boolean);
 		const info = this.runtime.getCardInfo(card) || {};
+		const directLiveness = directCardTargetLiveness(this.event, card, this.runtime.getCardInfo);
 		const addedSource = isSingleCardAddedTarget(info) ? info : isSingleCardAddedTarget(this.event) ? this.event : undefined;
 		if (addedSource) {
 			if (!targets[0]) fail("use_card: primary target missing");
-			assertTargetLegal(this.event, targets[0], card, this.runtime);
-			if (!targets[1] || !addedSource.filterAddedTarget(card, this.event.player, targets[1], targets[0])) {
+			assertTargetLegal(this.event, targets[0], card, this.runtime, directLiveness);
+			if (!targets[1] || !isTargetCurrent(this.event, targets[1], this.runtime, directLiveness) || !addedSource.filterAddedTarget(card, this.event.player, targets[1], targets[0])) {
 				fail("use_card: added target is no longer legal");
 			}
 		} else {
 			for (let i = 0; i < targets.length; i++) {
 				withVirtualSelection(this.runtime.legacyBridgeHost, { event: this.event, player: this.event.player, cards: [card], targets: targets.slice(0, i) }, () =>
-					assertTargetLegal(this.event, targets[i], card, this.runtime)
+					assertTargetLegal(this.event, targets[i], card, this.runtime, directLiveness)
 				);
 			}
 		}
@@ -284,90 +286,82 @@ export class DecisionSession extends DecisionSelection {
 		if (!this.stages.length) fail(`unsupported ${definition.kind}: no serializable candidates`);
 	}
 
-	private materializeSkill(): any {
+	private materializeSkillDecision(mode: "use_skill" | "backup"): any {
 		const skill = this.skillName!;
-		if (!this.runtime.isSkillEligible(this.event, this.event.player, skill)) fail(`use_skill: skill "${skill}" is no longer eligible`);
-		const info = this.runtime.getSkillInfo(skill);
-		const cards = this.selectedValues("card")
-			.map(ref => this.cardMap.get(ref)?.card)
-			.filter(Boolean);
+		const prefix = mode === "use_skill" ? "use_skill" : "backup";
+		if (mode === "use_skill" && !this.runtime.isSkillEligible(this.event, this.event.player, skill)) fail(`use_skill: skill "${skill}" is no longer eligible`);
+		const info = mode === "backup" ? this.backupInfo : this.runtime.getSkillInfo(skill);
+		const spec = mode === "backup" ? this.backupSpec : resolveSelectionSpec(info.selectionSpec, this.event, this.event.player);
+		const semantics = this.resolveSkillSemantics(info, spec);
+		const cards = this.selectedCards();
 		const targets = this.selectedValues("target")
 			.map(ref => this.targetMap.get(ref)?.player)
 			.filter(Boolean);
-		const spec = resolveSelectionSpec(info.selectionSpec, this.event, this.event.player);
-		const { source: viewAs, definition, viewAsCard } = withVirtualSelection(
+		const { source: viewAs, definition, activeCard } = withVirtualSelection(
 			this.runtime.legacyBridgeHost,
-			{ event: this.event, player: this.event.player, skill, cards, targets, synthesizeBackup: true },
-			() => {
-				const resolved = resolveViewAs(spec, info, cards, this.event.player);
-				return {
-					...resolved,
-					viewAsCard: resolved.definition ? this.runtime.autoViewAs(resolved.definition, cards) : undefined,
-				};
-			}
+			{ event: this.event, player: this.event.player, skill, cards, targets, synthesizeBackup: true, eventOverrides: semantics.eventOverrides },
+			() => ({ ...resolveViewAs(spec, info, cards, this.event.player), activeCard: semantics.resolveActiveCard(cards) })
 		);
-		for (let i = 0; i < cards.length; i++) this.assertSkillCardLegal(cards[i], info, spec, cards.slice(0, i));
-		if (isSingleCardAddedTarget(info)) {
-			if (!targets[0]) fail(`use_skill: primary target missing for ${skill}`);
-			this.assertSkillTargetLegal(targets[0], viewAsCard || cards[0], info, spec, cards, []);
+		if (viewAs && !definition) fail(`${prefix}: viewAs did not resolve for ${skill}`);
+
+		for (let i = 0; i < cards.length; i++) {
+			if (!isCardOwned(this.event, cards[i], this.runtime)) fail("skill card is no longer owned by the player");
+			try {
+				const ok = withVirtualSelection(
+					this.runtime.legacyBridgeHost,
+					{ event: this.event, player: this.event.player, skill, cards: cards.slice(0, i), targets: [], synthesizeBackup: true, eventOverrides: semantics.eventOverrides },
+					() => (semantics.hasExplicitStepCardFilter ? semantics.isMaterialCardGuardEligible(cards[i]) : semantics.isMaterialCardEligible(cards[i], this.event))
+				);
+				if (!ok) fail("skill card is no longer legal");
+			} catch (error) {
+				if ((error as any)?.stage) throw error;
+				fail("skill card legality could not be verified");
+			}
+		}
+
+		const liveness = semantics.resolveTargetLiveness(cards);
+		const cardInfo = activeCard ? this.runtime.getCardInfo?.(activeCard) : undefined;
+		const addedSource = isSingleCardAddedTarget(info) ? info : semantics.hasViewAs && isSingleCardAddedTarget(cardInfo) ? cardInfo : undefined;
+		if (addedSource) {
+			if (!targets[0]) fail(`${prefix}: primary target missing for ${skill}`);
+			this.assertSkillTargetStep(semantics, targets[0], cards, [], liveness, semantics.hasExplicitStepTargetFilter, info);
 			const addedOk = withVirtualSelection(
 				this.runtime.legacyBridgeHost,
-				{ event: this.event, player: this.event.player, skill, cards, targets: [targets[0]], synthesizeBackup: true },
-				() => !!targets[1] && !!info.filterAddedTarget(viewAsCard || cards[0], this.event.player, targets[1], targets[0])
+				{ event: this.event, player: this.event.player, skill, cards, targets: [targets[0]], synthesizeBackup: true, eventOverrides: semantics.eventOverrides },
+				() => !!targets[1] && isTargetCurrent(semantics.baseEvent, targets[1], this.runtime, liveness) && !!addedSource.filterAddedTarget(activeCard, this.event.player, targets[1], targets[0])
 			);
-			if (!addedOk) fail(`use_skill: added target is no longer legal for ${skill}`);
+			if (!addedOk) fail(`${prefix}: added target is no longer legal for ${skill}`);
 		} else {
-			for (let i = 0; i < targets.length; i++) this.assertSkillTargetLegal(targets[i], viewAsCard || cards[0], info, spec, cards, targets.slice(0, i));
+			for (let i = 0; i < targets.length; i++) {
+				this.assertSkillTargetStep(semantics, targets[i], cards, targets.slice(0, i), liveness, semantics.hasExplicitStepTargetFilter, info);
+			}
 		}
+
 		if (viewAs) {
-			if (!definition) fail(`use_skill: viewAs did not resolve for ${skill}`);
 			const viewAsAllowed = withVirtualSelection(
 				this.runtime.legacyBridgeHost,
-				{ event: this.event, player: this.event.player, skill, cards, targets, synthesizeBackup: true },
-				() => typeof this.event.filterCard !== "function" || !!this.event.filterCard(viewAsCard, this.event.player, this.event)
+				{ event: this.event, player: this.event.player, skill, cards, targets, synthesizeBackup: true, eventOverrides: semantics.eventOverrides },
+				() => typeof semantics.baseEvent?.filterCard !== "function" || !!semantics.baseEvent.filterCard(activeCard, this.event.player, this.event)
 			);
-			if (!viewAsAllowed) fail(`use_skill: viewAs card is no longer legal for ${skill}`);
+			if (!viewAsAllowed) fail(`${prefix}: viewAs card is no longer legal for ${skill}`);
 			return materializeViewAsResult(skill, definition, cards, targets, this.runtime.autoViewAs);
 		}
 		return { bool: true, skill, cards, targets };
 	}
 
-	private materializeBackup(): any {
-		const skill = this.skillName!;
-		const info = this.backupInfo;
-		const spec = this.backupSpec;
-		const cards = this.selectedValues("card")
-			.map(ref => this.cardMap.get(ref)?.card)
-			.filter(Boolean);
-		const targets = this.selectedValues("target")
-			.map(ref => this.targetMap.get(ref)?.player)
-			.filter(Boolean);
-		for (let i = 0; i < cards.length; i++) {
-			withVirtualSelection(
+	private assertSkillTargetStep(semantics: any, target: any, cards: any[], targetsBefore: any[], liveness: any, explicitFilter: boolean, info: any): void {
+		if (!isTargetCurrent(semantics.baseEvent, target, this.runtime, liveness)) fail("skill target is no longer current");
+		try {
+			const ok = withVirtualSelection(
 				this.runtime.legacyBridgeHost,
-				{ event: this.event, player: this.event.player, skill, cards: cards.slice(0, i), targets: [] },
-				() => assertCardLegal(this.event, cards[i], this.runtime)
+				{ event: this.event, player: this.event.player, skill: this.skillName, cards, targets: targetsBefore, synthesizeBackup: true, eventOverrides: semantics.eventOverrides },
+				() => explicitFilter || semantics.isSkillTargetFilterMatch(target, cards)
 			);
+			if (!ok) fail(semantics.hasViewAs && info?.filterTarget === undefined ? "viewAs target is no longer legal" : "skill target is no longer legal");
+		} catch (error) {
+			if ((error as any)?.stage) throw error;
+			fail("skill target legality could not be verified");
 		}
-		return withVirtualSelection(
-			this.runtime.legacyBridgeHost,
-			{ event: this.event, player: this.event.player, skill, cards, targets },
-			() => {
-				const { source, definition } = resolveViewAs(spec, info, cards, this.event.player);
-				if (source && !definition) fail(`backup ${skill} did not resolve viewAs definition`);
-				const card = definition ? this.runtime.autoViewAs(definition, cards) : cards[0];
-				for (let i = 0; i < targets.length; i++) {
-					withVirtualSelection(
-						this.runtime.legacyBridgeHost,
-						{ event: this.event, player: this.event.player, skill, cards, targets: targets.slice(0, i) },
-						() => assertTargetLegal(this.event, targets[i], card, this.runtime)
-					);
-				}
-				return definition
-					? materializeViewAsResult(skill, definition, cards, targets, this.runtime.autoViewAs)
-					: { bool: true, skill, cards, targets };
-			}
-		);
 	}
 
 	private materializeDirect(): any {
@@ -420,39 +414,6 @@ export class DecisionSession extends DecisionSelection {
 
 	private authoritativeCardTargetSelect(card: any): any {
 		return resolveAuthoritativeTargetRange(this.event, card, this.event.player, this.runtime);
-	}
-
-	private assertSkillCardLegal(card: any, info: any, spec?: HeadlessSelectionSpec, selectedBeforeCard: any[] = []): void {
-		if (!isCardOwned(this.event, card, this.runtime)) fail("skill card is no longer owned by the player");
-		try {
-			withVirtualSelection(
-				this.runtime.legacyBridgeHost,
-				{ event: this.event, player: this.event.player, skill: this.skillName, cards: selectedBeforeCard, targets: [], synthesizeBackup: true },
-				() => {
-					if (!spec?.steps?.some(step => step.type === "card" && step.filter) && !matchesSelectionFilter(info.filterCard, card, this.event.player, info, this.runtime.normalizeFilter, this.event)) fail("skill card is no longer legal");
-				}
-			);
-		} catch (error) {
-			if ((error as any)?.stage) throw error;
-			fail("skill card legality could not be verified");
-		}
-	}
-
-	private assertSkillTargetLegal(target: any, card: any, info: any, spec?: HeadlessSelectionSpec, selectedCards: any[] = [], selectedBeforeTarget: any[] = []): void {
-		if (!isTargetCurrent(this.event, target, this.runtime)) fail("skill target is no longer current");
-		try {
-			withVirtualSelection(
-				this.runtime.legacyBridgeHost,
-				{ event: this.event, player: this.event.player, skill: this.skillName, cards: selectedCards, targets: selectedBeforeTarget, synthesizeBackup: true },
-				() => {
-					if (!spec?.steps?.some(step => step.type === "target" && step.filter) && info.filterTarget !== undefined && !evalFilterTargetValue(info.filterTarget, card, this.event.player, target)) fail("skill target is no longer legal");
-					if (getViewAsSource(spec, info) && typeof this.event.filterTarget === "function" && !this.event.filterTarget(card, this.event.player, target)) fail("viewAs target is no longer legal");
-				}
-			);
-		} catch (error) {
-			if ((error as any)?.stage) throw error;
-			fail("skill target legality could not be verified");
-		}
 	}
 }
 

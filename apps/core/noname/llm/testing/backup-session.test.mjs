@@ -63,3 +63,42 @@ test("dynamic backup viewAs and target ranges are never inspected before materia
 	assert.equal(outcome.result.targets[0], target);
 	assert.equal(f.requests.length, 2);
 });
+
+test("explicit backup spec allows outer _backup.filterOk and supports singleCard + filterAddedTarget", async () => {
+	const f = await createDeciderRuntime();
+	const owner = f.player("owner", [{ name: "sha", suit: "spade" }]);
+	const primary = f.player("primary");
+	const added = f.player("added");
+	let outerFilterOkCalls = 0;
+	f.lib.skill.jiedao_backup = {
+		selectionSpec: true,
+		selectCard: 1,
+		filterCard: true,
+		singleCard: true,
+		selectTarget: 1,
+		filterTarget: (_card, _player, target) => target === primary,
+		filterAddedTarget: (_card, _player, target, preTarget) => preTarget === primary && target === added,
+	};
+	const event = {
+		name: "chooseToUse",
+		player: owner,
+		skill: "jiedao_backup",
+		selectionSpec: { finalPredicate: () => true },
+		filterCard: () => true,
+		_backup: {
+			filterCard: () => true,
+			filterOk() {
+				outerFilterOkCalls++;
+				return false;
+			},
+		},
+	};
+	f.queue.push(stageTool("card", ["c0"]), stageTool("target", ["p1"]), stageTool("target", ["p2"]));
+	const outcome = await f.decide(event);
+	assert.equal(outcome.handled, true);
+	assert.equal(outcome.result.skill, "jiedao_backup");
+	assert.equal(outcome.result.targets.length, 2);
+	assert.equal(outcome.result.targets[0], primary);
+	assert.equal(outcome.result.targets[1], added);
+	assert.equal(outerFilterOkCalls, 0);
+});

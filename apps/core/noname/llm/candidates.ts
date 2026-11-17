@@ -4,6 +4,7 @@ import { matchesSelectionFilter } from "./selection-filter.js";
 import { resolveSelectionSpec } from "./selection-adapter.js";
 import { evaluateSelectionSpec } from "./generic-skill-plan.js";
 import { withVirtualSelection } from "./legacy-bridge.js";
+import { resolveBaseEvent, resolveEffectiveSkillSemantics, type SkillSemanticRuntime } from "./skill-backup-semantics.js";
 
 export interface CandidateCard {
 	card: any;
@@ -22,41 +23,82 @@ export interface CandidateTarget {
 	name: string;
 }
 
+function createCandidatesSemanticRuntime(): SkillSemanticRuntime {
+	return {
+		getCardInfo: card => (typeof get?.info === "function" ? get.info(card) || {} : card?.info || {}),
+		autoViewAs: (definition, selected) => (typeof get?.autoViewAs === "function" ? get.autoViewAs(definition, selected) : { ...definition, cards: selected }),
+		normalizeFilter: value => get.filter(value),
+		checkCardEnabled2: (card, current) => (typeof game?.checkMod === "function" ? game.checkMod(card, current, "unchanged", "cardEnabled2", current) : "unchanged"),
+		isCardDiscardable: (card, current) => (typeof lib?.filter?.cardDiscardable === "function" ? !!lib.filter.cardDiscardable(card, current) : true),
+		isCardRespondable: (card, current) => (typeof lib?.filter?.cardRespondable === "function" ? !!lib.filter.cardRespondable(card, current) : true),
+	};
+}
+
+function resolveMinCardSelect(select: any): number {
+	const raw = typeof select === "function" ? select() : select;
+	if (raw === undefined) return 1;
+	if (typeof raw === "number") return raw < 0 ? 0 : raw;
+	if (Array.isArray(raw) && typeof raw[0] === "number") return raw[0] < 0 ? 0 : raw[0];
+	return 1;
+}
+
 /**
  * 获取当前决策事件中可用出牌候选。
- * 通过 event.filterCard 过滤，不依赖 DOM。
+ * 通过 event.filterCard 与技能语义投影过滤，不依赖 DOM。
  */
 export function getCandidateCards(event: any, player: any, skills: string[] = []): CandidateCard[] {
 	const records = new Map<any, { cardAction: boolean; skills: string[] }>();
-	const eventSpec = resolveSelectionSpec(event.selectionSpec, event, player);
-	const eventFilter = eventSpec?.steps?.find(step => step.type === "card")?.filter ?? event.filterCard;
-	withVirtualSelection({ ui, status: _status }, { event, player, cards: [], targets: [], buttons: [] }, () => {
-		for (const card of player.getCards(event.position || "hs")) {
-			if (eventFilter != null && matchesSelectionFilter(eventFilter, card, player, event, value => get.filter(value), event)) records.set(card, { cardAction: true, skills: [] });
-		}
-	});
-	for (const skill of skills) {
+	const semanticRuntime = createCandidatesSemanticRuntime();
+	const backupSkillInfo = event?.skill && !skills.length ? getRegisteredSkill(lib.skill, event.skill) : undefined;
+	const targetSkills = backupSkillInfo ? [event.skill] : skills;
+	if (!event?.skill || !backupSkillInfo) {
+		const eventSpec = resolveSelectionSpec(event.selectionSpec, event, player);
+		const eventFilter = eventSpec?.steps?.find(step => step.type === "card")?.filter ?? event.filterCard;
+		withVirtualSelection({ ui, status: _status }, { event, player, cards: [], targets: [], buttons: [] }, () => {
+			if (typeof player?.isOut === "function" && player.isOut()) return;
+			for (const card of player.getCards(event.position || "hs")) {
+				if (semanticRuntime.isCardRespondable && !semanticRuntime.isCardRespondable(card, player)) continue;
+				if (eventFilter != null && matchesSelectionFilter(eventFilter, card, player, event, value => get.filter(value), event)) {
+					records.set(card, { cardAction: !event?.skill, skills: event?.skill ? [event.skill] : [] });
+				}
+			}
+		});
+	}
+	for (const skill of targetSkills) {
 		const info = getRegisteredSkill(lib.skill, skill);
 		if (!info) continue;
 		const evaluated = evaluateSelectionSpec(info.selectionSpec, event, player, skill, message => {
 			throw new Error(message);
 		});
 		if (evaluated.mode === "disabled") continue;
-		const step = evaluated.spec?.steps?.find((item: any) => item.type === "card");
+		const spec = evaluated.mode === "explicit" ? evaluated.spec : undefined;
+		const semantics = resolveEffectiveSkillSemantics({ event, player, skill, info, spec, runtime: semanticRuntime });
 		const collectSkillCards = () => {
-			for (const card of player.getCards(info.position || event.position || "hs")) {
-				const filterCard = step?.filter ?? info.filterCard;
-				const eligible = filterCard != null && matchesSelectionFilter(filterCard, card, player, info, value => get.filter(value), event);
-				if (!eligible) continue;
+			if (typeof player?.isOut === "function" && player.isOut()) return;
+			const pool = player.getCards(semantics.position) || [];
+			const addSkillCard = (card: any) => {
 				const record = records.get(card) || { cardAction: false, skills: [] };
-				record.skills.push(skill);
+				if (!record.skills.includes(skill)) record.skills.push(skill);
 				records.set(card, record);
+			};
+			if (semantics.complexCard || semantics.complexSelect) {
+				if (!semantics.hasCardFilterRule) return;
+				const minSelect = resolveMinCardSelect(semantics.effectiveSelectCard);
+				const hasStarter = minSelect <= 0 || pool.some((card: any) => semantics.isMaterialCardEligible(card, event));
+				if (!hasStarter) return;
+				for (const card of pool) {
+					if (semantics.isMaterialCardGuardEligible(card)) addSkillCard(card);
+				}
+				return;
+			}
+			for (const card of pool) {
+				if (semantics.isMaterialCardEligible(card, event)) addSkillCard(card);
 			}
 		};
 		const runWithBridge = () =>
 			withVirtualSelection(
 				{ ui, status: _status },
-				{ event, player, skill, cards: [], targets: [], buttons: [], synthesizeBackup: true },
+				{ event, player, skill, cards: [], targets: [], buttons: [], synthesizeBackup: true, eventOverrides: semantics.eventOverrides },
 				collectSkillCards
 			);
 		if (evaluated.mode === "explicit") runWithBridge();
@@ -78,10 +120,13 @@ export function getCandidateCards(event: any, player: any, skills: string[] = []
 export function getCandidateSkills(event: any, player: any): string[] {
 	const excluded: (string | Card)[] = Array.isArray(event._aiexclude) ? event._aiexclude : [];
 	const skills = game.expandSkills(player.getSkills("invisible").concat(lib.skill.global));
-	return skills.filter((skill: string) => !excluded.some(item => typeof item === "string" && item === skill) && isSkillEligible(event, player, skill));
+	return skills.filter((skill: string) => {
+		const info = getRegisteredSkill(lib.skill, skill);
+		return !excluded.some(item => typeof item === "string" && (item === skill || (typeof info?.sourceSkill === "string" && item === info.sourceSkill))) && isSkillEligible(event, player, skill);
+	});
 }
 
-/** 与 UI game.check 使用同一个引擎权威入口；未声明 selectionSpec 时进入通用推理，selectionSpec: false 显式排除。 */
+/** 与 UI game.check 使用同一个引擎权威入口；保持未 backup 时的原生求值上下文，不提前注入 skill/_backup。 */
 export function isSkillEligible(event: any, player: any, skill: string): boolean {
 	const info = getRegisteredSkill(lib.skill, skill);
 	if (!info) return false;
@@ -92,7 +137,7 @@ export function isSkillEligible(event: any, player: any, skill: string): boolean
 	const check = () =>
 		withVirtualSelection(
 			{ ui, status: _status },
-			{ event, player, skill, cards: [], targets: [], buttons: [], synthesizeBackup: true },
+			{ event, player, cards: [], targets: [], buttons: [] },
 			() => !!lib.filter.filterEnable(event, player, skill)
 		);
 	if (evaluated.mode === "explicit") return check();
@@ -109,8 +154,10 @@ export function isSkillEligible(event: any, player: any, skill: string): boolean
  */
 export function getCandidateTargets(event: any, player: any, card: any): any[] {
 	if (!event.filterTarget) return [];
+	const baseEvent = resolveBaseEvent(event);
+	const cardInfo = card && typeof get?.info === "function" ? get.info(card) : undefined;
 	const all = Array.from(game.players);
-	if (event.deadTarget) all.push(...game.dead);
+	if (event.deadTarget || baseEvent?.deadTarget || cardInfo?.deadTarget) all.push(...game.dead);
 	return all.filter((t: any) => event.filterTarget(card, player, t));
 }
 
@@ -119,8 +166,10 @@ export function getCandidateTargets(event: any, player: any, card: any): any[] {
  * 避免把不稳定的数组下标直接暴露给模型。
  */
 export function getCandidateTargetRefs(event: any, player: any, card?: any): CandidateTarget[] {
+	const baseEvent = resolveBaseEvent(event);
+	const cardInfo = card && typeof get?.info === "function" ? get.info(card) : undefined;
 	const players = Array.from(game.players);
-	if (event.deadTarget) players.push(...game.dead);
+	if (event.deadTarget || baseEvent?.deadTarget || cardInfo?.deadTarget) players.push(...game.dead);
 	return players
 		.filter((target: any) => {
 			if (!event.filterTarget || !card) return true;

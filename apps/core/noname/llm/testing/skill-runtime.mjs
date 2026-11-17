@@ -43,7 +43,7 @@ export async function createSkillRuntime(overrides = {}) {
 	const runtime = {
 		getCandidateSkills: event => event.skills || [],
 		getCandidateCards,
-		getPlayers: () => game.players,
+		getPlayers: event => [...game.players, ...(event?.deadTarget ? game.dead : [])],
 		getTargetId: player => player.playerid,
 		getTargetName: player => player.name,
 		getSkillInfo: id => lib.skill[id],

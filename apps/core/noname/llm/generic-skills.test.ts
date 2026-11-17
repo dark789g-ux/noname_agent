@@ -401,3 +401,47 @@ test("Stage 4: MoveDecisionSession 支持无 selectionSpec 的通用分区排序
 	assert.throws(() => new MoveDecisionSession({ ...genericEvent, filterMove: () => true }, runtime), /UI-dependent filterMove/);
 	assert.throws(() => new MoveDecisionSession({ ...genericEvent, selectionSpec: false }, runtime), /selectionSpec: false/);
 });
+
+test("Stage 5: 立牧（viewAs lebu + filterTarget 覆盖外层 + selectTarget: -1）不再误报 viewAs target is no longer legal", () => {
+	const diamondSha = { name: "sha", suit: "diamond", info: { selectTarget: 1 } };
+	const diamondWuxie = { name: "wuxie", suit: "diamond", info: { notarget: true } };
+	const seenCards: any[] = [];
+	const skills = {
+		xinfu_limu: {
+			discard: false,
+			viewAs: { name: "lebu" },
+			position: "hes",
+			filterCard: (card: any) => card.suit === "diamond",
+			selectTarget: -1,
+			filterTarget: (card: any, owner: any, target: any) => {
+				seenCards.push(card);
+				return owner === target;
+			},
+		},
+	};
+	const f = genericFixture({ cards: [diamondSha, diamondWuxie], skills });
+	f.runtime.getCardInfo = card => (card.name === "lebu" ? { selectTarget: 1, filterTarget: (_c: any, p: any, t: any) => p !== t } : card.info || {});
+	const event = {
+		name: "chooseToUse",
+		player: f.owner,
+		filterCard: (card: any) => card.name === "lebu",
+		// 模拟原生 lib.filter.filterTarget -> lebu.filterTarget：禁止对自己使用乐不思蜀
+		filterTarget: (_card: any, owner: any, target: any) => owner !== target,
+	};
+	const snapshot = buildDecisionCandidateSnapshot(event, f.owner, f.runtime);
+	const action = snapshot.actions.find(item => item.skillName === "xinfu_limu")!;
+	assert.ok(action);
+	assert.deepEqual(action.materialCardRefs, ["c0", "c1"]);
+	assert.equal(action.target.mode, "dynamic");
+
+	const session = new DecisionSession(event, snapshot, f.runtime);
+	const pending = session.accept(makeCall("use_skill", { skill_name: "xinfu_limu" }));
+	assert.equal(pending.pending?.type, "card");
+	const done = session.accept(makeCall("select_cards", { step_id: pending.pending!.id, card_refs: ["c0"] }));
+	assert.equal(done.result.bool, true);
+	assert.equal(done.result.skill, "xinfu_limu");
+	assert.equal(done.result.card.name, "lebu");
+	assert.deepEqual(done.result.cards, [diamondSha]);
+	assert.deepEqual(done.result.targets, [f.owner]);
+	assert.ok(seenCards.length > 0 && seenCards.every(card => card?.name === "lebu" && card?.isViewAs === true));
+});

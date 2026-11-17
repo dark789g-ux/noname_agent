@@ -27,11 +27,19 @@ const BACKUP_FIELDS = [
 	"position",
 	"forced",
 	"fakeforce",
+	"_aiexclude",
 	"allowChooseAll",
 	"complexSelect",
 	"complexCard",
 	"complexTarget",
+	"_buttonChoice",
+	"_cardChoice",
+	"_targetChoice",
+	"_skillChoice",
+	"ai1",
+	"ai2",
 	"filterOk",
+	"selectionSpec",
 ] as const;
 
 function buildBackupSnapshot(event: any): Record<string, any> {
@@ -39,6 +47,7 @@ function buildBackupSnapshot(event: any): Record<string, any> {
 	for (const key of BACKUP_FIELDS) {
 		if (key in event) snapshot[key] = event[key];
 	}
+	snapshot.selectionSpecExists = Object.prototype.hasOwnProperty.call(event, "selectionSpec");
 	return snapshot;
 }
 
