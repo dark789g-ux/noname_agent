@@ -1,15 +1,14 @@
 import { SelectionContext, SelectionSession, SelectionStep } from "@/library/selection/index.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
-import { assertSupportedTargetRules, resolveAuthoritativeTargetRange, resolveSkillActionPlan, type ActionCandidateRuntime, type CandidateAction, type DecisionCandidateSnapshot } from "./action-candidates.js";
-import { assertActionTargets, assertCardLegal, assertTargetLegal, buildDecisionLogResult, isCardOwned, isTargetCurrent, materializeResponseResult, requireAction, resolveActionCardRefs, resolveCandidateCards, resolveCandidateTargets, resolveCurrentAction, type ValidationRuntime } from "./decision-validation.js";
-import type { ToolCallResult } from "./client.js";
+import { assertSupportedTargetRules, resolveAuthoritativeTargetRange, type ActionCandidateRuntime, type CandidateAction, type DecisionCandidateSnapshot } from "./action-candidates.js";
+import { buildDecisionLogResult, directCardTargetLiveness, formatTargetInstruction, isCardOwned, isTargetCurrent, resolveActionCardRefs, resolveAddedTargetPreTarget, resolveCandidateCards, resolveCurrentAction, type ValidationRuntime } from "./decision-validation.js";
 import { matchesSelectionFilter } from "./selection-filter.js";
-import { buildBackupStepDefinitions, getViewAsSource, materializeViewAsResult, mergeBackupSelectionSpecs, resolveViewAs, type BackupDecisionKind } from "./backup-protocol.js";
-import { materializeDirectResult } from "./direct-materializer.js";
-import { evalFilterTargetValue, evaluateSelectionSpec, hasComplexTargetFlags } from "./generic-skill-plan.js";
+import { getViewAsSource, resolveViewAs, type BackupDecisionKind } from "./backup-protocol.js";
+import { evaluateSelectionSpec } from "./generic-skill-plan.js";
 import { withVirtualSelection } from "./legacy-bridge.js";
-import { assertActionAllowed, parseActionProposal, selectionRequired, type ActionProposal } from "./protocol.js";
-import { actionResolution, deriveSimpleSteps, directSelectionDefinition, fail, labelFor, normalizeRange, resolveSelectionSpec, shortRefPrefix, type HeadlessSelectionSpec } from "./selection-adapter.js";
+import { selectionRequired, type ActionProposal } from "./protocol.js";
+import { actionResolution, deriveSimpleSteps, fail, formatSelectionFailure, labelFor, normalizeRange, resolveSelectionSpec, shortRefPrefix, type HeadlessSelectionSpec } from "./selection-adapter.js";
+import { resolveBaseEvent, resolveEffectiveSkillSemantics, resolvePoolTargetFlags, type EffectiveSkillSemantics } from "./skill-backup-semantics.js";
 
 export interface DecisionStage {
 	id: string;
@@ -49,6 +48,14 @@ export class DecisionSelection {
 	protected backupInfo?: any;
 
 	protected backupSpec?: HeadlessSelectionSpec;
+
+	protected skillInfo?: any;
+
+	protected skillSpec?: HeadlessSelectionSpec;
+
+	protected skillSemantics?: EffectiveSkillSemantics;
+
+	protected skillFilterInstalled = false;
 
 	protected hasExplicitFinalPredicate = false;
 
@@ -122,12 +129,23 @@ export class DecisionSelection {
 
 	revalidate(): void {
 		if (this.candidates.cards.some(candidate => !isCardOwned(this.event, candidate.card, this.runtime))) fail("candidate card ownership changed during decision");
-		if (Array.from(this.targetMap.values()).some(candidate => !isTargetCurrent(this.event, candidate.player, this.runtime))) fail("candidate target state changed during decision");
+		const poolFlags = resolvePoolTargetFlags({ event: this.event, cards: this.candidates.cards, skills: this.candidates.skills, activeSkill: this.skillName, activeSpec: this.skillSpec, activeSemantics: this.skillSemantics, selectedCards: this.selectedCards(), runtime: this.runtime });
+		if (Array.from(this.targetMap.values()).some(candidate => !isTargetCurrent(resolveBaseEvent(this.event), candidate.player, this.runtime, poolFlags))) fail("candidate target state changed during decision");
 		if (this.candidates.skills.some(skill => !this.runtime.isSkillEligible(this.event, this.event.player, skill))) fail("candidate skill eligibility changed during decision");
 		if (this.stage) {
 			const outcome = this.selection.evaluate(this.stage.id);
 			if (outcome.status === "invalid" || outcome.status === "unsupported") fail(`selection: current stage is no longer valid (${outcome.reason || outcome.status})`);
 		}
+	}
+
+	protected resolveSkillSemantics(info: any, spec?: HeadlessSelectionSpec): EffectiveSkillSemantics {
+		return resolveEffectiveSkillSemantics({ event: this.event, player: this.event.player, skill: this.skillName, info, spec, runtime: this.runtime });
+	}
+
+	protected selectedCards(): any[] {
+		return this.selectedValues("card")
+			.map(ref => this.cardMap.get(ref)?.card)
+			.filter(Boolean);
 	}
 
 	toLogResult(result: any): Record<string, any> {
@@ -136,6 +154,10 @@ export class DecisionSelection {
 
 	protected registerSkillSteps(spec: HeadlessSelectionSpec, info: any, plannedSteps?: any[]): DecisionStage[] {
 		const rawSteps = plannedSteps || spec.steps?.slice() || deriveSimpleSteps(info);
+		const semantics = this.skillName ? (this.skillSemantics || this.resolveSkillSemantics(info, spec)) : undefined;
+		const targetStepsCount = rawSteps.filter(step => step.type === "target").length;
+		const prompts = Array.isArray(info?.targetprompt) ? info.targetprompt : Array.isArray(this.event?.targetprompt) ? this.event.targetprompt : undefined;
+		let targetOrder = 0;
 		return rawSteps.map((original, index) => {
 			const prefix = this.skillName ? `skill:${this.skillName}` : `direct:${this.directKind || this.event?.name || "event"}`;
 			const id = original.id || `${prefix}:${original.type}:${index}`;
@@ -143,13 +165,13 @@ export class DecisionSelection {
 			const select =
 				raw.select ??
 				(raw.type === "card"
-					? info.selectCard
-					: raw.type === "target" && info.selectTarget !== undefined
+					? (semantics?.effectiveSelectCard ?? info?.selectCard)
+					: raw.type === "target" && info?.selectTarget !== undefined
 						? info.selectTarget
-						: raw.type === "target" && getViewAsSource(spec, info)
+						: raw.type === "target" && (semantics ? semantics.hasViewAs : getViewAsSource(spec, info))
 							? () => this.viewAsTargetRange(info, spec)
 							: raw.type === "target"
-								? info.selectTarget
+								? info?.selectTarget
 								: 1);
 			const step = new SelectionStep({
 				id,
@@ -157,7 +179,7 @@ export class DecisionSelection {
 				selectionMode: raw.selectionMode,
 				items: (context: any) =>
 					this.withBridge(context, undefined, undefined, () => {
-						if (raw.type === "target" && raw.deferredFromCards && this.runtime.getCardInfo(this.currentViewAsCard(info, spec))?.notarget) {
+						if (raw.type === "target" && raw.deferredFromCards && !info?.filterTarget && info?.selectTarget === undefined && this.runtime.getCardInfo(this.currentViewAsCard(info, spec))?.notarget) {
 							this.stepItems.set(id, new Map());
 							return [];
 						}
@@ -189,7 +211,7 @@ export class DecisionSelection {
 				forced: true,
 			} as any);
 			this.selection.register(step);
-			return { id, type: raw.type, items: [], range: [0, Infinity] as [number, number], instruction: raw.instruction || (raw.type === "target" && Array.isArray(info.targetprompt) ? info.targetprompt.map((text: string, index: number) => `第 ${index + 1} 名：${text}`).join("；") : undefined) };
+			return { id, type: raw.type, items: [], range: [0, Infinity] as [number, number], instruction: raw.instruction || (raw.type === "target" ? formatTargetInstruction(info, this.event, targetOrder++, targetStepsCount) : undefined) };
 		});
 	}
 
@@ -206,24 +228,26 @@ export class DecisionSelection {
 			const supplied = stage.type === "card" ? this.canonicalCardRefs(proposal.cardRefs || []) : proposal.targetRefs || [];
 			if (!supplied.length && (stage.range[0] > 0 || (stage.type === "target" && this.activeAction?.target.mode === "dynamic"))) break;
 			const outcome = this.selection.setSelection(stage.id, supplied);
-			if (!outcome.ok) fail(`selection: ${outcome.reason || outcome.status}`);
+			if (!outcome.ok) fail(formatSelectionFailure(outcome));
 			consumedTypes.add(stage.type);
 			this.currentStageIndex++;
 		}
 	}
 
-	protected installFinalPredicate(spec?: HeadlessSelectionSpec): void {
-		if (!spec?.finalPredicate) return;
-		this.selection.filterOk = context => this.withBridge(context, undefined, undefined, () => spec.finalPredicate!(context, this.event, this.event.player));
-		this.hasExplicitFinalPredicate = true;
-	}
-
-	protected installGenericSkillFilterOk(info: any): void {
-		if (this.hasExplicitFinalPredicate) return;
-		if (typeof info?.filterOk === "function") {
-			this.selection.filterOk = context => this.withBridge(context, undefined, undefined, () => !!info.filterOk());
-		} else if (!this.eventSpec && typeof this.event.filterOk === "function") {
-			this.selection.filterOk = context => this.withBridge(context, undefined, undefined, () => !!this.event.filterOk());
+	protected installSkillFilterOk(info: any, spec: HeadlessSelectionSpec | undefined, semantics: EffectiveSkillSemantics, requireHeadlessFilterOk: boolean): void {
+		if (requireHeadlessFilterOk && typeof info?.filterOk === "function" && !spec?.finalPredicate) {
+			fail(`skill "${this.skillName}" has UI-dependent filterOk without finalPredicate`);
+		}
+		this.selection.filterOk = context =>
+			this.withBridge(context, undefined, undefined, () => {
+				const cards = this.selectedCards();
+				const { source, definition } = resolveViewAs(spec, info, cards, this.event.player);
+				if (source && !definition) return false;
+				return semantics.resolveFinalOk(cards, semantics.resolveActiveCard(cards), context, this.event);
+			});
+		this.skillFilterInstalled = true;
+		if (spec?.finalPredicate || !semantics.hasViewAs) {
+			this.hasExplicitFinalPredicate = true;
 		}
 	}
 
@@ -236,7 +260,9 @@ export class DecisionSelection {
 	): T {
 		const collectRefs = (type: "card" | "target" | "button") => {
 			if (stageType === type && selected !== undefined) {
-				const otherRefs = this.stages
+				const currentIndex = stageId ? this.stages.findIndex(stage => stage.id === stageId) : -1;
+				const priorStages = currentIndex >= 0 ? this.stages.slice(0, currentIndex) : this.stages;
+				const otherRefs = priorStages
 					.filter(stage => stage.type === type && (stageId ? stage.id !== stageId : false))
 					.flatMap(stage => this.selection.context.getStepSelected(stage.id));
 				return stageId ? [...otherRefs, ...selected] : [...selected];
@@ -257,6 +283,7 @@ export class DecisionSelection {
 				targets,
 				buttons,
 				synthesizeBackup: true,
+				eventOverrides: this.skillName ? this.skillSemantics?.eventOverrides : undefined,
 			},
 			fn
 		);
@@ -326,13 +353,38 @@ export class DecisionSelection {
 	protected isStepSelectable(raw: any, info: any, spec: HeadlessSelectionSpec, value: any, context: any, selected: string[]): boolean {
 		if (value == null) return false;
 		try {
+			if (this.skillName) {
+				const semantics = this.skillSemantics || this.resolveSkillSemantics(info, spec);
+				if (raw.type === "card") {
+					if (!isCardOwned(this.event, value, this.runtime)) return false;
+					if (typeof raw.filter === "function") return semantics.isMaterialCardGuardEligible(value) && !!raw.filter(value, this.event.player, context, selected);
+					return semantics.isMaterialCardEligible(value, this.event);
+				}
+				if (raw.type === "target") {
+					const selectedCards = this.selectedCards();
+					const liveness = semantics.resolveTargetLiveness(selectedCards);
+					if (!isTargetCurrent(semantics.baseEvent, value, this.runtime, liveness)) return false;
+					if (raw.addedTargetFilter) {
+						const activeCard = this.directUseCard || semantics.resolveActiveCard(selectedCards);
+						const cardInfo = activeCard ? this.runtime.getCardInfo?.(activeCard) : undefined;
+						const addedFn = info?.filterAddedTarget ?? (semantics.hasViewAs ? (cardInfo?.filterAddedTarget ?? semantics.baseEvent?.filterAddedTarget) : undefined);
+						const currentIndex = this.stages.findIndex(stage => stage.id === raw.id);
+						const priorTargetRefs = this.stages.slice(0, currentIndex >= 0 ? currentIndex : undefined).filter(stage => stage.type === "target").flatMap(stage => this.selection.context.getStepSelected(stage.id));
+						const preTarget = priorTargetRefs.length ? this.targetMap.get(priorTargetRefs[priorTargetRefs.length - 1])?.player : undefined;
+						return typeof addedFn === "function" ? !!addedFn(activeCard, this.event.player, value, preTarget) : true;
+					}
+					return semantics.isSkillTargetFilterMatch(value, selectedCards, raw, context, selected);
+				}
+			}
+			const directCardInfo = this.directUseCard ? this.runtime.getCardInfo?.(this.directUseCard) : undefined;
+			const directLiveness = directCardInfo ? { deadTarget: !!(this.event.deadTarget || directCardInfo.deadTarget), includeOut: !!(this.event.includeOut || directCardInfo.includeOut), chessForceAll: !!(this.event.chessForceAll || directCardInfo.chessForceAll) } : undefined;
 			if (raw.type === "card" && !isCardOwned(this.event, value, this.runtime)) return false;
-			if (raw.type === "target" && !isTargetCurrent(this.event, value, this.runtime)) return false;
+			if (raw.type === "target" && !isTargetCurrent(this.event, value, this.runtime, directLiveness)) return false;
 			if (typeof raw.filter === "function") return !!raw.filter(value, this.event.player, context, selected);
 			if (raw.type === "card") return matchesSelectionFilter(info.filterCard, value, this.event.player, info, this.runtime.normalizeFilter, this.event);
 			if (raw.type === "target" && raw.addedTargetFilter) {
 				const addedFn = info?.filterAddedTarget ?? this.event.filterAddedTarget;
-				const activeCard = this.directUseCard || this.currentViewAsCard(info, spec) || this.selectedCard();
+				const activeCard = this.directUseCard || this.selectedCard();
 				const currentIndex = this.stages.findIndex(stage => stage.id === raw.id);
 				const priorTargetRefs = this.stages
 					.slice(0, currentIndex >= 0 ? currentIndex : undefined)
@@ -341,8 +393,6 @@ export class DecisionSelection {
 				const preTarget = priorTargetRefs.length ? this.targetMap.get(priorTargetRefs[priorTargetRefs.length - 1])?.player : undefined;
 				return typeof addedFn === "function" ? !!addedFn(activeCard, this.event.player, value, preTarget) : true;
 			}
-			if (raw.type === "target" && info?.filterTarget !== undefined) return evalFilterTargetValue(info.filterTarget, this.selectedCard(), this.event.player, value);
-			if (raw.type === "target" && getViewAsSource(spec, info) && typeof this.event.filterTarget === "function") return !!this.event.filterTarget(this.currentViewAsCard(info, spec), this.event.player, value);
 			return true;
 		} catch (error) {
 			if ((error as any)?.stage) throw error;
@@ -356,35 +406,31 @@ export class DecisionSelection {
 	}
 
 	protected currentViewAsCard(info: any, spec?: HeadlessSelectionSpec): any {
-		const cards = this.selectedValues("card")
-			.map(ref => this.cardMap.get(ref)?.card)
-			.filter(Boolean);
-		const resolvedSpec = spec ?? resolveSelectionSpec(info.selectionSpec, this.event, this.event.player);
-		const { definition } = resolveViewAs(resolvedSpec, info, cards, this.event.player);
-		return definition ? this.runtime.autoViewAs(definition, cards) : undefined;
+		return (this.skillSemantics || this.resolveSkillSemantics(info, spec)).resolveActiveCard(this.selectedCards());
 	}
 
 	protected viewAsTargetRange(info: any, spec?: HeadlessSelectionSpec): any {
-		const card = this.currentViewAsCard(info, spec);
+		const semantics = this.skillSemantics || this.resolveSkillSemantics(info, spec);
+		const card = semantics.resolveActiveCard(this.selectedCards());
 		if (!card) {
-			return info?.selectTarget ?? (info?.filterTarget !== undefined ? 1 : this.event.selectTarget !== this.runtime.defaultSelectTarget ? this.event.selectTarget : this.event.filterTarget !== undefined ? 1 : 0);
+			return info?.selectTarget ?? (info?.filterTarget !== undefined ? 1 : semantics.baseEvent.selectTarget !== this.runtime.defaultSelectTarget ? semantics.baseEvent.selectTarget : semantics.baseEvent.filterTarget !== undefined ? 1 : 0);
 		}
 		const explicit = !!(spec && Object.keys(spec).length) || evaluateSelectionSpec(info?.selectionSpec, this.event, this.event.player, this.skillName || "skill", fail).mode === "explicit";
 		if (explicit) {
 			assertSupportedTargetRules(this.runtime.getCardInfo(card), `skill "${this.skillName}" viewAs card`);
 		}
-		return resolveAuthoritativeTargetRange(this.event, card, this.event.player, this.runtime);
+		return resolveAuthoritativeTargetRange(semantics.baseEvent, card, this.event.player, this.runtime);
 	}
 
 	protected finalizeOrFail(): void {
-		if (typeof this.event.filterOk === "function" && !this.hasExplicitFinalPredicate) {
+		if (!this.skillFilterInstalled && typeof this.event.filterOk === "function" && !this.hasExplicitFinalPredicate) {
 			if (this.eventSpec) fail("unsupported: legacy filterOk has no headless finalPredicate");
 			if (!this.selection.filterOk) {
 				this.selection.filterOk = context => this.withBridge(context, undefined, undefined, () => !!this.event.filterOk());
 			}
 		}
 		const final = this.selection.finalize();
-		if (!final.ok) fail(`selection: ${final.reason || final.status}`);
+		if (!final.ok) fail(formatSelectionFailure(final));
 	}
 
 	protected canonicalCardRefs(refs: string[]): string[] {
@@ -424,6 +470,10 @@ export class DecisionSelection {
 			backupKind: this.backupKind,
 			backupInfo: this.backupInfo,
 			backupSpec: this.backupSpec,
+			skillInfo: this.skillInfo,
+			skillSpec: this.skillSpec,
+			skillSemantics: this.skillSemantics,
+			skillFilterInstalled: this.skillFilterInstalled,
 			hasExplicitFinalPredicate: this.hasExplicitFinalPredicate,
 			activeAction: this.activeAction,
 			responseCard: this.responseCard,
@@ -453,6 +503,10 @@ export class DecisionSelection {
 		this.backupKind = snap.backupKind;
 		this.backupInfo = snap.backupInfo;
 		this.backupSpec = snap.backupSpec;
+		this.skillInfo = snap.skillInfo;
+		this.skillSpec = snap.skillSpec;
+		this.skillSemantics = snap.skillSemantics;
+		this.skillFilterInstalled = snap.skillFilterInstalled;
 		this.hasExplicitFinalPredicate = snap.hasExplicitFinalPredicate;
 		this.activeAction = snap.activeAction;
 		this.responseCard = snap.responseCard;

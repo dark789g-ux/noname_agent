@@ -203,3 +203,24 @@ export function actionResolution(message: string): never {
 	error.stage = "translate/action-resolution";
 	throw error;
 }
+
+export function formatSelectionFailure(outcome: any, fallbackInspection?: any): string {
+	const reason = outcome?.reason || outcome?.status || "invalid";
+	if (reason === "unavailable" || reason === "duplicate") {
+		const value = outcome?.value !== undefined ? String(outcome.value) : "unknown";
+		if (reason === "duplicate") return `selection: duplicate (${value} 重复选择)`;
+		const entries = Array.isArray(fallbackInspection?.entries)
+			? fallbackInspection.entries
+			: Array.isArray(outcome?.inspection?.entries)
+				? outcome.inspection.entries
+				: [];
+		const availableRefs = entries.filter((entry: any) => entry.available).map((entry: any) => entry.item);
+		return `selection: unavailable (${value} 不可选；当前可选: ${availableRefs.length ? availableRefs.join(", ") : "无"})`;
+	}
+	if ((reason === "too_few" || reason === "too_many") && Array.isArray(outcome?.inspection?.range)) {
+		const [min, max] = outcome.inspection.range;
+		const actual = Array.isArray(outcome.inspection.selected) ? outcome.inspection.selected.length : Array.isArray(outcome.value) ? outcome.value.length : 0;
+		return `selection: ${reason} (需选 ${min}..${max < 0 ? "不限" : String(max)} 项，实际 ${actual} 项)`;
+	}
+	return `selection: ${reason}`;
+}

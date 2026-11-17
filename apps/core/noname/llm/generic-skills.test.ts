@@ -195,6 +195,7 @@ test("Stage 2: 借刀杀人（defaultSelectTarget 加倍范围 + singleCard + fi
 			selectTarget: 1,
 			singleCard: true,
 			complexTarget: true,
+			targetprompt: ["被借刀", "出杀目标"],
 			filterAddedTarget: (_card: any, _player: any, target: any, preTarget: any) => preTarget.id === "p1_target" && target.id === "p2_target",
 		},
 	};
@@ -209,7 +210,12 @@ test("Stage 2: 借刀杀人（defaultSelectTarget 加倍范围 + singleCard + fi
 		player: f.owner,
 		selectTarget: defaultSelectTarget,
 		filterCard: () => true,
-		filterTarget: (_card: any, _owner: any, target: any) => target.id === "p1_target",
+		filterTarget: (card: any, owner: any, target: any) => {
+			if (f.ui.selected.targets.length > 0) {
+				return jiedao.info.filterAddedTarget(card, owner, target, f.ui.selected.targets[f.ui.selected.targets.length - 1]);
+			}
+			return target.id === "p1_target";
+		},
 	};
 	const snapshot = buildDecisionCandidateSnapshot(event, f.owner, f.runtime);
 	assert.equal(snapshot.actions.length, 1);
@@ -219,9 +225,15 @@ test("Stage 2: 借刀杀人（defaultSelectTarget 加倍范围 + singleCard + fi
 	const stage1 = session.accept(makeCall("use_card", { card_ref: "c0" }));
 	assert.deepEqual(stage1.pending?.range, [1, 1]);
 	assert.deepEqual(stage1.pending?.items.map(item => item.ref), ["p1"]);
+	assert.equal(stage1.pending?.instruction, "当前目标（1/2）：被借刀");
+	assert.throws(
+		() => session.accept(makeCall("select_targets", { step_id: stage1.pending!.id, target_refs: ["p2"] })),
+		/selection: unavailable \(p2 不可选；当前可选: p1\)/
+	);
 	const stage2 = session.accept(makeCall("select_targets", { step_id: stage1.pending!.id, target_refs: ["p1"] }));
 	assert.deepEqual(stage2.pending?.range, [1, 1]);
 	assert.deepEqual(stage2.pending?.items.map(item => item.ref), ["p2"]);
+	assert.equal(stage2.pending?.instruction, "当前目标（2/2）：出杀目标");
 	const done = session.accept(makeCall("select_targets", { step_id: stage2.pending!.id, target_refs: ["p2"] }));
 	assert.deepEqual(done.result, { bool: true, card: jiedao, cards: [jiedao], targets: [f.players[1], f.players[2]] });
 });

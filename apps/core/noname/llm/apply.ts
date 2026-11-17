@@ -1,16 +1,14 @@
-import { SelectionContext, SelectionSession, SelectionStep } from "@/library/selection/index.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
-import { assertSupportedTargetRules, resolveAuthoritativeTargetRange, resolveSkillActionPlan, type ActionCandidateRuntime, type CandidateAction, type DecisionCandidateSnapshot } from "./action-candidates.js";
-import { assertActionTargets, assertCardLegal, assertTargetLegal, buildDecisionLogResult, hasLegalDirectTargetCandidate, isCardOwned, isTargetCurrent, materializeResponseResult, requireAction, resolveActionCardRefs, resolveCandidateCards, resolveCandidateTargets, resolveCurrentAction, type ValidationRuntime } from "./decision-validation.js";
+import { resolveAuthoritativeTargetRange, resolveSkillActionPlan, type DecisionCandidateSnapshot } from "./action-candidates.js";
+import { assertActionTargets, assertCardLegal, assertTargetLegal, hasLegalDirectTargetCandidate, isCardOwned, isTargetCurrent, materializeResponseResult, requireAction, resolveCandidateCards, resolveCandidateTargets } from "./decision-validation.js";
 import type { ToolCallResult } from "./client.js";
-import { buildBackupStepDefinitions, getViewAsSource, materializeViewAsResult, mergeBackupSelectionSpecs, resolveViewAs, type BackupDecisionKind } from "./backup-protocol.js";
+import { buildBackupStepDefinitions, materializeViewAsResult, mergeBackupSelectionSpecs, resolveViewAs } from "./backup-protocol.js";
 import { materializeDirectResult } from "./direct-materializer.js";
-import { assertActionAllowed, parseActionProposal, selectionRequired, type ActionProposal } from "./protocol.js";
-import { actionResolution, deriveSimpleSteps, directSelectionDefinition, fail, labelFor, normalizeRange, resolveSelectionSpec, shortRefPrefix, type HeadlessSelectionSpec } from "./selection-adapter.js";
+import { assertActionAllowed, parseActionProposal, type ActionProposal } from "./protocol.js";
+import { actionResolution, directSelectionDefinition, fail, formatSelectionFailure, resolveSelectionSpec, type HeadlessSelectionSpec } from "./selection-adapter.js";
 import { DecisionSelection, type DecisionStage, type DecisionRuntime } from "./decision-selection.js";
-import { evalFilterTargetValue, evaluateSelectionSpec, isSingleCardAddedTarget, splitAddedTargetPrimaryRange } from "./generic-skill-plan.js";
+import { evaluateSelectionSpec, isSingleCardAddedTarget, splitAddedTargetPrimaryRange } from "./generic-skill-plan.js";
 import { withVirtualSelection } from "./legacy-bridge.js";
-import { matchesSelectionFilter } from "./selection-filter.js";
 export type { DecisionStage, DecisionRuntime } from "./decision-selection.js";
 
 export class DecisionSession extends DecisionSelection {
@@ -88,6 +86,7 @@ export class DecisionSession extends DecisionSelection {
 				steps.push({
 					id: `card:${cardRef}:target:0`,
 					type: "target",
+					selectionMode: "sequential",
 					select: primaryRange,
 					required: true,
 					filter: (target: any) => isTargetCurrent(this.event, target, this.runtime) && this.event.filterTarget?.(card, this.event.player, target) !== false,
@@ -198,44 +197,21 @@ export class DecisionSession extends DecisionSelection {
 		const plan = resolveSkillActionPlan(this.event, this.event.player, proposal.skillName, info);
 		if (!plan) fail(`use_skill: skill "${proposal.skillName}" has no headless selectionSpec`);
 		const spec = plan.spec;
-		if (spec.finalPredicate) this.installFinalPredicate(spec);
-		else if (!plan.generic && typeof info.filterOk === "function") fail(`use_skill: skill "${proposal.skillName}" has UI-dependent filterOk without finalPredicate`);
-		else this.installGenericSkillFilterOk(info);
-		// chooseButton 的 dialog/link 可能包含不可序列化对象。由 content 创建
-		// 后续 chooseButton 子事件；此处仅返回技能中间结果，绝不伪造最终选择。
+		this.skillInfo = info;
+		this.skillSpec = spec;
+		const semantics = this.resolveSkillSemantics(info, spec);
+		this.skillSemantics = semantics;
+		// chooseButton 的 dialog/link 可能包含不可序列化对象，由 content 创建后续子事件；跳过外层终验并仅返回技能名。
 		if (info.chooseButton && !spec.steps) {
-			this.finalizeOrFail();
+			if (!plan.generic && typeof info.filterOk === "function" && !spec.finalPredicate) fail(`use_skill: skill "${proposal.skillName}" has UI-dependent filterOk without finalPredicate`);
 			return { result: { bool: true, skill: proposal.skillName, cards: [], targets: [] } };
 		}
+		this.installSkillFilterOk(info, spec, semantics, !plan.generic);
 		this.stages = this.registerSkillSteps(spec, info, plan.steps);
 		this.consumeInitialSkillSelections(proposal);
 		if (this.stage) return { pending: this.stage };
 		this.finalizeOrFail();
-		return { result: this.materializeSkill() };
-	}
-
-	private installBackupFinalPredicate(info: any, spec: HeadlessSelectionSpec, explicitSpec: boolean): void {
-		if (explicitSpec && typeof this.event._backup?.filterOk === "function") fail(`backup: skill "${this.event.skill}" has an unsupported outer filterOk`);
-		if (explicitSpec && typeof info.filterOk === "function" && !spec.finalPredicate) fail(`backup: skill "${this.event.skill}" has UI-dependent filterOk without finalPredicate`);
-		this.selection.filterOk = context =>
-			this.withBridge(context, undefined, undefined, () => {
-				const cards = this.selectedValues("card")
-					.map(ref => this.cardMap.get(ref)?.card)
-					.filter(Boolean);
-				const { source, definition } = resolveViewAs(spec, info, cards, this.event.player);
-				if (source) {
-					if (!definition) return false;
-					const card = this.runtime.autoViewAs(definition, cards);
-					if (typeof this.event._backup?.filterCard === "function" && this.event._backup.filterCard(card, this.event.player, this.event) === false) return false;
-				}
-				if (spec.finalPredicate) return spec.finalPredicate(context, this.event, this.event.player) !== false;
-				if (!explicitSpec) {
-					if (typeof info.filterOk === "function") return !!info.filterOk();
-					if (typeof this.event.filterOk === "function") return !!this.event.filterOk();
-				}
-				return true;
-			});
-		if (explicitSpec || spec.finalPredicate) this.hasExplicitFinalPredicate = true;
+		return { result: this.materializeSkillDecision("use_skill") };
 	}
 
 	private acceptStage(toolCall: ToolCallResult): { pending?: DecisionStage; result?: any } {
@@ -251,11 +227,11 @@ export class DecisionSession extends DecisionSelection {
 		const inspection = this.selection.evaluate(stage.id).inspection;
 		if (inspection?.automatic && refs.length && (refs.length !== inspection.automaticSelected.length || refs.some((ref: string, index: number) => ref !== inspection.automaticSelected[index]))) fail("selection: automatic selection contains stale or incomplete references");
 		const outcome = this.selection.setSelection(stage.id, refs);
-		if (!outcome.ok) fail(`selection: ${outcome.reason || outcome.status}`);
+		if (!outcome.ok) fail(formatSelectionFailure(outcome, inspection));
 		this.currentStageIndex++;
 		if (this.stage) return { pending: this.stage };
 		this.finalizeOrFail();
-		return { result: this.directUseCard ? this.materializeDirectUseCard() : this.responseCard ? this.materializeResponse() : this.backupKind ? this.materializeBackup() : this.directKind ? this.materializeDirect() : this.materializeSkill() };
+		return { result: this.directUseCard ? this.materializeDirectUseCard() : this.responseCard ? this.materializeResponse() : this.backupKind ? this.materializeSkillDecision("backup") : this.directKind ? this.materializeDirect() : this.materializeSkillDecision("use_skill") };
 	}
 
 	private initializeBackupSelection(): boolean {
@@ -271,14 +247,18 @@ export class DecisionSession extends DecisionSelection {
 		this.backupKind = this.event.name;
 		this.backupInfo = info;
 		this.backupSpec = spec;
+		this.skillInfo = info;
+		this.skillSpec = spec;
+		const semantics = this.resolveSkillSemantics(info, spec);
+		this.skillSemantics = semantics;
 		const steps = buildBackupStepDefinitions(this.event, info, spec, {
-			cardFilter: card => isCardOwned(this.event, card, this.runtime) && (typeof this.event.filterCard === "function" ? this.event.filterCard(card, this.event.player, this.event) !== false : this.event.filterCard !== false),
-			targetFilter: target => isTargetCurrent(this.event, target, this.runtime) && (typeof this.event.filterTarget === "function" ? this.event.filterTarget(this.currentViewAsCard(info, spec), this.event.player, target) !== false : this.event.filterTarget !== false),
+			cardFilter: card => isCardOwned(this.event, card, this.runtime) && semantics.isMaterialCardEligible(card, this.event),
+			targetFilter: target => isTargetCurrent(semantics.baseEvent, target, this.runtime, semantics.resolveTargetLiveness(this.selectedCards())) && semantics.isSkillTargetFilterMatch(target, this.selectedCards()),
 			targetSelect: () => this.viewAsTargetRange(info, spec),
-			deferTarget: !!(getViewAsSource(spec, info) || this.event.complexTarget || this.event.complexSelect || info?.complexTarget || info?.complexSelect),
+			deferTarget: !!(semantics.hasViewAs || semantics.complexTarget || semantics.complexSelect),
 		});
 		for (const step of steps) if (step.type === "card" && !step.items) step.items = this.candidates.cards.map(card => card.ref);
-		this.installBackupFinalPredicate(info, spec, explicitSpec);
+		this.installSkillFilterOk(info, spec, semantics, explicitSpec);
 		this.stages = this.registerSkillSteps({ ...spec, steps }, info);
 		if (!this.stages.length) fail(`backup: skill "${this.event.skill}" has no selection stages`);
 		return true;

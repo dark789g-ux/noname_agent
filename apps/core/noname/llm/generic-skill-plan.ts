@@ -1,3 +1,5 @@
+import { resolveBaseEvent } from "./skill-backup-semantics.js";
+
 export const COMPLEX_TARGET_KEYS = ["complexSelect", "complexTarget", "filterAddedTarget", "changeTarget"] as const;
 
 export interface EvaluatedSelectionSpec {
@@ -67,7 +69,7 @@ export function deriveSkillSteps(info: any, includeViewAsCardFallback: boolean):
 		steps.push({ type: "card" });
 	}
 	if (isSingleCardAddedTarget(info)) {
-		steps.push({ type: "target", role: "primary" });
+		steps.push({ type: "target", role: "primary", selectionMode: "sequential" });
 		steps.push({ type: "target", role: "added", select: 1, addedTargetFilter: true });
 	} else if (info?.selectTarget !== undefined || info?.filterTarget !== undefined) {
 		steps.push({ type: "target" });
@@ -95,20 +97,23 @@ export function resolveUnifiedSkillPlan(
 
 	const generic = evaluated.mode === "generic";
 	const spec = generic ? {} : evaluated.spec;
+	const baseEvent = resolveBaseEvent(event);
+	const viewAs = spec.viewAs ?? info.viewAs;
+	const hasViewAs = Boolean(viewAs);
 
 	if (!generic && typeof info.filterOk === "function" && !spec.finalPredicate) {
 		onFail(`skill "${skill}" has UI-only filterOk`);
 	}
 	if (!generic) {
-		assertSupportedTargetRules(event, `skill "${skill}" event`, onFail);
+		if (hasViewAs) assertSupportedTargetRules(baseEvent, `skill "${skill}" event`, onFail);
 		if (!spec.orderedTargets || !spec.steps?.some((step: any) => step.type === "target" && step.selectionMode === "sequential" && typeof step.filter === "function")) {
 			assertSupportedTargetRules(info, `skill "${skill}"`, onFail);
 		}
 	}
 
-	const viewAs = spec.viewAs ?? info.viewAs;
-	const rawSteps = !generic && spec.steps !== undefined ? spec.steps : deriveSkillSteps(info, !generic);
-	const isSequentialTarget = generic && !isSingleCardAddedTarget(info) && (hasComplexTargetFlags(info) || hasComplexTargetFlags(event));
+	const includeViewAsCardFallback = Boolean(hasViewAs && (baseEvent?.filterCard !== undefined || baseEvent?.selectCard !== undefined || viewAs));
+	const rawSteps = !generic && spec.steps !== undefined ? spec.steps : deriveSkillSteps({ ...info, viewAs }, includeViewAsCardFallback);
+	const isSequentialTarget = generic && !isSingleCardAddedTarget(info) && (hasComplexTargetFlags(info) || (hasViewAs && hasComplexTargetFlags(baseEvent)));
 	const steps = rawSteps.map((step: any, index: number) => {
 		const normalized = normalizeSelectionStep(step, skill, index, onFail);
 		if (generic && normalized.type === "card" && !normalized.selectionMode) {
@@ -121,7 +126,7 @@ export function resolveUnifiedSkillPlan(
 	});
 
 	let targetDeferred = false;
-	if (viewAs && event.name === "chooseToUse" && !steps.some((step: any) => step.type === "target") && (event.filterTarget || event.selectTarget !== undefined || event.targetRequired)) {
+	if (hasViewAs && event.name === "chooseToUse" && !steps.some((step: any) => step.type === "target") && (baseEvent.filterTarget !== undefined || baseEvent.selectTarget !== undefined || baseEvent.targetRequired)) {
 		steps.push({
 			id: `skill:${skill}:target:${steps.length}`,
 			type: "target",
@@ -150,8 +155,9 @@ export function resolveUnifiedSkillPlan(
 				typeof targetStep.items === "function" ||
 				(generic &&
 					(info.complexCard ||
+						(hasViewAs && baseEvent.complexCard) ||
 						hasComplexTargetFlags(info) ||
-						hasComplexTargetFlags(event) ||
+						(hasViewAs && hasComplexTargetFlags(baseEvent)) ||
 						(cardStep && typeof info.selectTarget === "function") ||
 						(cardStep && typeof info.filterTarget === "function")))))
 	) {
