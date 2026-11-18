@@ -1,0 +1,446 @@
+.card.fullskin > .background {
+	display: none !important;
+}
+.card:not(.fullskin) > .image {
+	display: none !important;
+}
+.card.fullskin > .name {
+	top: 8px;
+	left: 7px;
+	/*border:1px solid #631515;*/
+	border-radius: 4px;
+	padding-top: 3px;
+	padding-bottom: 3px;
+	/*color:#631515;*/
+	border: 1px solid rgb(74, 29, 1);
+	color: rgb(74, 29, 1);
+	text-shadow: none;
+	text-align: center;
+	line-height: 18px;
+}
+.cardbg,
+.button.character.cardbg {
+	color: rgb(74, 29, 1);
+	text-shadow: none;
+}
+.card.fullskin > .name.long {
+	top: 5px;
+}
+.card.fullskin.thunder > .name {
+	color: #152e63;
+	border: 1px solid #152e63;
+}
+.card.fullskin.kami > .name {
+	color: #1f3c38;
+	border: 1px solid #1f3c38;
+}
+.card.fullskin.ice > .name {
+	color: #3b6273;
+	border: 1px solid #3b6273;
+}
+.card.fullskin.fire > .name {
+	color: #631515;
+	border: 1px solid #631515;
+}
+.card.fullskin.poison > .name {
+	color: #00312d;
+	border: 1px solid #00312d;
+}
+.card.fullskin.epic > .name {
+	color: white;
+	background: rgba(0, 66, 165, 0.6);
+	border: 1px solid rgba(0, 66, 165, 1);
+	box-shadow: rgba(0, 0, 0, 0.4) 0 0 10px inset;
+}
+.card.fullskin.epic > .name2 {
+	color: rgb(117, 186, 255);
+}
+.card.fullskin.legend > .name {
+	color: white;
+	background: rgba(106, 27, 154, 0.6);
+	border: 1px solid rgb(158, 102, 0);
+	box-shadow: rgba(0, 0, 0, 0.4) 0 0 10px inset;
+}
+.card.fullskin.legend > .name2 {
+	color: rgb(233, 131, 255);
+	/*color: rgb(117,186,0);*/
+}
+.card.fullskin.gold > .name {
+	color: white;
+	text-shadow: black 0 0 1px, rgba(0, 0, 0, 0.5) 0 0 1px;
+	background: rgba(234, 158, 0, 0.6);
+	border: 1px solid rgb(134, 87, 1);
+	box-shadow: rgba(255, 149, 0, 0.4) 0 0 10px inset;
+}
+.card.fullskin.gold > .name2 {
+	color: rgb(255, 235, 59);
+}
+.card.fullskin > .info {
+	top: 5.2px;
+	right: 7px;
+	color: rgba(0, 0, 0, 0.8);
+	white-space: nowrap;
+	text-shadow: none;
+}
+.card.fullskin > .info.red {
+	color: #a82424;
+}
+
+.card[data-card-type="zhanfa"] > .image {
+	background-size: 75%;
+	background-position: bottom right;
+	background-repeat: no-repeat;
+}
+
+.card.zf_common > .name,
+.card.zf_common > .info,
+.card.zf_rare > .name,
+.card.zf_rare > .info,
+.card.zf_epic > .name,
+.card.zf_epic > .info,
+.card.zf_legend > .name,
+.card.zf_legend > .info {
+	/*background-color: #59392b;
+	color: white;*/
+	font-weight: bolder;
+}
+
+.card.zf_common {
+	border: 2px solid #59392b;
+	filter: drop-shadow(0 0 10px #59392b);
+}
+
+.card.zf_rare {
+	border: 2px solid #5d3c77;
+	filter: drop-shadow(0 0 10px #5d3c77);
+}
+
+.card.zf_epic {
+	border: 2px solid #af572a;
+	filter: drop-shadow(0 0 10px #af572a);
+}
+
+.card.zf_legend {
+	border: 2px solid #b0293e;
+	filter: drop-shadow(0 0 10px #b0293e);
+}
+
+.config > .toggle.onoff {
+	height: 100%;
+	width: 30px;
+	display: inline-flex;
+}
+.config > .toggle.onoff > div {
+	height: 12px;
+	width: 100%;
+	border: 1px solid white;
+	border-radius: 12px;
+	box-shadow: black 0 0 2px, black 0 0 1px inset;
+	margin: auto;
+	overflow: hidden;
+	transition-property: none;
+}
+.config > .toggle.onoff > div > div {
+	transition-property: left;
+}
+.config > .toggle.onoff:not(.on) > div,
+.config.disabled {
+	opacity: 0.4;
+}
+.menubutton.large.disabled {
+	opacity: 0.5;
+}
+.menubutton.large.smallfont {
+	font-size: 22px !important;
+	text-indent: -2px;
+}
+.config > .toggle.onoff > div > div {
+	width: 8px;
+	height: 8px;
+	border-radius: 100%;
+	position: absolute;
+	left: 1px;
+	top: 1px;
+	background: white;
+	border: 1px solid white;
+	box-shadow: black 0 0 2px;
+}
+.config > .toggle.onoff.on > div > div {
+	left: calc(100% - 11px);
+}
+
+#arena > .skillbar {
+	width: 65px;
+	height: 65px;
+	border-radius: 100% !important;
+	font-size: 55px;
+	font-family: "huangcao";
+	top: calc(50% - 110px);
+	line-height: 65px;
+	text-align: center;
+}
+#arena > .skillbar.left {
+	left: 0;
+	right: auto;
+}
+#arena > .skillbar.right {
+	right: 0;
+	left: auto;
+}
+#arena > .skillbar > div {
+	border-radius: 100%;
+	width: 55px;
+	height: 55px;
+	position: absolute;
+	margin: 0;
+	padding: 0;
+	left: 5px;
+	top: 5px;
+	overflow: hidden;
+}
+#arena > .skillbar > .skillbarshadow {
+	box-shadow: 0px 0px 8px #222 inset;
+	z-index: 1;
+}
+#arena > .skillbar > .skillbarfill > div {
+	box-shadow: 0px 0px 10px #555 inset, rgba(0, 0, 0, 0.05) 0 0 0 1px;
+	width: 200%;
+	height: 200%;
+	position: absolute;
+	margin: 0;
+	padding: 0;
+	background-color: rgba(63, 119, 173, 1);
+	left: -50%;
+	top: 100%;
+}
+#arena > .skillbar.full > .skillbarfill > div {
+	box-shadow: none;
+	background-color: red;
+}
+/* #arena>.skillbar.full { */
+/*transform: scale(1.1);*/
+/*box-shadow: rgba(0, 0, 0, 0.1) 0 0 0 1px, rgba(0, 0, 0, 0.45) 0 3px 10px;
+	-webkit-animation:skillbarglow 3s infinite;*/
+/* } */
+#arena > .skillbar > .skillbartext {
+	font-family: "xinwei";
+	font-size: 35px;
+	width: 100%;
+	text-align: center;
+	height: 35px;
+	line-height: 40px;
+	overflow: visible;
+	margin: 0;
+	padding: 0;
+	left: 0;
+	top: 15px;
+	z-index: 2;
+	opacity: 0;
+}
+
+.firetext {
+	color: rgb(255, 119, 63);
+}
+.yellowtext {
+	color: #ffff7a;
+}
+.bluetext {
+	color: rgb(150, 202, 255);
+}
+.greentext {
+	color: rgb(104, 221, 127);
+}
+.icetext {
+	color: rgb(59, 98, 115);
+}
+.thundertext,
+.controlthundertext {
+	color: rgb(117, 186, 255);
+}
+.kamitext {
+	color: rgb(90, 118, 99);
+}
+.whitetext .thundertext {
+	color: white;
+}
+.poisontext {
+	color: rgb(104, 221, 127);
+}
+.browntext {
+	color: rgb(195, 161, 223);
+}
+.legendtext {
+	color: rgb(233, 131, 255);
+}
+
+#window > canvas.fun {
+	position: absolute;
+	left: 0;
+	top: 0;
+	z-index: -2;
+	pointer-events: none;
+}
+#window.canvas_top > canvas.fun {
+	z-index: 20;
+}
+.coin_menu .content > .caption > .coin_buy {
+	line-height: 36px;
+	font-family: "xinwei";
+	font-size: 24px;
+}
+.coin_menu .content > .caption > .coin_buy > .menubutton {
+	width: auto;
+	position: relative;
+	float: right;
+	padding-left: 5px;
+	padding-right: 5px;
+	height: auto;
+	font-size: 24px;
+	margin-left: 10px;
+}
+.coin_menu .content > .caption > .coin_buy > .menubutton.disabled {
+	opacity: 0.5;
+}
+
+.wunature {
+	font-family: "huangcao", "xinwei";
+	font-size: 24px;
+	color: white !important;
+	pointer-events: none;
+}
+.player .wunature {
+	left: 14px;
+	display: none;
+	top: auto;
+	bottom: 14px;
+}
+#arena > .player .wunature,
+#chess > .player .wunature {
+	display: block;
+}
+/* div:hover>.wunature { */
+/*opacity: 0.5;*/
+/* } */
+.button.noclick .wunature,
+.player.treasure .wunature {
+	display: none !important;
+}
+
+.player .actcount.hp {
+	left: 216px;
+	top: 9px;
+	width: 20px;
+}
+.player .actcount.hp > div {
+	width: 12px;
+	height: 12px;
+	margin-left: 4px;
+	margin-bottom: 3px;
+	animation: game_start 0.5s;
+	-webkit-animation: game_start 0.5s;
+}
+
+.player {
+	top: 47px;
+	left: 14px;
+}
+.cardsetion {
+	left: 1px;
+	width: calc(100% - 2px);
+	color: #fff;
+	text-shadow: 1px 1px black;
+	font-size: 15px;
+	bottom: 9%;
+	text-align: center;
+	z-index: 2;
+	pointer-events: none;
+}
+.card.tempname.tempimage {
+	opacity: 1 !important;
+}
+.card .wunature {
+	top: 74px;
+	right: 6px;
+}
+.tempname {
+	color: white !important;
+	font-size: 22px;
+	left: 6px;
+	pointer-events: none;
+	top: 6px;
+}
+.tempname.vertical {
+	left: 4px;
+	top: 8px;
+	writing-mode: vertical-rl;
+	-webkit-writing-mode: vertical-rl;
+}
+.tempname.tempimage {
+	top: calc(50% - 12.5px);
+	left: 2px;
+	width: calc(100% - 4px);
+	height: 25px;
+	background-image: url("../../../image/card/cardtempname_bg.png");
+	background-size: 100% 100%;
+	text-align: right;
+	writing-mode: horizontal-tb;
+	-webkit-writing-mode: horizontal-tb;
+}
+.tempname.tempimage:not([data-nature]) {
+	color: black !important;
+	text-shadow: white 0 0 2px, white 0 0 3px;
+}
+.tempname.tempimage > div {
+	width: 100%;
+	height: 100%;
+	top: 0;
+	left: 0;
+	background-size: 100%;
+	background-position: -20px -30px;
+	background-repeat: no-repeat;
+}
+.tempname.tempimage > span {
+	position: relative;
+	z-index: 1;
+	line-height: 25px;
+}
+.button > .tempname {
+	font-size: 17px;
+}
+.button > .tempname:not(.tempimage) {
+	left: 5px;
+	top: 5px;
+}
+.button > .tempname .vertical {
+	left: 3px;
+	top: 6px;
+}
+.tempname.kami:not([data-nature]) > span {
+	color: #1f3c38;
+}
+.tempname.ice:not([data-nature]) > span {
+	color: #3b6273;
+}
+.tempname.fire:not([data-nature]) > span {
+	color: #631515;
+}
+.tempname.thunder:not([data-nature]) > span {
+	color: #152e63;
+}
+.tempname.poison:not([data-nature]) > span {
+	color: #00312d;
+}
+/*.card.equip1 .wunature,
+.card.equip3 .wunature,
+.card.equip4 .wunature{
+	top:56px;
+	right:4px;
+}*/
+.card .addinfo {
+	bottom: 6px;
+	left: 6px;
+}
+
+.button.card .wunature {
+	top: 59px;
+}

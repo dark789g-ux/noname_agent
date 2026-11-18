@@ -1,0 +1,49 @@
+
+.command-console {
+	position: relative;
+}
+.command-float-btn {
+	position: absolute;
+	top: 15px;
+	right: 15px;
+}
+.command-float-btn.run-btn {
+	right: 15px;
+}
+.command-float-btn.clear-btn {
+	right: 55px;
+}
+.command-output {
+	width: 194px;
+	height: 124px;
+	padding: 3px;
+	border-radius: 2px;
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px;
+	text-align: left;
+	-webkit-user-select: initial;
+	user-select: initial;
+	overflow: scroll;
+	position: absolute;
+	left: 30px;
+	top: 50px;
+	word-break: break-all;
+}
+.command-output pre.fullsize {
+	margin: 0;
+	padding: 0;
+	position: relative;
+	-webkit-user-select: text;
+	user-select: text;
+}
+.command-input {
+	width: 200px;
+	height: 20px;
+	padding: 0;
+	position: absolute;
+	top: 15px;
+	left: 30px;
+	resize: none;
+	border: none;
+	border-radius: 2px;
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px;
+}

@@ -1,0 +1,15 @@
+
+.llm-session-marker[data-v-b3f9653a], .llm-session-marker div[data-v-b3f9653a] { position: static !important;
+}
+.llm-session-marker[data-v-b3f9653a] { display: flex; align-items: center; gap: 8px; margin: 6px 2px; font-size: 11px; color: #7f8896;
+}
+.marker-line[data-v-b3f9653a] { flex: 1 1 auto; height: 1px; background: #343942;
+}
+.marker-pill[data-v-b3f9653a] { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; background: #262a31; border: 1px solid #383e48; white-space: nowrap;
+}
+.kind-session_rebuild .marker-pill[data-v-b3f9653a] { color: #8ec0ff; border-color: #35587d; background: rgba(74, 158, 255, 0.1);
+}
+.kind-incremental .marker-pill[data-v-b3f9653a] { color: #83d497; border-color: #325e3f; background: rgba(76, 175, 80, 0.08);
+}
+.kind-degraded .marker-pill[data-v-b3f9653a] { color: #ffcc80; border-color: #7c521b; background: rgba(255, 152, 0, 0.1);
+}

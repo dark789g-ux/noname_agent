@@ -1,0 +1,440 @@
+/*--------卡牌--------*/
+.card {
+	width: 104px;
+	height: 104px;
+	margin-top: 8px;
+	margin-left: 4px;
+	margin-right: 4px;
+	position: relative;
+	/*overflow: hidden;*/
+}
+.card > .info {
+	top: 5.2px;
+	right: 7px;
+	white-space: nowrap;
+	word-spacing: -0.1em;
+}
+.card > .range {
+	bottom: 5px;
+	right: 5px;
+	text-align: right;
+	text-shadow: rgba(213, 194, 179, 1) 0 0 3px, rgba(213, 194, 179, 1) 0 0 3px, rgba(213, 194, 179, 1) 0 0 3px, rgba(213, 194, 179, 1) 0 0 3px, black 0 0 3px;
+}
+.card > .gaintag {
+	bottom: 5px;
+	left: 5px;
+	text-align: left;
+	color: white;
+	text-shadow: rgba(255, 120, 0, 1) 0 0 2px, rgba(255, 120, 0, 1) 0 0 2px, rgba(255, 120, 0, 1) 0 0 2px, rgba(255, 120, 0, 1) 0 0 2px, black 0 0 1px;
+}
+.card > .name {
+	top: 9px;
+	left: 6px;
+	text-align: center;
+	white-space: nowrap;
+	writing-mode: vertical-rl;
+	-webkit-writing-mode: vertical-rl;
+}
+.card.fullimage > .name.long {
+	top: 6px;
+}
+.card > .name2 {
+	display: none;
+}
+.card > .intro {
+	top: 85px;
+	right: 0;
+}
+.card.fullborder > .name {
+	font-family: "xinwei";
+}
+.card.dctuoyu-fengtian-glow:before {
+	opacity: 0.2;
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgb(228, 146, 64) 0 0 5px;
+	background-color: #e49240;
+	-webkit-filter: blur(3px);
+	filter: blur(3px);
+}
+.card.dctuoyu-qingqu-glow:before {
+	opacity: 0.2;
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgb(0, 139, 139) 0 0 5px;
+	background-color: #008b8b;
+	-webkit-filter: blur(3px);
+	filter: blur(3px);
+}
+.card.dctuoyu-junshan-glow:before {
+	opacity: 0.2;
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgb(16, 160, 16) 0 0 5px;
+	background-color: #10a010;
+	-webkit-filter: blur(3px);
+	filter: blur(3px);
+}
+.handcards.yao_yaoyi > .card.yao_yaoyi {
+	background-image: var(--cardback-url) !important;
+	background-size: 100% 100% !important;
+	background-position: center !important;
+}
+.handcards.yao_yaoyi > .card.yao_yaoyi > * {
+	visibility: hidden !important;
+}
+.card > .cardframebg {
+	width: 100%;
+	height: 100%;
+	left: 0;
+	top: 0;
+	position: absolute;
+	background-size: 100% 100%;
+	border-radius: 8px;
+}
+#window[data-radius_size="reduce"] .card > .cardframebg {
+	border-radius: 4px;
+}
+#window[data-radius_size="increase"] .card > .cardframebg {
+	border-radius: 16px;
+}
+#window[data-radius_size="off"] .card > .cardframebg {
+	border-radius: 0;
+}
+.card > .cardframebg[data-auto="gold"] {
+	background-image: url("../../../theme/style/card/image/border_gold.jpg");
+}
+.card > .cardframebg[data-auto="silver"] {
+	background-image: url("../../../theme/style/card/image/border_silver.jpg");
+}
+.card > .cardframebg[data-auto="bronze"] {
+	background-image: url("../../../theme/style/card/image/border_bronze.jpg");
+}
+.card > .cardframebg[data-auto="wood"] {
+	background-image: url("../../../theme/style/card/image/border_wood.jpg");
+}
+.card > .cardframebg[data-auto="map"] {
+	background-image: url("../../../theme/style/card/image/border_map.jpg");
+}
+.card > .cardavatar {
+	width: calc(100% - 6px);
+	height: calc(100% - 6px);
+	left: 3px;
+	top: 3px;
+	position: absolute;
+	border-radius: 6px;
+	pointer-events: none;
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px inset, rgba(0, 0, 0, 0.45) 0 0 10px inset;
+}
+
+/*卡牌转化动画*/
+.card .initmask {
+--flow-radius: 10px;
+    width: calc(100% - var(--flow-radius));
+    height: calc(100% - var(--flow-radius));
+    margin: calc(var(--flow-radius) / 2);
+    background: white;
+    box-shadow: white 0 0 calc(var(--flow-radius) / 2) calc(var(--flow-radius) / 2);
+}
+
+#window[data-radius_size="reduce"] .card > .cardavatar {
+	border-radius: 3px;
+}
+#window[data-radius_size="off"] .card > .cardavatar {
+	border-radius: 0px;
+}
+#window[data-radius_size="increase"] .card > .cardavatar {
+	border-radius: 14px;
+}
+
+div:not(.handcards):not(.handcards-container) > .card:not(.thrown) > .info,
+div:not(.handcards):not(.handcards-container) > .card:not(.thrown) > .name,
+.handcards > .card:last-child > .info,
+.handcards > .card:last-child > .name,
+.handcards-container > .card:last-child > .info,
+.handcards-container > .card:last-child > .name {
+	transform: none !important;
+}
+
+div:not(.handcards).menu-buttons > .button.card > .name {
+	transform: scale(0.9) !important;
+	transform-origin: top left;
+}
+div:not(.handcards).menu-buttons > .button.card > .info {
+	transform: scale(0.9) !important;
+	transform-origin: top right;
+}
+div:not(.handcards).menu-buttons > .card-pack-buttons > .button.card > .name {
+	transform: scale(0.9) !important;
+	transform-origin: top left;
+}
+div:not(.handcards).menu-buttons > .card-pack-buttons > .button.card > .info {
+	transform: scale(0.9) !important;
+	transform-origin: top right;
+}
+div:not(.handcards) > .card:not(.thrown) > .info > span,
+.handcards > .card:last-child > .info > span {
+	display: inline !important;
+}
+
+.card > .image {
+	width: 100%;
+	height: 100%;
+	position: absolute;
+	left: 0;
+	top: 0;
+	background-size: cover;
+}
+.card.infohidden > div {
+	display: none !important;
+}
+.card.fullimage.infohidden {
+	background-image: var(--cardback-url) !important;
+	background-size: 100% 100% !important;
+	background-position: center !important;
+	background-repeat: no-repeat !important;
+}
+.card.cardflip {
+	animation: cardflip 0.3s ease-out;
+	animation-fill-mode: none;
+	-webkit-animation: cardflip 0.3s ease-out;
+	-webkit-animation-fill-mode: none;
+}
+.player .playerjiu {
+	animation: game_start 0.5s;
+	-webkit-animation: game_start 0.5s;
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	left: 0;
+	top: 0;
+	z-index: 4;
+	pointer-events: none;
+	background: rgba(255, 0, 0, 0.3);
+}
+.player.playerbright {
+	filter: brightness(1.2);
+	-webkit-filter: brightness(1.2);
+}
+.player.playerflip {
+	animation: playerflip 0.3s ease-out;
+	-webkit-animation: playerflip 0.3s ease-out;
+}
+
+div.select-all:not(.card):not(.player) {
+	right: 0px;
+	position: absolute;
+	background: rgba(0, 0, 0, 0.6);
+	font-size: 16px;
+	z-index: 7;
+	padding: 6px 8px;
+}
+.button.card.button > .intro {
+	top: 69px;
+}
+.buttons {
+	width: 100%;
+}
+.buttons.guanxing:not(.pointerdiv) {
+	min-height: 106px;
+	width: calc(100% - var(--contentdiv-margin-left) - var(--contentdiv-margin-right));
+	box-sizing: border-box;
+}
+.buttons.smallzoom {
+	display: block;
+	/* zoom: 0.65; */
+}
+.buttons .card.button > .name {
+	transform: scale(0.8);
+	transform-origin: top left;
+}
+.buttons.scrollbuttons {
+	white-space: nowrap;
+	overflow-x: scroll;
+	overflow-y: hidden;
+	width: 100%;
+	margin-left: 0px;
+	margin-right: 0px;
+}
+.buttons.scrollbuttons:not(.popup) .button:first-child {
+	margin-left: 12px;
+}
+.buttons.scrollbuttons:not(.popup) .button:last-child {
+	margin-right: 12px;
+}
+/*.buttons.smallzoom .card.button>.name,
+.buttons.smallzoom .card.button>.info{
+	transform: scale(0.8) !important;
+}
+.buttons.smallzoom .card.button>.range{
+	transform: scale(0.8);
+	transform-origin: bottom right;
+}*/
+.buttons .card.button > .info {
+	transform: scale(0.8);
+	transform-origin: top right;
+}
+.buttons .card.button > .addinfo {
+	transform: scale(0.8);
+	transform-origin: bottom left;
+}
+
+.dialog .buttons > .button.character,
+.button.character.longcharacter {
+	height: 108px;
+	background-size: cover;
+}
+.dialog .buttons > .button.character > .name,
+.button.character.longcharacter > .name {
+	overflow: visible;
+}
+.dialog .buttons > .button.character > .name.long {
+	transform: scale(0.95);
+	transform-origin: top left;
+}
+.dialog .buttons > .card > .name {
+	font-size: 14px;
+	line-height: 16px;
+}
+.dialog .buttons > .card > .name.long {
+	top: 3px;
+}
+.card.center {
+	top: calc(50% - 52px);
+	left: calc(50% - 52px);
+}
+.card > .background {
+	font-size: 80px;
+	height: 80px;
+	padding-top: 14px;
+	text-align: center;
+}
+
+.card.fullimage > div:not(.background),
+.card.fullborder > div:not(.background) {
+	color: white;
+	text-shadow: black 0px 0px 2px;
+}
+.card.fullimage > .name {
+	line-height: 18px;
+}
+
+.equips > .card > .background {
+	font-size: 36px;
+	height: 36px;
+	padding-top: 3px;
+}
+#window.low_performance #arena .player .equips,
+#window.low_performance #arena .player .name {
+	transition: all 0s;
+}
+
+.judges > .card > .background,
+.marks > .card > .background {
+	font-size: 20px;
+	height: 20px;
+	padding-top: 3px;
+}
+.judges > .card.fakejudge.fullskin > .image {
+	display: none !important;
+}
+.judges > .card.fakejudge.fullskin > .background,
+.judges > .card.fakejudge.fullborder > .background,
+.marks > .card.fakemark.fullborder > .background {
+	display: block !important;
+	font-family: "huangcao" !important;
+	padding-top: 4px !important;
+}
+.judges:empty {
+	pointer-events: none;
+}
+
+.mark-container.marks {
+	left: 0;
+	top: 0;
+	position: relative;
+	margin-bottom: 0;
+	margin-top: 0;
+}
+.mark-container.marks > div {
+	position: relative !important;
+	margin: 8px;
+	width: 48px !important;
+	height: 48px !important;
+}
+.mark-container.marks > .card > .background.skillmark,
+.mark-container.marks > .card.fakemark.fullborder > .background {
+	padding-top: calc(17px / 2) !important;
+	/* zoom: 2; */
+}
+.mark-container.marks > .card.overflowmark {
+	overflow: visible;
+}
+.mark-container.marks > div > .markcount.menubutton {
+	font-size: 12px;
+	width: 16px;
+	height: 16px;
+	line-height: 18px;
+	position: absolute;
+	left: 36px;
+	top: 34px;
+	border-radius: 100%;
+}
+.mark-container.marks > .card.fullskin > .image {
+	background-size: 100%;
+	background-position: 0 0;
+}
+.mark-container.marks > .card.fullskin > .info {
+	transform: scale(0.6) !important;
+	transform-origin: top right;
+	left: auto !important;
+	right: 3px !important;
+	display: block;
+	top: 2px;
+}
+.mark-container.marks > .card.fullskin > .name {
+	transform: scale(0.5) !important;
+	transform-origin: top left;
+	left: 3px !important;
+	display: block;
+	top: 3px !important;
+}
+.mark-container.marks > .card.fullskin > .name.long {
+	transform: scale(0.48) !important;
+	top: 1px !important;
+}
+
+.button.card > .background {
+	font-size: 68px;
+	height: 68px;
+	padding-top: 12px;
+}
+.card > .background {
+	font-family: "xiaozhuan";
+}
+.card > .background.tight {
+	letter-spacing: -0.2em;
+}
+.marks > .card > .background.skillmark {
+	font-family: "huangcao", "xinwei";
+	padding-top: 4px;
+}
+.marks > .card.overflowmark {
+	overflow: visible;
+}
+.marks > div > .markcount.menubutton {
+	font-family: "xinwei";
+	font-size: 9px;
+	width: 12px;
+	height: 12px;
+	padding: 0;
+	line-height: 14px;
+	position: absolute;
+	left: 16px;
+	top: 14px;
+	border-radius: 100%;
+	z-index: 1;
+	display: block !important;
+}
+
+#arena.oldlayout .player:not(.linked2) .marks > div:first-child,
+#arena.oldlayout:not(.nolink) .player .marks > div:first-child,
+#arena.oldlayout .player .marks .removing {
+	transform: scale(0.2);
+	opacity: 0;
+	pointer-events: none;
+}

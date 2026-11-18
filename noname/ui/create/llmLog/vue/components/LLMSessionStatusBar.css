@@ -1,0 +1,33 @@
+
+.llm-session-status-bar[data-v-f5256024], .llm-session-status-bar div[data-v-f5256024] { position: static !important;
+}
+.llm-session-status-bar[data-v-f5256024] { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; background: #22252a; border-bottom: 1px solid #3a3f47; font-size: 11px; color: #c7ccd4; flex-wrap: wrap;
+}
+.status-main[data-v-f5256024] { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; min-width: 0;
+}
+.seat-name[data-v-f5256024] { font-weight: bold; color: #e8ecf2;
+}
+.seat-tag[data-v-f5256024] { color: #8c96a4;
+}
+.sep[data-v-f5256024] { color: #5c6370;
+}
+.backend-name[data-v-f5256024] { color: #8ec0ff;
+}
+.model-name[data-v-f5256024] { color: #abb2bf; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mode-pill[data-v-f5256024] { padding: 1px 5px; border-radius: 3px; border: 1px solid #454c57; background: #2b3038; color: #9da5b4; font-size: 10px;
+}
+.mode-pill.active[data-v-f5256024] { border-color: #366e46; background: rgba(76, 175, 80, 0.14); color: #8be09e;
+}
+.mode-pill.warn[data-v-f5256024] { border-color: #8c5c1f; background: rgba(255, 152, 0, 0.14); color: #ffcc80;
+}
+.status-context[data-v-f5256024] { display: flex; align-items: center; gap: 6px; margin-left: auto;
+}
+.context-bar[data-v-f5256024] { width: 64px; height: 5px; border-radius: 3px; background: #333942; overflow: hidden;
+}
+.context-fill[data-v-f5256024] { height: 100%; background: #4a9eff; transition: width 0.2s ease;
+}
+.context-fill.high[data-v-f5256024] { background: #ff9800;
+}
+.context-text[data-v-f5256024] { font-family: monospace; color: #9da5b4; white-space: nowrap;
+}

@@ -1,0 +1,37 @@
+
+.llm-thinking-block[data-v-842b2bd7], .llm-thinking-block div[data-v-842b2bd7] { position: static !important;
+}
+.llm-thinking-block[data-v-842b2bd7] { margin: 4px 0; border-left: 2px solid #444b57; padding-left: 8px;
+}
+.llm-thinking-block.is-active[data-v-842b2bd7] { border-left-color: #d69e66;
+}
+.thinking-header[data-v-842b2bd7] { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #9aa2b0; line-height: 1.4; user-select: none;
+}
+.thinking-header.clickable[data-v-842b2bd7] { cursor: pointer;
+}
+.thinking-header.clickable[data-v-842b2bd7]:hover { color: #d5dce6;
+}
+.llm-thinking-block.is-active .thinking-header[data-v-842b2bd7] { color: #e2b27d;
+}
+.thinking-glyph[data-v-842b2bd7] { font-size: 12px; display: inline-block;
+}
+.thinking-glyph.spinning[data-v-842b2bd7] { animation: llm-think-pulse-842b2bd7 1.2s ease-in-out infinite;
+}
+@keyframes llm-think-pulse-842b2bd7 {
+0%, 100% { opacity: 1;
+}
+50% { opacity: 0.4;
+}
+}
+.thinking-caret[data-v-842b2bd7] { margin-left: 2px; font-size: 10px; opacity: 0.85;
+}
+.thinking-body[data-v-842b2bd7] { margin-top: 4px; max-height: 200px; overflow-y: auto; padding: 4px 6px; background: rgba(255, 255, 255, 0.025); border-radius: 3px; color: #9ea6b3; font-size: 11px; font-style: italic; line-height: 1.45;
+}
+.thinking-markdown[data-v-842b2bd7] p { margin: 0 0 4px;
+}
+.thinking-markdown[data-v-842b2bd7] p:last-child { margin-bottom: 0;
+}
+.thinking-markdown[data-v-842b2bd7] pre, .thinking-markdown[data-v-842b2bd7] code { font-style: normal; font-family: monospace; background: rgba(0, 0, 0, 0.28); padding: 1px 3px; border-radius: 2px;
+}
+.thinking-placeholder[data-v-842b2bd7] { color: #8c95a3;
+}

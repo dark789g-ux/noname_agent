@@ -1,0 +1,81 @@
+
+.llm-detail-view[data-v-121ad3c7], .llm-detail-view div[data-v-121ad3c7] { position: static !important;
+}
+.llm-detail-view[data-v-121ad3c7] { flex: 1 1 auto; min-height: 0; padding: 0; overflow: auto;
+}
+.detail-card[data-v-121ad3c7], .detail-card-title[data-v-121ad3c7], .detail-card-body[data-v-121ad3c7], .field[data-v-121ad3c7], .turn-detail-block[data-v-121ad3c7] { display: block; box-sizing: border-box;
+}
+.toolbar[data-v-121ad3c7] { display: flex; flex: 0 0 auto; align-items: center; padding: 6px 8px; border-bottom: 1px solid #444; gap: 6px;
+}
+.btn[data-v-121ad3c7] { background: #333; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 12px;
+}
+.btn[data-v-121ad3c7]:hover { background: #444;
+}
+.detail-card[data-v-121ad3c7] { margin: 8px; border: 1px solid #444; border-radius: 4px; overflow: hidden;
+}
+.detail-card-title[data-v-121ad3c7] { background: #333; padding: 5px 8px; font-weight: bold; color: #ccc; border-bottom: 1px solid #444;
+}
+.detail-card-body[data-v-121ad3c7] { padding: 6px 8px;
+}
+.card-error .detail-card-title[data-v-121ad3c7] { color: #f44336;
+}
+.card-fallback .detail-card-title[data-v-121ad3c7] { color: #ff9800;
+}
+.card-interrupted .detail-card-title[data-v-121ad3c7] { color: #ffb74d;
+}
+.field[data-v-121ad3c7] { margin: 3px 0; word-break: break-all;
+}
+.field.log-id-field[data-v-121ad3c7] { display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+}
+.log-id-text[data-v-121ad3c7] { font-family: monospace; font-size: 11px; color: #cfd6e0; background: #26292e; border: 1px solid #3a3f47; border-radius: 3px; padding: 1px 5px;
+}
+.copy-id-btn[data-v-121ad3c7] { background: #2e343e; color: #cfd6e0; border: 1px solid #48505e; border-radius: 3px; padding: 1px 7px; font-size: 11px; cursor: pointer;
+}
+.copy-id-btn[data-v-121ad3c7]:hover { background: #3b424f; color: #fff;
+}
+.copy-id-btn.is-copied[data-v-121ad3c7] { color: #8be09e; border-color: #315c3d; background: rgba(76, 175, 80, 0.14);
+}
+.label[data-v-121ad3c7] { color: #999; margin-right: 4px;
+}
+.session-badge[data-v-121ad3c7] { display: inline-block; padding: 1px 6px; margin-right: 4px; border-radius: 3px; font-size: 11px; border: 1px solid #555; background: #2d2d2d; color: #ddd;
+}
+.mode-incremental[data-v-121ad3c7] { border-color: #3f7a4d; color: #8be09e; background: rgba(76, 175, 80, 0.12);
+}
+.mode-rebuilt[data-v-121ad3c7] { border-color: #3b6f9c; color: #8cc4ff; background: rgba(74, 158, 255, 0.12);
+}
+.mode-degraded[data-v-121ad3c7] { border-color: #9c6a24; color: #ffcc80; background: rgba(255, 152, 0, 0.14);
+}
+.turn-detail-block[data-v-121ad3c7] { border-bottom: 1px dashed #3a3a3a; padding: 6px 0;
+}
+.turn-detail-block[data-v-121ad3c7]:last-child { border-bottom: 0; padding-bottom: 0;
+}
+.turn-detail-header[data-v-121ad3c7] { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: #bbb; font-size: 12px; margin-bottom: 4px;
+}
+.turn-meta-chip[data-v-121ad3c7] { font-size: 11px; color: #8c96a4; background: #26292e; border-radius: 3px; padding: 1px 5px;
+}
+.code-block[data-v-121ad3c7] { background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 3px; padding: 6px 8px; margin: 4px 0; font-size: 11px; font-family: monospace; white-space: pre-wrap; word-break: break-all; overflow-x: auto; color: #ccc;
+}
+.content-group-label[data-v-121ad3c7] { margin-top: 8px; color: #aaa; font-size: 12px;
+}
+.timing-table-wrap[data-v-121ad3c7] { overflow-x: auto;
+}
+.timing-table[data-v-121ad3c7] { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap;
+}
+.timing-table th[data-v-121ad3c7], .timing-table td[data-v-121ad3c7] { padding: 3px 5px; border-bottom: 1px solid #444; text-align: left;
+}
+details[data-v-121ad3c7] { margin: 4px 0;
+}
+details summary[data-v-121ad3c7] { cursor: pointer; color: #aaa; font-size: 12px; padding: 2px 0;
+}
+details summary[data-v-121ad3c7]:hover { color: #ddd;
+}
+details[open] summary[data-v-121ad3c7] { margin-bottom: 4px;
+}
+.llm-log-status-success[data-v-121ad3c7] { color: #4caf50;
+}
+.llm-log-status-fallback[data-v-121ad3c7], .llm-log-status-timeout[data-v-121ad3c7] { color: #ff9800;
+}
+.llm-log-status-error[data-v-121ad3c7] { color: #f44336;
+}
+.llm-log-status-interrupted[data-v-121ad3c7] { color: #ffb74d;
+}

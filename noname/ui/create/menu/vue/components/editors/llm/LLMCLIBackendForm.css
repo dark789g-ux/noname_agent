@@ -1,0 +1,16 @@
+
+.llm-cli-form[data-v-c4a67baa] {
+	display: flex !important;
+	flex-direction: column;
+	gap: 10px;
+}
+.llm-cli-notice[data-v-c4a67baa],
+.llm-field-hint[data-v-c4a67baa] {
+	font-size: 12px;
+	line-height: 1.45;
+	color: #b9c7d8;
+	background: rgba(65, 130, 225, 0.12);
+	border: 1px solid rgba(110, 170, 255, 0.24);
+	border-radius: 6px;
+	padding: 7px 10px;
+}

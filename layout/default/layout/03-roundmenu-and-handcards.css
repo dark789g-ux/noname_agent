@@ -1,0 +1,295 @@
+#arena:not(.phone) #roundmenu {
+	display: none !important;
+}
+#roundmenu > div {
+	width: 26px;
+	height: 4px;
+	background: white;
+	position: absolute;
+	left: 12px;
+	border-radius: 2px;
+	box-shadow: black 0 0 2px;
+}
+#roundmenu.clock > div:nth-of-type(1) {
+	width: 2px;
+	height: 2px;
+	left: 24px;
+	top: 2px;
+	opacity: 1;
+}
+#roundmenu.clock > div:nth-of-type(2) {
+	width: 2px;
+	height: 2px;
+	left: 24px;
+	top: 46px;
+	opacity: 1;
+}
+#roundmenu.clock > div:nth-of-type(3) {
+	width: 2px;
+	height: 2px;
+	top: 24px;
+	left: 2px;
+	opacity: 1;
+}
+#roundmenu.clock > div:nth-of-type(4) {
+	width: 2px;
+	height: 2px;
+	top: 24px;
+	left: 46px;
+	opacity: 1;
+}
+#roundmenu.clock > div:nth-of-type(5) {
+	width: 2px;
+	height: 2px;
+	left: 24px;
+	top: 2px;
+	opacity: 0.4;
+	transform: rotate(30deg);
+	transform-origin: 1px 23px;
+}
+#roundmenu.clock > div:nth-of-type(9) {
+	width: 2px;
+	height: 2px;
+	left: 24px;
+	top: 2px;
+	opacity: 0.4;
+	transform: rotate(60deg);
+	transform-origin: 1px 23px;
+}
+#roundmenu.clock > div:nth-of-type(6) {
+	width: 2px;
+	height: 2px;
+	left: 24px;
+	top: 46px;
+	opacity: 0.4;
+	transform: rotate(30deg);
+	transform-origin: 1px -23px;
+}
+#roundmenu.clock > div:nth-of-type(10) {
+	width: 2px;
+	height: 2px;
+	left: 24px;
+	top: 46px;
+	opacity: 0.4;
+	transform: rotate(60deg);
+	transform-origin: 1px -23px;
+}
+#roundmenu.clock > div:nth-of-type(7) {
+	width: 2px;
+	height: 2px;
+	top: 24px;
+	left: 2px;
+	opacity: 0.4;
+	transform: rotate(30deg);
+	transform-origin: 23px 1px;
+}
+#roundmenu.clock > div:nth-of-type(11) {
+	width: 2px;
+	height: 2px;
+	top: 24px;
+	left: 2px;
+	opacity: 0.4;
+	transform: rotate(60deg);
+	transform-origin: 23px 1px;
+}
+#roundmenu.clock > div:nth-of-type(8) {
+	width: 2px;
+	height: 2px;
+	top: 24px;
+	left: 46px;
+	opacity: 0.4;
+	transform: rotate(30deg);
+	transform-origin: -23px 1px;
+}
+#roundmenu.clock > div:nth-of-type(12) {
+	width: 2px;
+	height: 2px;
+	top: 24px;
+	left: 46px;
+	opacity: 0.4;
+	transform: rotate(60deg);
+	transform-origin: -23px 1px;
+}
+#roundmenu.clock > div:nth-of-type(13) {
+	width: 22px;
+	height: 2px;
+	top: 24px;
+	left: 24px;
+	transform-origin: 1px 1px;
+	border-radius: 4px 40px 40px 4px/4px 4px 4px 4px;
+}
+#roundmenu.clock > div:nth-of-type(14) {
+	width: 16px;
+	height: 4px;
+	top: 23px;
+	left: 23px;
+	transform-origin: 2px 2px;
+	border-radius: 4px 23px 23px 4px/4px 4px 4px 4px;
+}
+#roundmenu.clock > div:nth-of-type(15) {
+	width: 80%;
+	height: 80%;
+	left: 10%;
+	top: 10%;
+	border-radius: 100%;
+	margin: 0;
+	padding: 0;
+	z-index: -1;
+	opacity: 0;
+}
+
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(1),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(2),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(3),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(4),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(5),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(6),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(7),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(8),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(9),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(10),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(11),
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(12) {
+	opacity: 0;
+}
+#roundmenu.clock[data-watchface="simple"] > div:nth-of-type(15) {
+	opacity: 1;
+}
+
+#roundmenu:not(.clock) > div:nth-of-type(even) {
+	width: 20px;
+	left: 18px;
+}
+#roundmenu:not(.clock) > div:nth-of-type(odd) {
+	width: 4px;
+}
+
+#roundmenu:not(.clock) > div:nth-of-type(1),
+#roundmenu:not(.clock) > div:nth-of-type(2) {
+	top: 14px;
+}
+
+#roundmenu:not(.clock) > div:nth-of-type(3),
+#roundmenu:not(.clock) > div:nth-of-type(4) {
+	top: 23px;
+}
+
+#roundmenu:not(.clock) > div:nth-of-type(5),
+#roundmenu:not(.clock) > div:nth-of-type(6) {
+	top: 32px;
+	transform: none !important;
+}
+
+#roundmenu:not(.clock) > div:nth-of-type(7),
+#roundmenu:not(.clock) > div:nth-of-type(8),
+#roundmenu:not(.clock) > div:nth-of-type(9),
+#roundmenu:not(.clock) > div:nth-of-type(10),
+#roundmenu:not(.clock) > div:nth-of-type(11),
+#roundmenu:not(.clock) > div:nth-of-type(12),
+#roundmenu:not(.clock) > div:nth-of-type(13),
+#roundmenu:not(.clock) > div:nth-of-type(14),
+#roundmenu:not(.clock) > div:nth-of-type(15) {
+	opacity: 0;
+}
+
+.linexy {
+	pointer-events: none;
+	transition-property: transform, opacity;
+	width: 3px;
+	border-radius: 4px;
+	z-index: 4;
+	box-shadow: rgba(0, 0, 0, 0.5) 0 0 2px;
+	transform-origin: top center;
+}
+.linexy.drag {
+	transition-property: none !important;
+}
+#me,
+#mebg {
+	width: 100%;
+	height: 140px;
+	top: calc(100% - 140px);
+	left: 0;
+}
+#mebg {
+	z-index: -1;
+}
+#autonode {
+	z-index: 10;
+	width: 100%;
+	height: 140px;
+	top: calc(100% - 140px);
+	left: 0;
+	display: table;
+	text-align: center;
+	font-size: 60px;
+	font-family: "xinwei";
+	text-shadow: black 0 0 10px;
+}
+#arena:not(.chess):not(.mobile) > #autonode {
+	display: none;
+}
+#arena:not(.auto) > #autonode,
+#autonode.hidden {
+	opacity: 0;
+	pointer-events: none;
+}
+#arena.auto #me .handcards {
+	opacity: 0.5;
+}
+#autonode > div {
+	display: table-cell;
+	vertical-align: middle;
+	position: relative;
+}
+
+#handcards1,
+#handcards2 {
+	width: calc(50% - 140px);
+	height: 127px;
+	padding: 10px;
+	text-align: left;
+}
+#handcards1,
+#handcards2 {
+	white-space: nowrap;
+	overflow-x: visible;
+	overflow-y: visible;
+	display: block;
+}
+#handcards1.scrollh,
+#handcards2.scrollh {
+	overflow-x: scroll;
+	overflow-y: hidden;
+}
+#handcards1 {
+	left: 0;
+	top: calc(100% - 140px);
+}
+#handcards2 {
+	left: calc(50% + 120px);
+	top: calc(100% - 140px);
+}
+
+#arena #handcards1 > div,
+#arena #handcards2 > div {
+	height: 100%;
+	position: relative;
+	margin-left: 2px;
+	margin-right: 10px;
+}
+#arena:not(.mobile):not(.single-handcard):not(.chess) #handcards1 > div,
+#arena:not(.mobile):not(.single-handcard):not(.chess) #handcards2 > div {
+	left: -10px;
+}
+#arena.single-handcard #handcards1 {
+	width: calc(100% - 120px);
+	left: 120px;
+}
+#arena:not(.mobile).single-handcard #handcards1 {
+	width: calc(100% - 140px);
+}
+#arena.single-handcard #handcards2 {
+	display: none;
+}
+

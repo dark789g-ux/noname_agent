@@ -1,0 +1,65 @@
+
+.llm-opening-progress div[data-v-4393e752] { position: static !important;
+}
+.llm-opening-progress[data-v-4393e752] {
+	position: fixed;
+	left: 50%;
+	top: 12px;
+	z-index: 1000;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	max-width: 92vw;
+	padding: 8px 12px;
+	background: rgba(26, 29, 36, 0.94);
+	backdrop-filter: blur(8px);
+	color: #c7ccd4;
+	border: 1px solid #3a3f47;
+	border-radius: 8px;
+	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+	font-size: 12px;
+	line-height: 1.4;
+	pointer-events: auto;
+	cursor: grab;
+	user-select: none;
+	touch-action: none;
+}
+.llm-opening-progress.is-dragging[data-v-4393e752] { cursor: grabbing;
+}
+.progress-main[data-v-4393e752] { display: flex; align-items: center; gap: 8px;
+}
+.progress-title[data-v-4393e752] { font-weight: 600; color: #e8ecf2; white-space: nowrap;
+}
+.progress-count[data-v-4393e752] { font-family: monospace; font-weight: 600; color: #8ec0ff; white-space: nowrap;
+}
+.progress-track[data-v-4393e752] { width: 72px; height: 5px; border-radius: 3px; background: #333942; overflow: hidden;
+}
+.progress-fill[data-v-4393e752] { height: 100%; background: #4a9eff; transition: width 0.2s ease;
+}
+.progress-badges[data-v-4393e752] { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.pill[data-v-4393e752] { padding: 1px 6px; border-radius: 4px; border: 1px solid #454c57; background: #2b3038; color: #9da5b4; font-size: 11px; white-space: nowrap;
+}
+.pill.waiting[data-v-4393e752] { border-color: #36577a; background: rgba(74, 158, 255, 0.14); color: #9ecbff;
+}
+.pill.warn[data-v-4393e752] { border-color: #8c5c1f; background: rgba(255, 152, 0, 0.14); color: #ffcc80;
+}
+.pill.muted[data-v-4393e752] { border-color: #454c57; background: rgba(157, 165, 180, 0.12); color: #9da5b4;
+}
+.skip-btn[data-v-4393e752] {
+	margin-left: 2px;
+	padding: 4px 10px;
+	border-radius: 5px;
+	border: 1px solid #4f5866;
+	background: #2e3440;
+	color: #e8ecf2;
+	font-size: 12px;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: background 0.15s ease, border-color 0.15s ease;
+}
+.skip-btn[data-v-4393e752]:hover:not(:disabled) { background: #3b4252; border-color: #6c7789;
+}
+.skip-btn[data-v-4393e752]:disabled { opacity: 0.5; cursor: not-allowed;
+}

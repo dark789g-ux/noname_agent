@@ -1,0 +1,25 @@
+
+.video-manager {
+	position: relative;
+}
+.video-float-buttons {
+	position: absolute;
+	top: 15px;
+	right: 0;
+}
+.import-trigger {
+	margin-left: 12px;
+	margin-top: 3px;
+}
+.import-panel {
+	white-space: nowrap;
+	margin-bottom: 80px;
+	margin-left: 13px;
+	width: calc(100% - 30px);
+}
+.import-panel input {
+	width: calc(100% - 40px);
+}
+.import-panel button {
+	width: 40px;
+}

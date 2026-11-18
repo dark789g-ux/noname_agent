@@ -1,0 +1,63 @@
+
+.llm-decision-block[data-v-0f65c2d0], .llm-decision-block div[data-v-0f65c2d0] { position: static !important;
+}
+.llm-decision-block[data-v-0f65c2d0] { border: 1px solid #353b45; border-radius: 5px; background: #23272e; padding: 7px 9px; margin-bottom: 6px;
+}
+.llm-decision-block.is-active[data-v-0f65c2d0] { border-color: #4a9eff; background: rgba(74, 158, 255, 0.08);
+}
+.llm-decision-block.is-failed[data-v-0f65c2d0] { border-color: #5c4338;
+}
+.decision-header[data-v-0f65c2d0] { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.decision-time[data-v-0f65c2d0] { font-family: monospace; font-size: 11px; color: #8c95a3;
+}
+.decision-log-id[data-v-0f65c2d0] { font-family: monospace; font-size: 11px; line-height: 1.2; color: #9aa4b2; background: #1c2026; border: 1px solid #383f4a; border-radius: 3px; padding: 1px 5px; cursor: pointer; flex-shrink: 0;
+}
+.decision-log-id[data-v-0f65c2d0]:hover { color: #e2e7ef; border-color: #556070; background: #282d36;
+}
+.decision-log-id.is-copied[data-v-0f65c2d0] { color: #8be09e; border-color: #315c3d; background: rgba(76, 175, 80, 0.14);
+}
+.active-dot[data-v-0f65c2d0] { width: 7px; height: 7px; border-radius: 50%; background: #4a9eff; animation: llm-dot-pulse-0f65c2d0 1s ease-in-out infinite;
+}
+@keyframes llm-dot-pulse-0f65c2d0 {
+0%, 100% { opacity: 1;
+}
+50% { opacity: 0.3;
+}
+}
+.decision-point[data-v-0f65c2d0] { flex: 1 1 auto; min-width: 120px; font-weight: 600; color: #e2e7ef; font-size: 12px;
+}
+.decision-meta[data-v-0f65c2d0], .decision-usage[data-v-0f65c2d0] { font-family: monospace; font-size: 11px; color: #8c95a3;
+}
+.decision-status[data-v-0f65c2d0] { font-size: 12px;
+}
+.detail-btn[data-v-0f65c2d0] { background: #2e343e; color: #cfd6e0; border: 1px solid #48505e; border-radius: 3px; padding: 1px 6px; font-size: 11px; cursor: pointer;
+}
+.detail-btn[data-v-0f65c2d0]:hover { background: #3b424f; color: #fff;
+}
+.decision-body[data-v-0f65c2d0] { margin-top: 4px;
+}
+.turn-row + .turn-row[data-v-0f65c2d0] { margin-top: 4px; padding-top: 4px; border-top: 1px dashed #323741;
+}
+.active-output[data-v-0f65c2d0] { margin-top: 4px;
+}
+.output-label[data-v-0f65c2d0] { display: block; font-size: 11px; color: #8ec0ff; margin-bottom: 2px;
+}
+.output-preview[data-v-0f65c2d0] { margin: 0; padding: 5px 7px; border-radius: 3px; background: rgba(0, 0, 0, 0.25); color: #cfd6e0; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow: auto;
+}
+.waiting-hint[data-v-0f65c2d0] { font-size: 11px; color: #8c95a3; padding: 2px 0;
+}
+.decision-note[data-v-0f65c2d0] { margin-top: 4px; font-size: 11px; word-break: break-word;
+}
+.note-error[data-v-0f65c2d0] { color: #ff8a80;
+}
+.note-fallback[data-v-0f65c2d0] { color: #ffb74d;
+}
+.llm-log-status-success[data-v-0f65c2d0] { color: #4caf50;
+}
+.llm-log-status-fallback[data-v-0f65c2d0], .llm-log-status-timeout[data-v-0f65c2d0] { color: #ff9800;
+}
+.llm-log-status-error[data-v-0f65c2d0] { color: #f44336;
+}
+.llm-log-status-interrupted[data-v-0f65c2d0] { color: #ffb74d;
+}

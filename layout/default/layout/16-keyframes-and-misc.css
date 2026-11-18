@@ -1,0 +1,246 @@
+@keyframes card_start {
+	from {
+		opacity: 0;
+		transform: scale(0);
+	}
+}
+@-webkit-keyframes card_start {
+	from {
+		opacity: 0;
+		transform: scale(0);
+	}
+}
+@keyframes history_start {
+	from {
+		opacity: 0;
+		margin-bottom: -50px;
+	}
+}
+@-webkit-keyframes history_start {
+	from {
+		opacity: 0;
+		margin-bottom: -50px;
+	}
+}
+@keyframes card_start2 {
+	from {
+		opacity: 0;
+		transform: scale(0);
+		margin-left: -52px;
+		margin-right: -52px;
+	}
+}
+@-webkit-keyframes card_start2 {
+	from {
+		opacity: 0;
+		transform: scale(0);
+		margin-left: -52px;
+		margin-right: -52px;
+	}
+}
+@keyframes card_judgestart {
+	from {
+		opacity: 0;
+		transform: scale(0) rotateY(-180deg) perspective(600px);
+	}
+}
+@-webkit-keyframes card_judgestart {
+	from {
+		opacity: 0;
+		transform: scale(0) rotateY(-180deg) perspective(600px);
+	}
+}
+@keyframes sidebar {
+	from {
+		left: -120px;
+		opacity: 0;
+	}
+}
+@-webkit-keyframes sidebar {
+	from {
+		left: -120px;
+		opacity: 0;
+	}
+}
+@keyframes zoom_button {
+	from {
+		margin-top: -48px;
+		margin-bottom: -48px;
+		transform: scale(0);
+		opacity: 0;
+	}
+}
+@-webkit-keyframes zoom_button {
+	from {
+		margin-top: -48px;
+		margin-bottom: -48px;
+		transform: scale(0);
+		opacity: 0;
+	}
+}
+@keyframes config {
+	from {
+		margin-top: -28px;
+		opacity: 0;
+	}
+}
+@-webkit-keyframes config {
+	from {
+		margin-top: -28px;
+		opacity: 0;
+	}
+}
+@keyframes zoomin {
+	from {
+		opacity: 0;
+		transform: scale(0.5);
+	}
+}
+@-webkit-keyframes zoomin {
+	from {
+		opacity: 0;
+		transform: scale(0.5);
+	}
+}
+@keyframes zoomout {
+	from {
+		opacity: 0;
+		transform: scale(2);
+	}
+}
+@-webkit-keyframes zoomout {
+	from {
+		opacity: 0;
+		transform: scale(2);
+	}
+}
+@keyframes zoomout3 {
+	from {
+		opacity: 0;
+		transform: scale(3);
+	}
+}
+@-webkit-keyframes zoomout3 {
+	from {
+		opacity: 0;
+		transform: scale(3);
+	}
+}
+@keyframes zoomout4 {
+	from {
+		opacity: 0;
+		transform: scale(4);
+	}
+}
+@-webkit-keyframes zoomout4 {
+	from {
+		opacity: 0;
+		transform: scale(4);
+	}
+}
+@keyframes flash {
+	0% {
+		opacity: 1;
+	}
+
+	50% {
+		opacity: 0;
+	}
+
+	100% {
+		opacity: 1;
+	}
+}
+@-webkit-keyframes flash {
+	0% {
+		opacity: 1;
+	}
+
+	50% {
+		opacity: 0;
+	}
+
+	100% {
+		opacity: 1;
+	}
+}
+@keyframes flip {
+	from {
+		transform: perspective(1000px) rotateY(0);
+	}
+
+	to {
+		transform: perspective(1000px) rotateY(360deg);
+	}
+}
+@-webkit-keyframes flip {
+	from {
+		transform: perspective(1000px) rotateY(0);
+	}
+
+	to {
+		transform: perspective(1000px) rotateY(360deg);
+	}
+}
+@keyframes background-position-left-center-right-center-left-center {
+	0% {
+		background-position: left center;
+	}
+
+	50% {
+		background-position: right center;
+	}
+
+	100% {
+		background-position: left center;
+	}
+}
+@keyframes opacity-0-1 {
+	from {
+		opacity: 0;
+	}
+
+	to {
+		opacity: 1;
+	}
+}
+@keyframes opacity-1-0 {
+	from {
+		opacity: 1;
+	}
+
+	to {
+		opacity: 0;
+	}
+}
+/*--------其它--------*/
+/* 解放下拉框滚动条！ */
+:not(select)::-webkit-scrollbar {
+	display: none;
+}
+/* 火狐和chrome120+隐藏滚动条 */
+:not(select) {
+	scrollbar-width: none;
+}
+/* 更新进度条 */
+progress.progress {
+	width: 75%;
+	height: 10px;
+	border: 2px solid;
+	border-radius: 15px;
+	vertical-align: middle;
+	-webkit-appearance: none;
+}
+progress.progress::-webkit-progress-bar {
+	background: rgb(239, 239, 239);
+	border-radius: 0.2rem;
+}
+progress.progress::-webkit-progress-value {
+	border-radius: 0.2rem;
+	background: rgb(0, 117, 255);
+}
+/* 给poptip增加下划线和加粗 */
+#window noname-poptip {
+	text-decoration: underline;
+	font-weight: bolder;
+}

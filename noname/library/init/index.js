@@ -1,0 +1,667 @@
+import { __vitePreload } from "../../../_virtual/preload-helper.js";
+import { rootURL } from "../../../noname.js";
+import { LibInitPromises } from "./promises.js";
+import "../element/gameEvent.js";
+import "../../util/sandbox.js";
+import { usesSqliteStorage, resetSqliteMain } from "../../storage/open.js";
+import { lib } from "../index.js";
+import { game } from "../../game/index.js";
+import { _status } from "../../status/index.js";
+import { security } from "../../util/sandbox/security.js";
+import { get } from "../../get/binding.js";
+import { ui } from "../../ui/index.js";
+import compiler from "../element/GameEvent/compilers/ContentCompiler.js";
+function hasStyleSheet(style) {
+  return style.sheet !== null;
+}
+class LibInit {
+  #promises;
+  /**
+   * 部分函数的Promise版本
+   */
+  get promises() {
+    if (!this.#promises) this.#promises = new LibInitPromises();
+    return this.#promises;
+  }
+  /**
+   * 完整重置：清 localStorage（保留 noname_inited 和联机 key），清理当前主存储后 reload。
+   * 浏览器清理 SQLite 的主库数据，原 IndexedDB 迁移副本保留；原生客户端继续清理 IndexedDB。
+   */
+  async doFullReset() {
+    var onlineKey = localStorage.getItem(lib.configprefix + "key");
+    var nonameInited = localStorage.getItem("noname_inited");
+    localStorage.clear();
+    if (nonameInited) {
+      localStorage.setItem("noname_inited", nonameInited);
+    }
+    if (onlineKey) {
+      localStorage.setItem(lib.configprefix + "key", onlineKey);
+    }
+    if (usesSqliteStorage()) {
+      await resetSqliteMain();
+    } else if (indexedDB) {
+      indexedDB.deleteDatabase(lib.configprefix + "data");
+    }
+    setTimeout(function() {
+      window.location.reload();
+    }, 200);
+  }
+  /**
+   * 启动超时或加载失败时触发，弹出三选一恢复对话框。
+   * @param {string} [context] - 'timeout'（超时，可能只是慢）| 'error'（明确报错）| 'force'（强制弹窗，绕过 inSplash 短路）| undefined（等同 timeout）
+   */
+  reset(context) {
+    if (window.inSplash && context !== "force") {
+      return;
+    }
+    var self = this;
+    Promise.all([
+      __vitePreload(() => import("./recoveryDialog.js"), true ? [] : void 0, import.meta.url),
+      __vitePreload(() => import("../../init/loadErrors.js"), true ? [] : void 0, import.meta.url)
+    ]).then(function(modules) {
+      var showRecoveryDialog = modules[0].showRecoveryDialog;
+      var loadErrors = modules[1];
+      showRecoveryDialog({
+        context: context || "timeout",
+        errorSummary: loadErrors.summarize(),
+        hasFailedExtensions: loadErrors.getDisabledExtensions().length > 0,
+        onWait: function() {
+          var prev = parseInt(localStorage.getItem(lib.configprefix + "loadtime") || "10000", 10);
+          var next = Math.min(Math.max(prev * 2, 2e4), 12e4);
+          localStorage.setItem(lib.configprefix + "loadtime", String(next));
+          window.location.reload();
+        },
+        onSkipExtensions: function() {
+          if (window.resetExtension) {
+            window.resetExtension();
+          }
+          window.location.reload();
+        },
+        onReset: function() {
+          self.doFullReset();
+        }
+      });
+    }).catch(function() {
+      if (confirm("游戏似乎未正常载入，是否重置游戏？")) {
+        self.doFullReset();
+      }
+    });
+  }
+  startOnline = [
+    async (event) => {
+      event._resultid = null;
+      event._result = null;
+      game.pause();
+    },
+    async (event) => {
+      if (event._result) {
+        if (event._resultid) {
+          event._result.id = event._resultid;
+        }
+        game.send("result", event._result);
+      }
+      event.goto(0);
+    }
+  ];
+  onfree() {
+    if (lib.onfree) {
+      clearTimeout(window.resetGameTimeout);
+      delete window.resetGameTimeout;
+      if (!game.syncMenu) {
+        delete window.resetExtension;
+        localStorage.removeItem(lib.configprefix + "disable_extension");
+      }
+      if (game.removeFile && lib.config.brokenFile.length) {
+        while (lib.config.brokenFile.length) {
+          game.removeFile(lib.config.brokenFile.shift());
+        }
+        game.saveConfigValue("brokenFile");
+      }
+      var onfree = lib.onfree;
+      delete lib.onfree;
+      var loop = function() {
+        if (onfree.length) {
+          const callback = onfree.shift();
+          if (callback) {
+            callback();
+          }
+          setTimeout(loop, 100);
+        }
+      };
+      setTimeout(loop, 500);
+      if (!_status.new_tutorial) {
+        game.saveConfig("menu_loadondemand", true, lib.config.mode);
+      }
+    }
+  }
+  connection(ws) {
+    const client = new lib.element.Client(ws);
+    lib.requireNodeServer().clients.push(client);
+    ws.on("message", function(messagestr) {
+      var message;
+      try {
+        message = JSON.parse(messagestr);
+        if (!Array.isArray(message) || typeof lib.message.server[message[0]] !== "function") {
+          throw new Error("err");
+        }
+        if (client.sandbox) {
+          security.enterSandbox(client.sandbox);
+        }
+        try {
+          for (var i = 1; i < message.length; i++) {
+            message[i] = get.parsedResult(message[i]);
+          }
+        } finally {
+          if (client.sandbox) {
+            security.exitSandbox();
+          }
+        }
+      } catch (e) {
+        console.log(e);
+        console.log("invalid message: " + messagestr);
+        return;
+      }
+      lib.message.server[message.shift()].apply(client, message);
+    });
+    ws.on("close", function() {
+      client.close();
+    });
+    client.send("opened");
+  }
+  /**
+   * @returns {HTMLStyleElement & { sheet: CSSStyleSheet }}
+   */
+  sheet() {
+    var style = document.createElement("style");
+    document.head.appendChild(style);
+    if (!hasStyleSheet(style)) {
+      throw new TypeError("style sheet is unavailable");
+    }
+    for (var i = 0; i < arguments.length; i++) {
+      if (typeof arguments[i] == "string") {
+        style.sheet.insertRule(arguments[i], 0);
+      }
+    }
+    return style;
+  }
+  css(path, file, before) {
+    const style = document.createElement("link");
+    style.rel = "stylesheet";
+    if (path) {
+      if (path[path.length - 1] == "/") {
+        path = path.slice(0, path.length - 1);
+      }
+      if (file) {
+        path = `${path}${/^db:extension-[^:]*$/.test(path) ? ":" : "/"}${file}.css`;
+      }
+      (path.startsWith("db:") ? (() => {
+        const pending = game.getDB("image", path.slice(3));
+        const objectURL = get.objectURL;
+        return pending.then((value) => {
+          if (typeof value != "string") {
+            throw new TypeError("The stored stylesheet path must be a string");
+          }
+          return objectURL(value);
+        });
+      })() : new Promise((resolve) => resolve(path))).then(
+        (resolvedPath) => {
+          style.href = resolvedPath;
+          if (typeof before == "function") {
+            style.addEventListener("load", before);
+            document.head.appendChild(style);
+          } else if (before) {
+            document.head.insertBefore(style, before);
+          } else {
+            document.head.appendChild(style);
+          }
+        }
+      );
+    }
+    return style;
+  }
+  js(path, file, onLoad, onError) {
+    if (path[path.length - 1] == "/") {
+      path = path.slice(0, path.length - 1);
+    }
+    if (path == `${lib.assetURL}mode` && lib.config.all.stockmode.indexOf(file) == -1) {
+      Promise.resolve(lib.init[`setMode_${file}`]()).then(onLoad);
+      return;
+    }
+    if (Array.isArray(file)) {
+      file.forEach((value) => lib.init.js(path, value, onLoad, onError));
+      return;
+    }
+    let scriptSource = file ? `${path}${/^db:extension-[^:]*$/.test(path) ? ":" : "/"}${file}.js` : path;
+    if (path.startsWith("http")) {
+      scriptSource += `?rand=${get.id()}`;
+    } else if (lib.config.fuck_sojson && !_status.connectMode && scriptSource.includes("extension") != -1 && scriptSource.startsWith(lib.assetURL)) {
+      const pathToRead = scriptSource.slice(lib.assetURL.length);
+      const alertMessage = `检测到您安装了使用免费版sojson进行加密的扩展。请谨慎使用这些扩展，避免游戏数据遭到破坏。
+扩展文件：${pathToRead}`;
+      if (typeof game.readFileAsText == "function") {
+        game.readFileAsText(
+          pathToRead,
+          (result) => {
+            if (result.includes("sojson") || result.includes("jsjiami") || result.includes("var _0x")) {
+              alert(alertMessage);
+            }
+          },
+          () => void 0
+        );
+      } else if (location.origin != "file://") {
+        lib.init.req(
+          pathToRead,
+          (result) => {
+            if (result.includes("sojson") || result.includes("jsjiami") || result.includes("var _0x")) {
+              alert(alertMessage);
+            }
+          },
+          () => void 0
+        );
+      }
+    }
+    const script = document.createElement("script");
+    (scriptSource.startsWith("db:") ? (() => {
+      const pending = game.getDB("image", scriptSource.slice(3));
+      const objectURL = get.objectURL;
+      return pending.then((value) => {
+        if (typeof value != "string") {
+          throw new TypeError("The stored script path must be a string");
+        }
+        return objectURL(value);
+      });
+    })() : new Promise((resolve) => resolve(scriptSource))).then((resolvedScriptSource) => {
+      script.src = resolvedScriptSource;
+      if (path.startsWith("http")) {
+        script.addEventListener("load", () => script.remove());
+      }
+      document.head.appendChild(script);
+      if (typeof onLoad == "function") {
+        script.addEventListener("load", onLoad);
+      }
+      if (typeof onError == "function") {
+        script.addEventListener("error", onError);
+      }
+    });
+    return script;
+  }
+  req(str, onload, onerror, master) {
+    let sScriptURL;
+    if (str.startsWith("http")) {
+      sScriptURL = str;
+    } else if (str.startsWith("local:")) {
+      if (lib.assetURL.length == 0 && location.origin == "file://" && typeof game.readFile == "undefined") {
+        const e = new Error("浏览器file协议下无法使用此api，请在http/https协议下使用此api");
+        if (typeof onerror == "function") {
+          onerror(e);
+        } else {
+          throw e;
+        }
+        return;
+      }
+      sScriptURL = lib.assetURL + str.slice(6);
+    } else {
+      let url = get.url(master);
+      if (url[url.length - 1] != "/") {
+        url += "/";
+      }
+      sScriptURL = url + str;
+    }
+    const oReq = new XMLHttpRequest();
+    if (typeof onload == "function") {
+      oReq.addEventListener("load", (result) => {
+        if (![0, 200].includes(oReq.status)) {
+          if (typeof onerror == "function") {
+            onerror(new Error(oReq.statusText || String(oReq.status)));
+          }
+          return;
+        }
+        onload(oReq.responseText);
+      });
+    }
+    if (typeof onerror == "function") {
+      oReq.addEventListener("error", onerror);
+    }
+    oReq.open("GET", sScriptURL);
+    oReq.send();
+  }
+  json(url, onload, onerror) {
+    const oReq = new XMLHttpRequest();
+    if (typeof onload == "function") {
+      oReq.addEventListener("load", () => {
+        if (![0, 200].includes(oReq.status)) {
+          if (typeof onerror == "function") {
+            onerror(new Error(oReq.statusText || String(oReq.status)));
+          }
+          return;
+        }
+        let result;
+        try {
+          result = JSON.parse(oReq.responseText);
+          if (!result) {
+            throw new Error("err");
+          }
+        } catch (e) {
+          if (typeof onerror == "function") {
+            onerror(e);
+          }
+          return;
+        }
+        onload(result);
+      });
+    }
+    if (typeof onerror == "function") {
+      oReq.addEventListener("error", onerror);
+    }
+    oReq.open("GET", url);
+    oReq.send();
+  }
+  cssstyles() {
+    if (ui.css.styles) {
+      ui.css.styles.remove();
+    }
+    ui.css.styles = lib.init.sheet();
+    const sheet = ui.css.styles.sheet;
+    if (!sheet) return;
+    sheet.insertRule(
+      "#arena .player>.name,#arena .button.character>.name {font-family: " + (lib.config.name_font || "xinwei") + ",xinwei}",
+      0
+    );
+    sheet.insertRule(
+      "#arena .player>.name,.button.character>.name {font-family: " + (lib.config.name_font || "xinwei") + ",xinwei}",
+      0
+    );
+    sheet.insertRule("#arena .player .identity>div {font-family: " + (lib.config.identity_font || "huangcao") + ",xinwei}", 0);
+    sheet.insertRule(
+      ".button.character.newstyle>.identity {font-family: " + (lib.config.identity_font || "huangcao") + ",xinwei}",
+      0
+    );
+    if (lib.config.cardtext_font && lib.config.cardtext_font != "default") {
+      sheet.insertRule(".card div:not(.info):not(.background) {font-family: " + lib.config.cardtext_font + ";}", 0);
+    }
+    if (lib.config.global_font && lib.config.global_font != "default") {
+      sheet.insertRule("#window {font-family: " + lib.config.global_font + ",xinwei}", 0);
+      sheet.insertRule(
+        "#window #control{font-family: STHeiti,SimHei,Microsoft JhengHei,Microsoft YaHei,WenQuanYi Micro Hei,Suits,Helvetica,Arial,sans-serif}",
+        0
+      );
+    }
+    switch (lib.config.glow_phase) {
+      case "yellow":
+        sheet.insertRule(
+          "#arena .player:not(.selectable):not(.selected).glow_phase {box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgb(217, 152, 62) 0 0 15px, rgb(217, 152, 62) 0 0 15px !important;}",
+          0
+        );
+        break;
+      case "green":
+        sheet.insertRule(
+          "#arena .player:not(.selectable):not(.selected).glow_phase {box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgba(10, 155, 67, 1) 0 0 15px, rgba(10, 155, 67, 1) 0 0 15px !important;}",
+          0
+        );
+        break;
+      case "purple":
+        sheet.insertRule(
+          "#arena .player:not(.selectable):not(.selected).glow_phase {box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgb(189, 62, 170) 0 0 15px, rgb(189, 62, 170) 0 0 15px !important;}",
+          0
+        );
+        break;
+    }
+  }
+  layout(layout, nosave) {
+    const loadingScreen = ui.create.div(".loading-screen", document.body), loadingScreenStyle = loadingScreen.style;
+    loadingScreenStyle.animationDuration = "1s";
+    loadingScreenStyle.animationFillMode = "forwards";
+    loadingScreenStyle.animationName = "opacity-0-1";
+    if (layout == "default") {
+      layout = "mobile";
+    }
+    if (!nosave) {
+      game.saveConfig("layout", layout);
+    }
+    game.layout = layout;
+    ui.arena.hide();
+    new Promise((resolve) => setTimeout(resolve, 500)).then(() => {
+      if (game.layout == "default") {
+        if (ui.css.layout instanceof HTMLLinkElement) ui.css.layout.href = "";
+      } else {
+        if (ui.css.layout instanceof HTMLLinkElement) ui.css.layout.href = lib.assetURL + "layout/" + game.layout + "/layout.css";
+      }
+      if (game.layout == "mobile" || game.layout == "long") {
+        ui.arena.classList.add("mobile");
+      } else {
+        ui.arena.classList.remove("mobile");
+      }
+      if (game.layout == "mobile" || game.layout == "long" || game.layout == "long2" || game.layout == "nova") {
+        if (game.me && game.me.node.handcards2.childNodes.length) {
+          while (game.me.node.handcards2.childNodes.length) {
+            const firstChild = game.me.node.handcards2.firstChild;
+            if (firstChild) game.me.node.handcards1.appendChild(firstChild);
+          }
+        }
+      }
+      if (game.layout == "default") {
+        ui.arena.classList.add("oldlayout");
+      } else {
+        ui.arena.classList.remove("oldlayout");
+      }
+      if (lib.config.cardshape == "oblong" && (game.layout == "long" || game.layout == "mobile" || game.layout == "long2" || game.layout == "nova")) {
+        ui.arena.classList.add("oblongcard");
+        ui.window.classList.add("oblongcard");
+      } else {
+        ui.arena.classList.remove("oblongcard");
+        ui.window.classList.remove("oblongcard");
+      }
+      if (game.layout == "long" || game.layout == "mobile") {
+        ui.arena.classList.add("textequip");
+      } else {
+        ui.arena.classList.remove("textequip");
+      }
+      if (get.is.phoneLayout()) {
+        if (ui.css.phone instanceof HTMLLinkElement) ui.css.phone.href = lib.assetURL + "layout/default/phone.css";
+        ui.arena.classList.add("phone");
+      } else {
+        if (ui.css.phone instanceof HTMLLinkElement) ui.css.phone.href = "";
+        ui.arena.classList.remove("phone");
+      }
+      for (var i = 0; i < game.players.length; i++) {
+        if (get.is.linked2(game.players[i])) {
+          if (game.players[i].classList.contains("linked")) {
+            game.players[i].classList.remove("linked");
+            game.players[i].classList.add("linked2");
+          }
+        } else {
+          if (game.players[i].classList.contains("linked2")) {
+            game.players[i].classList.remove("linked2");
+            game.players[i].classList.add("linked");
+          }
+        }
+      }
+      if (game.layout == "long" || game.layout == "long2") {
+        ui.arena.classList.add("long");
+      } else {
+        ui.arena.classList.remove("long");
+      }
+      if (lib.config.player_border != "wide" || game.layout == "long" || game.layout == "long2") {
+        ui.arena.classList.add("slim_player");
+      } else {
+        ui.arena.classList.remove("slim_player");
+      }
+      if (lib.config.player_border == "normal" && lib.config.mode != "brawl" && (game.layout == "long" || game.layout == "long2")) {
+        ui.arena.classList.add("lslim_player");
+      } else {
+        ui.arena.classList.remove("lslim_player");
+      }
+      if (lib.config.player_border == "slim") {
+        ui.arena.classList.add("uslim_player");
+      } else {
+        ui.arena.classList.remove("uslim_player");
+      }
+      if (lib.config.player_border == "narrow") {
+        ui.arena.classList.add("mslim_player");
+      } else {
+        ui.arena.classList.remove("mslim_player");
+      }
+      ui.updatej();
+      ui.updatem();
+      return new Promise((resolve) => setTimeout(resolve, 100));
+    }).then(() => {
+      ui.arena.show();
+      if (game.me) {
+        game.me.update();
+      }
+      return new Promise((resolve) => setTimeout(resolve, 500));
+    }).then(() => {
+      ui.updatex();
+      ui.updatePlayerPositions();
+      return new Promise((resolve) => setTimeout(resolve, 500));
+    }).then(() => {
+      ui.updatec();
+      loadingScreenStyle.animationName = "opacity-1-0";
+      loadingScreen.addEventListener("animationend", (animationEvent) => {
+        const target = animationEvent.target;
+        if (target instanceof Element) target.remove();
+      });
+    });
+  }
+  background() {
+    if (lib.config.image_background_random) {
+      var list = [];
+      for (var i in lib.configMenu.appearence.config.image_background.item) {
+        if (i == "default") {
+          continue;
+        }
+        list.push(i);
+      }
+      list.remove(lib.config.image_background);
+      localStorage.setItem(lib.configprefix + "background", JSON.stringify(list));
+    } else if (lib.config.image_background && lib.config.image_background != "default" && !lib.config.image_background.startsWith("custom_")) {
+      localStorage.setItem(lib.configprefix + "background", lib.config.image_background);
+    } else if (lib.config.image_background == "default" && lib.config.theme == "simple") {
+      localStorage.setItem(lib.configprefix + "background", "ol_bg");
+    } else {
+      localStorage.removeItem(lib.configprefix + "background");
+    }
+  }
+  /**
+   * @deprecated
+   */
+  parsex(item, scope) {
+    if (scope) {
+      throw new Error("parsex已经被拆分，不再支持scope的使用");
+    }
+    return compiler.compile(item);
+  }
+  encode(strUni) {
+    var strUtf = strUni.replace(/[\u0080-\u07ff]/g, function(c) {
+      var cc = c.charCodeAt(0);
+      return String.fromCharCode(192 | cc >> 6, 128 | cc & 63);
+    });
+    strUtf = strUtf.replace(/[\u0800-\uffff]/g, function(c) {
+      var cc = c.charCodeAt(0);
+      return String.fromCharCode(224 | cc >> 12, 128 | cc >> 6 & 63, 128 | cc & 63);
+    });
+    return btoa(strUtf);
+  }
+  decode(str) {
+    var strUtf = atob(str);
+    var strUni = strUtf.replace(/[\u00e0-\u00ef][\u0080-\u00bf][\u0080-\u00bf]/g, function(c) {
+      var cc = (c.charCodeAt(0) & 15) << 12 | (c.charCodeAt(1) & 63) << 6 | c.charCodeAt(2) & 63;
+      return String.fromCharCode(cc);
+    });
+    strUni = strUni.replace(/[\u00c0-\u00df][\u0080-\u00bf]/g, function(c) {
+      var cc = (c.charCodeAt(0) & 31) << 6 | c.charCodeAt(1) & 63;
+      return String.fromCharCode(cc);
+    });
+    return strUni;
+  }
+  stringify(obj) {
+    var str = "{";
+    for (var i in obj) {
+      str += '"' + i + '":';
+      if (Object.prototype.toString.call(obj[i]) == "[object Object]") {
+        str += lib.init.stringify(obj[i]);
+      } else if (typeof obj[i] == "function") {
+        str += obj[i].toString();
+      } else {
+        str += JSON.stringify(obj[i]);
+      }
+      str += ",";
+    }
+    str += "}";
+    return str;
+  }
+  stringifySkill(obj) {
+    var str = "";
+    for (var i in obj) {
+      str += i + ":";
+      if (Object.prototype.toString.call(obj[i]) == "[object Object]") {
+        str += "{\n" + lib.init.stringifySkill(obj[i]) + "}";
+      } else if (typeof obj[i] == "function") {
+        str += obj[i].toString().replace(/\t/g, "");
+      } else {
+        str += JSON.stringify(obj[i]);
+      }
+      str += ",\n";
+    }
+    return str;
+  }
+  /**
+   * 在返回当前加载的esm模块相对位置。
+   * @param {*} url 传入import.meta.url
+   */
+  getCurrentFileLocation(url) {
+    let head = window.location.href.slice(0, window.location.href.lastIndexOf("/") + 1);
+    let ret = url.replace(head, "");
+    return decodeURIComponent(ret);
+  }
+  /**
+   * @param {string | URL} link - 需要解析的路径
+   * @param {((item: string) => string) | null} [defaultHandle] - 在给定路径不符合可用情况（或基于无名杀相关默认情况）时，处理路径的函数，返回的路径应是相对于根目录的相对路径，默认为`null`，当且仅当无法解析成`URL`时会调用该回调
+   * @param {((item: URL) => unknown) | null} [loadAsDataUrlCallback] - 若存在值，则将资源加载为[Data URL](https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Basics_of_HTTP/Data_URLs)，然后传入进回调函数
+   * @param {boolean} [dbNow] - 此刻是否在解析数据库中的内容，请勿直接使用
+   * @returns {URL}
+   */
+  parseResourceAddress(link, defaultHandle = null, loadAsDataUrlCallback = null, dbNow = false) {
+    if (!link) {
+      throw new Error(dbNow ? "传入的数据库链接中不存在内容" : "请传入需要解析的链接");
+    }
+    let linkString = link instanceof URL ? link.href : link;
+    if (linkString.startsWith("data:")) {
+      let result = new URL(linkString);
+      if (loadAsDataUrlCallback) {
+        loadAsDataUrlCallback(result);
+      }
+      return result;
+    }
+    let resultUrl;
+    if (linkString.startsWith("ext:")) {
+      let resultLink = `extension/${linkString.slice(4)}`;
+      resultUrl = new URL(resultLink, rootURL);
+    } else if (URL.canParse(linkString)) {
+      resultUrl = new URL(linkString);
+    } else if (dbNow) {
+      let content = new Blob([linkString], { type: "text/plain" });
+      get.dataUrlAsync(content).then(loadAsDataUrlCallback);
+      return;
+    } else {
+      let resultLink = defaultHandle == null ? linkString : defaultHandle(linkString);
+      resultUrl = new URL(resultLink, rootURL);
+    }
+    if (loadAsDataUrlCallback != null) {
+      if (resultUrl.protocol == "db:") {
+        game.getDB("image", linkString.slice(3)).then((storeResult) => {
+          if (typeof storeResult != "string") {
+            throw new TypeError("The stored resource address must be a string");
+          }
+          return this.parseResourceAddress(storeResult, defaultHandle, loadAsDataUrlCallback, true);
+        });
+      } else {
+        get.blobFromUrl(resultUrl).then((blob) => get.dataUrlAsync(blob)).then(loadAsDataUrlCallback);
+      }
+    }
+    return resultUrl;
+  }
+}
+export {
+  LibInit
+};

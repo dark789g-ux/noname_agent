@@ -1,0 +1,25 @@
+
+.llm-openai-form[data-v-2188c388] {
+	display: flex !important;
+	flex-direction: column;
+	gap: 10px;
+}
+.llm-input-row[data-v-2188c388] {
+	display: flex !important;
+	gap: 6px;
+	align-items: center;
+}
+.llm-mini-btn[data-v-2188c388] {
+	flex-shrink: 0;
+	padding: 6px 10px;
+	border-radius: 5px;
+	border: 1px solid rgba(255, 255, 255, 0.22);
+	background: rgba(255, 255, 255, 0.1);
+	color: #eef3fa;
+	font-size: 12px;
+	cursor: pointer;
+}
+.llm-field-error[data-v-2188c388] {
+	font-size: 12px;
+	color: #ff9e9e;
+}

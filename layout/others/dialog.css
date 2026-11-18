@@ -1,0 +1,430 @@
+:root {
+    --tip-display: none;
+}
+
+/* addNewRow的对话框的样式 */
+.dialog.addNewRow {
+    --bgColor: #2f2f3557;
+    width: 80%;
+
+    left: 10%;
+    border-radius: 10px;
+}
+
+.dialog.addNewRow .row-container {
+    display: grid;
+    height: fit-content;
+    margin: 10px auto !important;
+    width: 95%;
+}
+
+.dialog.addNewRow .row-container>* {
+    position: relative;
+}
+
+.dialog.addNewRow .item-container>.caption {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: initial;
+    flex-wrap: wrap;
+    align-content: center
+}
+
+.dialog.addNewRow .item-container {
+
+    width: 90%;
+    height: 95%;
+    margin: auto;
+    display: flex;
+    justify-content: center;
+    border-radius: 10px;
+    padding: 3px 3px;
+    overflow: auto;
+    max-width: 90%;
+}
+
+.dialog.addNewRow .item-container>* {
+    flex-shrink: 0;
+    position: relative;
+}
+
+.dialog.addNewRow .item-container>.item:not(:first-of-type) {
+    margin-left: var(--ml, 3px);
+}
+
+/* .dialog.addNewRow .item-container.zoom>.item.card:hover {
+    z-index: 99;
+    scale: 1.1;
+} */
+
+.dialog.addNewRow:not(.fullheight) {
+    top: 10% ;
+    max-height: 55%;
+}
+
+.dialog.addNewRow>.content-container {
+    border-radius: 10px;
+    /* background-color: var(--bgColor); */
+}
+
+/* 自由选将搜索框中文字的样式 */
+.searcher.caption>input::placeholder {
+    font-weight: lighter;
+    color: rgba(126, 114, 114, 0.724)
+}
+
+/*记牌器相关的样式*/
+.popupContainer.deckMonitor {
+
+
+    width: 100%;
+    height: 100%;
+    background-color: rgb(44 39 39 / 38%);
+    z-index: 9;
+
+
+
+}
+
+.popupContainer.deckMonitor * {
+    text-shadow: none;
+    box-sizing: border-box;
+}
+
+.popupContainer.deckMonitor .deckMonitor {
+    --bgColor: #45362c;
+    border: 3px solid rgb(213 194 179);
+    width: 80%;
+    height: 75%;
+    background-color: var(--bgColor);
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+
+
+}
+
+.popupContainer.deckMonitor .deckMonitor .title {
+    width: 100%;
+    height: 10%;
+    top: 0%;
+    background-color: var(--bgColor);
+    font-size: 2em;
+    color: #fff5f5;
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+
+}
+
+.popupContainer.deckMonitor .deckMonitor .title span {
+    text-decoration: underline;
+    font-size: 0.8em;
+    color: yellow;
+    font-weight: lighter;
+
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer {
+    width: 100%;
+    height: 90%;
+    bottom: 0%;
+    display: flex;
+    justify-content: space-between;
+    background: #45362c;
+    border: 2px solid #594d41;
+    padding: 5px;
+    box-sizing: border-box;
+    /* 滚动方案开启，压缩方案关闭 */
+    overflow-x: scroll;
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer * {
+    position: relative;
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer .columnContainer {
+    background-color: #c2b597;
+    height: 100%;
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 100px;
+    margin: 0 5px;
+    padding: 3px;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    max-width: calc(100% / 6);
+    /* 滚动方案开启，压缩方案关闭 */
+    min-width: calc(100% / 7);
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer .columnContainer .subtitle {
+    width: 100%;
+    text-align: center;
+    color: black;
+    flex-grow: 0;
+    height: 10%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.3em;
+    flex-shrink: 0;
+    overflow: scroll;
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer .columnContainer .itemContainer {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    align-items: center;
+    overflow: auto;
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer .columnContainer .itemContainer .itemCount {
+    display: flex;
+    flex: 1 3 30px;
+    flex-shrink: 0;
+    overflow: visible;
+    font-size: 0.9em;
+    justify-content: center;
+
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer .columnContainer .itemContainer .item {
+
+    background-color: #45362c;
+    display: flex;
+    width: 96%;
+    margin-top: 4px;
+    padding: 2px 2px;
+    border-radius: 3px;
+    align-items: center;
+    border-radius: 3px;
+    transition: 0.2s;
+
+
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer .columnContainer .itemContainer .item:hover {
+    box-shadow: 0 0 4px 3px yellow;
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer .columnContainer .itemContainer .item .itemName {
+    background: #d6cece;
+    margin: 3px;
+    margin: 5px 2px;
+    border-radius: 5px;
+    color: black;
+    text-shadow: none;
+    padding: 2px;
+    font-size: 0.9em;
+    flex: 1 5 50px;
+    justify-content: center;
+    display: flex;
+}
+
+.popupContainer.deckMonitor .deckMonitor .contentContainer .columnContainer .itemContainer .item .tip {
+    position: absolute;
+    background: #f5eded;
+    width: 102%;
+    height: fit-content;
+    z-index: 1;
+    padding: 6px;
+    color: black;
+    border: 3px solid #143308;
+    border-radius: 3px;
+    left: 0;
+    display: none;
+}
+
+/* ----------tip相关的样式------------------ */
+
+
+.player .tipContainer {
+    --bg: #2b2b28;
+    position: absolute;
+    box-sizing: border-box;
+    width: 100%;
+    bottom: max(48%, var(--bottom, 46%));
+    height: fit-content;
+    display: var(--tip-display);
+    flex-flow: column nowrap;
+    justify-content: flex-start;
+    z-index: 2;
+}
+
+.player[data-position="0"] .tipContainer {
+    width: max(var(--w, 120px), 120px);
+}
+
+.player .tipContainer>.tip {
+    position: relative;
+    box-sizing: border-box;
+    width: 93%;
+    background: var(--bg);
+    border-radius: 5px;
+    padding: 3px 3px;
+    border: 1px solid #8f8686;
+    margin-bottom: 3px;
+    display: flex;
+    flex-flow: row wrap;
+    justify-content: flex-start;
+    align-items: center;
+    color: #e0dddd;
+    text-shadow: none;
+    left:6%
+}
+
+/* 方案二 */
+/* .player .tipContainer {
+    --bg: #48310cf0;
+    border: solid 3px #a17132;
+    padding: 0;
+    border-radius: 5px;
+    box-sizing: border-box;
+
+}
+
+.player .tipContainer>.tip {
+    border: none;
+    border-radius: 0;
+    margin: 0;
+    padding: 2px;
+    font-size: 1.1em;
+} */
+
+/* LLM 武将日志 Dialog：在所有布局下使用 arena 作为定位上下文。 */
+#arena > .dialog.llm-log-dialog {
+	position: absolute !important;
+	inset: 10% !important;
+	width: auto !important;
+	height: auto !important;
+	min-width: 0 !important;
+	min-height: 0 !important;
+	box-sizing: border-box;
+	background: rgba(0, 0, 0, 0.92) !important;
+	border-radius: 8px;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.6);
+	text-align: left !important;
+	z-index: 15;
+	overflow: hidden;
+}
+
+@media (max-width: 700px), (max-height: 500px) {
+	#arena > .dialog.llm-log-dialog {
+		inset: 8px !important;
+	}
+}
+
+#arena > .dialog.llm-log-dialog > .close-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	padding: 4px 12px;
+	background: rgba(180, 60, 60, 0.9);
+	color: white;
+	border-radius: 4px;
+	font-size: 12px;
+	cursor: pointer;
+	z-index: 10;
+	user-select: none;
+}
+
+#arena > .dialog.llm-log-dialog > .close-btn:hover {
+	background: rgba(210, 80, 80, 1);
+}
+
+#arena > .dialog.llm-log-dialog > .content-container {
+	width: 100% !important;
+	height: 100% !important;
+	max-height: none !important;
+	overflow: hidden !important;
+}
+
+#arena > .dialog.llm-log-dialog > .content-container > .content {
+	position: relative !important;
+	display: flex !important;
+	flex-direction: column !important;
+	width: 100% !important;
+	height: 100% !important;
+	font-size: 12px !important;
+	overflow: hidden !important;
+}
+
+#arena > .dialog.llm-log-dialog > .content-container > .content > .caption {
+	box-sizing: border-box;
+	width: 100% !important;
+	margin: 0 !important;
+	padding: 10px 72px 10px 16px !important;
+	text-align: left !important;
+	font-size: 16px !important;
+	color: #ddd !important;
+	border-bottom: 1px solid #333 !important;
+}
+
+#arena > .dialog.llm-log-dialog .llm-player-log-container {
+	position: relative !important;
+	display: block;
+	flex: 1 1 auto !important;
+	min-height: 0 !important;
+	width: 100% !important;
+	box-sizing: border-box;
+	margin: 0 !important;
+	overflow: hidden !important;
+}
+
+/* 全局 div 默认为绝对定位；仅恢复 Vue 面板内部的正常文档流，不影响关闭按钮。 */
+#arena > .dialog.llm-log-dialog .llm-player-log-panel,
+#arena > .dialog.llm-log-dialog .llm-player-log-panel div {
+	position: static !important;
+}
+
+/* LLMPlayerLogPanel 的稳定全局样式；SFC scoped 样式保留为备份。 */
+.llm-player-log-container .llm-player-log-panel { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden; box-sizing: border-box; color: #ddd; font-size: 12px; }
+.llm-player-log-container .toolbar { display: flex; flex: 0 0 auto; align-items: center; padding: 6px 8px; border-bottom: 1px solid #444; gap: 6px; }
+.llm-player-log-container .llm-player-log-panel > .toolbar { border-top: 1px solid #444; border-bottom: 0; }
+.llm-player-log-container .btn { background: #333; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+.llm-player-log-container .btn:hover { background: #444; }
+.llm-player-log-container .active-call { display: block; flex: 0 0 auto; box-sizing: border-box; margin: 8px; border: 1px solid #4a9eff; border-radius: 4px; background: rgba(74, 158, 255, 0.08); overflow: hidden; }
+.llm-player-log-container .active-header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-weight: bold; color: #4a9eff; }
+.llm-player-log-container .active-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4a9eff; animation: llm-log-pulse 1s ease-in-out infinite; }
+@keyframes llm-log-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.llm-player-log-container .stream-area { display: block; box-sizing: border-box; padding: 0 8px; }
+.llm-player-log-container .stream-text { font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; color: #ccc; margin: 0; max-height: 150px; overflow: auto; background: transparent; border: none; }
+.llm-player-log-container .active-meta { display: block; box-sizing: border-box; padding: 4px 8px 6px; color: #888; font-size: 11px; }
+.llm-player-log-container .history-section { display: block; flex: 1 1 auto; min-height: 0; box-sizing: border-box; overflow: auto; padding: 8px; }
+.llm-player-log-container .section-title { display: block; font-weight: bold; font-size: 13px; margin-bottom: 6px; color: #aaa; }
+.llm-player-log-container .empty { display: block; box-sizing: border-box; text-align: center; padding: 40px 0; color: #666; }
+.llm-player-log-container .history-list { display: flex; flex-direction: column; gap: 2px; }
+.llm-player-log-container .history-item { display: flex; align-items: center; padding: 5px 8px; border-radius: 3px; cursor: pointer; gap: 8px; }
+.llm-player-log-container .history-item:hover { background: rgba(255, 255, 255, 0.06); }
+.llm-player-log-container .history-item .time { font-family: monospace; font-size: 11px; color: #999; white-space: nowrap; }
+.llm-player-log-container .history-item .decision { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.llm-player-log-container .history-item .duration { font-family: monospace; font-size: 11px; color: #888; }
+.llm-player-log-container .status-success { color: #4caf50; }
+.llm-player-log-container .status-fallback { color: #ff9800; }
+.llm-player-log-container .status-error { color: #f44336; }
+.llm-player-log-container .status-timeout { color: #ff9800; }
+.llm-player-log-container .detail-view { display: block; flex: 1 1 auto; min-height: 0; box-sizing: border-box; padding: 0; overflow: auto; }
+.llm-player-log-container .detail-card { display: block; box-sizing: border-box; margin: 8px; border: 1px solid #444; border-radius: 4px; overflow: hidden; }
+.llm-player-log-container .detail-card-title { display: block; box-sizing: border-box; background: #333; padding: 5px 8px; font-weight: bold; color: #ccc; border-bottom: 1px solid #444; }
+.llm-player-log-container .detail-card-body { display: block; box-sizing: border-box; padding: 6px 8px; }
+.llm-player-log-container .card-error .detail-card-title { color: #f44336; }
+.llm-player-log-container .card-fallback .detail-card-title { color: #ff9800; }
+.llm-player-log-container .field { display: block; margin: 3px 0; word-break: break-all; }
+.llm-player-log-container .label { color: #999; margin-right: 4px; }
+.llm-player-log-container .code-block { background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 3px; padding: 6px 8px; margin: 4px 0; font-size: 11px; font-family: monospace; white-space: pre-wrap; word-break: break-all; overflow: auto; max-height: 200px; color: #ccc; }
+.llm-player-log-container .msg-card { display: block; box-sizing: border-box; margin: 4px 0; border: 1px solid #3a3a3a; border-radius: 3px; overflow: hidden; }
+.llm-player-log-container .msg-role { display: block; box-sizing: border-box; padding: 3px 6px; font-size: 11px; font-weight: bold; color: #aaa; background: #2a2a2a; border-bottom: 1px solid #3a3a3a; }
+.llm-player-log-container .msg-system .msg-role { color: #64b5f6; }
+.llm-player-log-container .msg-user .msg-role { color: #81c784; }
+.llm-player-log-container .msg-assistant .msg-role { color: #ffb74d; }
+.llm-player-log-container .msg-card .code-block { border: none; margin: 0; border-radius: 0; }
+.llm-player-log-container details { margin: 4px 0; }
+.llm-player-log-container details summary { cursor: pointer; color: #aaa; font-size: 12px; padding: 2px 0; }
+.llm-player-log-container details summary:hover { color: #ddd; }
+.llm-player-log-container details[open] summary { margin-bottom: 4px; }

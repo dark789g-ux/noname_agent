@@ -1,0 +1,370 @@
+/*--------位置(5人)------*/
+[data-number="5"] > .player[data-position="1"] {
+	top: calc(150% / 3 - 65px);
+	left: calc(100% - 240px);
+}
+[data-number="5"] > .player[data-position="2"] {
+	top: 10px;
+	left: calc(75% - 120px);
+}
+[data-number="5"] > .player[data-position="3"] {
+	top: 10px;
+	left: calc(25% - 120px);
+}
+[data-number="5"] > .player[data-position="4"] {
+	top: calc(150% / 3 - 65px);
+	left: 0;
+}
+[data-number="5"] > .card[data-position="1"] {
+	top: calc(150% / 3 - 65px);
+	left: calc(100% - 240px);
+}
+[data-number="5"] > .card[data-position="2"] {
+	top: 10px;
+	left: calc(75% - 120px);
+}
+[data-number="5"] > .card[data-position="3"] {
+	top: 10px;
+	left: calc(25% - 0px);
+}
+[data-number="5"] > .card[data-position="4"] {
+	top: calc(150% / 3 - 65px);
+	left: 120px;
+}
+[data-number="5"] > .popup[data-position="1"] {
+	top: calc(150% / 3 - 53px);
+	left: calc(100% - 270px);
+}
+[data-number="5"] > .popup[data-position="2"] {
+	top: 140px;
+	left: calc(75% - 150px);
+}
+[data-number="5"] > .popup[data-position="3"] {
+	top: 140px;
+	left: calc(25% + 120px);
+}
+[data-number="5"] > .popup[data-position="4"] {
+	top: calc(150% / 3 - 53px);
+	left: 250px;
+}
+/*--------位置(4人)------*/
+[data-number="4"] > .player[data-position="1"] {
+	top: calc(100% / 3 - 40px);
+	left: calc(100% - 240px);
+}
+[data-number="4"] > .player[data-position="2"] {
+	top: 0;
+	left: calc(50% - 120px);
+}
+[data-number="4"] > .player[data-position="3"] {
+	top: calc(100% / 3 - 40px);
+	left: 0;
+}
+[data-number="4"] > .card[data-position="1"] {
+	top: calc(100% / 3 - 40px);
+	left: calc(100% - 240px);
+}
+[data-number="4"] > .card[data-position="2"] {
+	top: 0;
+	left: calc(50% - 52px);
+}
+[data-number="4"] > .card[data-position="3"] {
+	top: calc(100% / 3 - 40px);
+	left: 120px;
+}
+[data-number="4"] > .popup[data-position="1"] {
+	top: calc(100% / 3 - 28px);
+	left: calc(100% - 270px);
+}
+[data-number="4"] > .popup[data-position="2"] {
+	top: 130px;
+	left: calc(50% - 106px);
+}
+[data-number="4"] > .popup[data-position="3"] {
+	top: calc(100% / 3 - 28px);
+	left: 250px;
+}
+/*--------位置(3人)------*/
+[data-number="3"] > .player[data-position="1"] {
+	top: 10px;
+	left: calc(75% - 60px);
+}
+[data-number="3"] > .player[data-position="2"] {
+	top: 10px;
+	left: calc(25% - 180px);
+}
+[data-number="3"] > .card[data-position="1"] {
+	top: 10px;
+	left: calc(75% - 60px);
+}
+[data-number="3"] > .card[data-position="2"] {
+	top: 10px;
+	left: calc(25% - 60px);
+}
+[data-number="3"] > .popup[data-position="1"] {
+	top: 140px;
+	left: calc(75% - 80px);
+}
+[data-number="3"] > .popup[data-position="2"] {
+	top: 140px;
+	left: calc(25% + 60px);
+}
+/*--------位置(2人)------*/
+[data-number="2"] > .player[data-position="1"] {
+	top: 0;
+	left: calc(50% - 120px);
+}
+[data-number="2"] > .card[data-position="1"] {
+	top: 0;
+	left: calc(50% - 52px);
+}
+[data-number="2"] > .popup[data-position="1"] {
+	top: 130px;
+	left: calc(50% - 106px);
+}
+/*--------位置(1人)------*/
+.player[data-position="0"] {
+	top: calc(100% - 130px);
+	left: calc(50% - 120px);
+}
+.card[data-position="0"] {
+	top: calc(100% - 130px);
+	left: calc(50% - 52px);
+}
+.popup[data-position="0"] {
+	top: calc(100% - 176px);
+	left: calc(50% - 106px);
+}
+
+#window > .player.connect[data-position="c0"] {
+	left: calc(50% - 120px);
+	top: calc(50% - 200px);
+}
+#window > .player.connect[data-position="c1"] {
+	left: calc(50% - 120px);
+	top: calc(50% - 60px);
+}
+#window > .player.connect[data-position="c2"] {
+	left: calc(50% - 120px);
+	top: calc(50% + 80px);
+}
+#window > .player.connect[data-position="c0"] {
+	left: calc(50% - 140px);
+	top: calc(50% - 200px);
+}
+#window > .player.connect[data-position="c1"] {
+	left: calc(50% - 140px);
+	top: calc(50% - 60px);
+}
+#window > .player.connect[data-position="c2"] {
+	left: calc(50% - 140px);
+	top: calc(50% + 80px);
+}
+#window > .player.connect[data-position="c3"] {
+	left: calc(50% + 20px);
+	top: calc(50% - 200px);
+}
+#window > .player.connect[data-position="c4"] {
+	left: calc(50% + 20px);
+	top: calc(50% - 60px);
+}
+#window > .player.connect[data-position="c5"] {
+	left: calc(50% + 20px);
+	top: calc(50% + 80px);
+}
+#window > .player.connect[data-position="cx0"] {
+	left: calc(150% / 7 - 1275px / 7);
+	top: calc(300% / 7 - 160px + 5px);
+}
+#window > .player.connect[data-position="cx1"] {
+	left: calc(247% / 7 - 850px / 7);
+	top: calc(300% / 7 - 160px + 5px);
+}
+#window > .player.connect[data-position="cx2"] {
+	left: calc(350% / 7 - 525px / 7);
+	top: calc(300% / 7 - 160px + 5px);
+}
+#window > .player.connect[data-position="cx3"] {
+	left: calc(453% / 7 - 200px / 7);
+	top: calc(300% / 7 - 160px + 5px);
+}
+#window > .player.connect[data-position="cx4"] {
+	left: calc(550% / 7 + 125px / 7);
+	top: calc(300% / 7 - 160px + 5px);
+}
+#window > .player.connect[data-position="cx5"] {
+	left: calc(150% / 7 - 1275px / 7);
+	top: calc(400% / 7 - 40px + 5px);
+}
+#window > .player.connect[data-position="cx6"] {
+	left: calc(247% / 7 - 850px / 7);
+	top: calc(400% / 7 - 40px + 5px);
+}
+#window > .player.connect[data-position="cx7"] {
+	left: calc(350% / 7 - 525px / 7);
+	top: calc(400% / 7 - 40px + 5px);
+}
+#window > .player.connect[data-position="cx8"] {
+	left: calc(453% / 7 - 200px / 7);
+	top: calc(400% / 7 - 40px + 5px);
+}
+#window > .player.connect[data-position="cx9"] {
+	left: calc(550% / 7 + 125px / 7);
+	top: calc(400% / 7 - 40px + 5px);
+}
+
+#window > .player.connect {
+	width: 120px;
+}
+#window.menupaused > .player.connect {
+	opacity: 0.5;
+}
+.connectbutton {
+	top: calc(400% / 7 - 35px);
+	width: 130px;
+}
+.connectbutton1 {
+	left: calc(50% - 200px);
+}
+.connectbutton2 {
+	left: calc(50% + 60px);
+}
+.connectevents {
+	left: auto;
+	top: auto;
+	right: 20px;
+	bottom: 20px;
+	z-index: 5;
+}
+.connectevents.server {
+	left: 20px;
+	right: auto;
+}
+.connectevents.left {
+	transform: translateX(-85px);
+}
+.connectevents.left2 {
+	transform: translateX(-170px);
+}
+.connectevents.icon {
+	width: 20px;
+	height: 20px;
+	border-radius: 100%;
+	padding: 0;
+	font-size: 15px;
+	font-family: "xinwei";
+	line-height: 22px;
+	bottom: 47px;
+	right: 13px;
+}
+
+/*--------动画--------*/
+.start,
+.equips > .card,
+.popup {
+	animation: game_start 0.5s;
+	-webkit-animation: game_start 0.5s;
+}
+.start2 {
+	animation: card_start 0.5s;
+	-webkit-animation: card_start 0.5s;
+}
+.dialog.popped {
+	animation: dialog_start2 0.3s;
+	-webkit-animation: dialog_start2 0.3s;
+}
+/*.dialog.removing{top: 100px}*/
+.card.drawing {
+	animation: drawing 1s;
+	animation-fill-mode: forwards;
+	-webkit-animation: drawing 1s;
+	-webkit-animation-fill-mode: forwards;
+}
+.card.thrown {
+	position: absolute;
+	opacity: 1;
+	margin: 0;
+	z-index: 3;
+}
+#arena > .card.thrown {
+	pointer-events: none;
+}
+#arena.thrownhighlight > .card.thrown:not(.thrownhighlight):not(.drawingcard) {
+	opacity: 0.5;
+	transform: scale(0.95);
+	/*-webkit-filter:blur(3px);*/
+}
+.card.start {
+	animation: card_start 0.5s;
+	-webkit-animation: card_start 0.5s;
+}
+.judgestart {
+	animation: card_judgestart 1s;
+	-webkit-animation: card_judgestart 1s;
+}
+#me > div > div > .card.start {
+	animation: card_start2 0.5s;
+	-webkit-animation: card_start2 0.5s;
+}
+#me > div > div > .card.drawinghidden {
+	opacity: 0;
+	transform: scale(0.2) !important;
+}
+.marks > .card.drawinghidden,
+.judges > .card.drawinghidden {
+	opacity: 0;
+	transform: scale(0.2);
+}
+#me > .fakeme.avatar {
+	width: 120px;
+	height: 120px;
+	border-radius: 8px;
+	top: 10px;
+	left: 10px;
+	background-size: cover;
+}
+#window[data-radius_size="reduce"] #me > .fakeme.avatar {
+	border-radius: 4px;
+}
+#window[data-radius_size="off"] #me > .fakeme.avatar {
+	border-radius: 0px;
+}
+#window[data-radius_size="increase"] #me > .fakeme.avatar {
+	border-radius: 16px;
+}
+.card.removing {
+	transform: scale(0);
+}
+#me > div > div > .card.removing {
+	margin-left: -52px;
+	margin-right: -52px;
+}
+.card.thrown.removing {
+	width: 104px;
+	height: 104px;
+	transform: none;
+}
+#sidebar.sidebar {
+	animation: sidebar 0.5s;
+	-webkit-animation: sidebar 0.5s;
+}
+.button.zoom {
+	animation: zoom_button 0.5s;
+	-webkit-animation: zoom_button 0.5s;
+}
+.content > .config.start {
+	animation: config 0.5s;
+	-webkit-animation: config 0.5s;
+}
+.flash,
+.flash-animation-iteration-count-infinite {
+	animation-name: flash;
+	animation-duration: 1s;
+}
+.flash-animation-iteration-count-infinite {
+	animation-iteration-count: infinite;
+}
+.flip {
+	animation: flip 1s;
+	-webkit-animation: flip 1s;
+}

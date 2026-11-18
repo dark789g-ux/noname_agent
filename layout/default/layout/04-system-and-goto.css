@@ -1,0 +1,312 @@
+#system {
+	padding: 6px;
+	width: calc(100% - 12px);
+	white-space: nowrap;
+	z-index: 3;
+	pointer-events: none;
+	transition-property: opacity;
+}
+#system > div {
+	height: 100%;
+	position: relative;
+	margin: 0;
+	padding: 0;
+}
+#system > div > div {
+	pointer-events: auto;
+}
+#system > div:last-child {
+	text-align: right;
+	float: right;
+}
+#system > div > div {
+	position: relative;
+	padding-top: 6px;
+	padding-bottom: 6px;
+	padding-left: 8px;
+	padding-right: 8px;
+	text-align: center;
+	margin: 4px;
+	transition: all 0.1s;
+}
+
+.pausedbg {
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	z-index: 5;
+}
+.pausedbg > div:first-child {
+	font-size: 30px;
+	top: calc(50% - 17px);
+	left: calc(50% - 45px);
+}
+#sidebar,
+#sidebar3 {
+	left: 0;
+	top: 0;
+	width: 200px;
+	height: calc(100% - 40px);
+	text-align: left;
+	padding: 20px;
+	overflow-y: scroll;
+	z-index: 6;
+}
+#sidebar3 {
+	text-align: right;
+}
+.pausedbg > #sidebar.right,
+#sidebar3 {
+	left: calc(100% - 240px);
+}
+#sidebar3.left {
+	left: 0;
+	text-align: left;
+}
+
+.dialog.popped #sidebar {
+	padding: 0;
+}
+.dialog .poppedpile {
+	width: 100%;
+	padding-bottom: 10px;
+}
+.dialog .poppedpile > div {
+	display: block;
+	position: relative;
+}
+.dialog.character > .content-container {
+	width: calc(100% - 136px);
+	left: 136px;
+}
+.dialog.character > .packnode {
+	width: 136px;
+	left: 0;
+	height: 100%;
+	position: absolute;
+	overflow: scroll;
+}
+.dialog.choose-character > .content-container {
+	width: calc(100% - 106px);
+	left: 106px;
+}
+.dialog.choose-character > .packnode {
+	width: 106px;
+}
+.dialog.character > .packnode > div {
+	/*box-shadow: rgba(0, 0, 0, 0.4) 0 0 0 1px, rgba(0, 0, 0, 0.2) 0 3px 10px;
+	background-image: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4));
+	border-radius: 4px;
+	font-family:'STXinwei','xinwei';
+
+	text-align:center;
+	display:inline-block;
+	padding:5px;*/
+	font-size: 26px;
+	line-height: 26px;
+	width: calc(100% - 30px);
+	margin-top: 9px;
+	margin-left: 10px;
+	white-space: nowrap;
+	position: relative;
+}
+.dialog.character > .packnode > div:last-child {
+	margin-bottom: 9px;
+}
+.dialog.popped .caption > .text > ul > li:not(*:last-child) {
+	margin-bottom: 8px;
+}
+.dialog.popped .caption > .caption > div > .skillinfo:not(*:last-child) {
+	margin-bottom: 8px;
+}
+
+.skillversion {
+	padding-bottom: 5px;
+}
+
+#sidebar > div,
+#sidebar3 > div {
+	margin: 10px;
+	position: relative;
+	display: block;
+	min-height: 5px;
+}
+#scrollzone1 {
+	left: 0;
+}
+#scrollzone2 {
+	left: calc(50% - 140px);
+}
+#scrollzone3 {
+	right: calc(50% - 140px);
+}
+#scrollzone4 {
+	right: 0;
+}
+.scrollzone {
+	width: 20px;
+	height: 140px;
+}
+
+body > .background.paused {
+	filter: blur(3px);
+	-webkit-filter: blur(3px);
+}
+body > .background {
+	z-index: -5;
+}
+body > .background.upper {
+	z-index: -4;
+}
+body > .background.land {
+	background-position: center;
+	background-size: cover;
+	transition: all 2s;
+}
+
+.popup:not(.guanxing) {
+	padding: 5px;
+}
+.forcehide {
+	display: none !important;
+}
+.removing,
+.hidden {
+	opacity: 0 !important;
+	pointer-events: none;
+}
+
+/* game.$elementGoto使用的喵 */
+/* 这些可能作用于任何元素上面，为了确保动画效果，我们要尽可能提升优先级喵 */
+.cloned-visual:not(.visual-subject) {
+	pointer-events: none !important;
+	translate: -1000000px -1000000px !important;
+	overflow: visible !important;
+	transition: none !important;
+}
+.facade-replacing {
+	visibility: hidden !important;
+	display: none !important;
+}
+
+#system > div > div.hidden {
+	opacity: 0.5 !important;
+}
+.opaque {
+	opacity: 0 !important;
+}
+.transparent {
+	opacity: 0.3 !important;
+}
+.transparent2 {
+	opacity: 0.6 !important;
+}
+
+.out {
+	opacity: 0.3 !important;
+	/* filter: blur(3px); */
+	/* -webkit-filter: blur(3px) */
+}
+.blurbg {
+	filter: blur(3px) !important;
+	-webkit-filter: blur(3px) !important;
+	transform: scale(1.2);
+}
+.blur {
+	filter: blur(3px) !important;
+	-webkit-filter: blur(3px) !important;
+}
+.blur2 {
+	filter: blur(6px) !important;
+	-webkit-filter: blur(6px) !important;
+}
+.invert-color {
+	filter: invert(1);
+	-webkit-filter: invert(1);
+}
+.zoominanim {
+	animation: zoomin 0.5s;
+	-webkit-animation: zoomin 0.5s;
+}
+.zoomin {
+	transform: scale(1.05) !important;
+}
+.zoomout {
+	transform: scale(0.95) !important;
+}
+.zoomin2 {
+	transform: scale(2) !important;
+}
+.zoomin3 {
+	transform: scale(3) !important;
+}
+.zoomout2 {
+	transform: scale(0.5) !important;
+}
+.zoomout3 {
+	transform: scale(0.3) !important;
+}
+.rotateleft {
+	transform: rotate(-3deg) !important;
+}
+.rotateright {
+	transform: rotate(3deg) !important;
+}
+
+.exclude {
+	opacity: 0.6 !important;
+}
+.button.buttonclick {
+	animation: buttonclick 0.8s;
+	-webkit-animation: buttonclick 0.8s;
+}
+.background {
+	width: 100%;
+	height: 100%;
+	left: 0;
+	top: 0;
+	margin: 0;
+	padding: 0;
+	display: inline-block !important;
+}
+.background2 {
+	width: 90%;
+	height: 90%;
+	left: 5%;
+	top: 5%;
+	margin: 0;
+	padding: 0;
+	display: inline-block !important;
+}
+.background,
+.button,
+.avatar,
+.avatar2 {
+	transition-property: top, box-shadow, opacity, transform;
+	transition-duration: 0.5s;
+}
+.fullsize {
+	width: 100%;
+	height: 100%;
+	left: 0;
+	top: 0;
+	margin: 0;
+	padding: 0;
+	border: none;
+	display: block;
+	position: absolute;
+}
+.intro {
+	width: 20px;
+	height: 20px;
+}
+#systembutton {
+	left: calc(-150% / 47 + 15px);
+	bottom: calc(-100% / 18 + 135px);
+	top: auto;
+	margin: 0;
+}
+#arena:not(.mobile) > #systembutton {
+	display: none !important;
+}

@@ -1,0 +1,378 @@
+.avatar {
+	width: 100px;
+	height: 100px;
+	left: 10px;
+	top: 10px;
+	overflow: hidden;
+}
+.avatar2 {
+	width: 42px;
+	height: 42px;
+	top: 70px;
+	left: 70px;
+	overflow: hidden;
+}
+
+.equips {
+	width: 96px;
+	height: 96px;
+	right: 14px;
+	top: 12px;
+}
+.equips > div {
+	width: 42px;
+	height: 42px;
+	margin: 0;
+	position: absolute;
+}
+.equips > .equip1 {
+	top: 0;
+	left: 0;
+}
+.equips > .equip2 {
+	top: 0;
+	right: 0;
+}
+.equips > .equip3 {
+	bottom: 0;
+	left: 0;
+}
+.equips > .equip4 {
+	bottom: 0;
+	right: 0;
+}
+.equips > .equip5 {
+	top: calc(50% - 21px);
+	left: calc(50% - 21px);
+	border-radius: 21px;
+	z-index: 1;
+}
+.equips > .equip6 {
+	bottom: 3;
+	left: calc(50% - 21px);
+}
+.equips > div > div:not(.image),
+.judges > div > div:not(.image),
+.marks > div > div:not(.image) {
+	display: none;
+}
+.equips > div > .image,
+.judges > div > .image,
+.marks > div > .image {
+	/*width: 120%;
+	height: 120%;
+	left: -20%;
+	top: -20%;*/
+	background-size: 120%;
+	background-position: -4px -4px;
+	background-repeat: no-repeat;
+}
+
+#arena:not(.chess) .player[data-position="0"] > .equips > div > .image {
+	background-size: 115%;
+}
+/*.equips>div:hover>.info{display: inline-block;
+	animation:equip_hover 1s;
+	-webkit-animation:equip_hover 1s;
+	left: 0;right: auto;width: 42px;text-align: center;}*/
+/*.equips>div:hover>.background {
+	animation:equip_hover2 1s;
+	animation-fill-mode: forwards;
+	-webkit-animation:equip_hover2 1s;
+	-webkit-animation-fill-mode: forwards;
+}*/
+#arena.oldlayout .marks {
+	left: 14px;
+}
+
+.judges {
+	left: 14px;
+	top: -18px;
+}
+.marks {
+	left: 14px;
+	top: 112px;
+}
+.player > .marks {
+	z-index: 4;
+}
+.judges > div,
+.marks > div {
+	width: 24px;
+	height: 24px;
+	margin: 0;
+	left: 0;
+	top: 0;
+	opacity: 1;
+	position: absolute;
+	line-height: 20px;
+}
+
+.hp {
+	left: 18px;
+	top: 14px;
+	width: 72px;
+	line-height: 14px;
+	text-align: left;
+}
+.hp.text {
+	top: 18px;
+}
+.hp.textstyle {
+	font-family: "xinwei";
+}
+.hp > div {
+	width: 8px;
+	height: 8px;
+	margin-left: 3px;
+	position: relative;
+	border-radius: 100%;
+	box-shadow: rgba(0, 0, 0, 0.2) 1px -1px 2px inset, rgba(255, 255, 255, 0.15) -1px 1px 5px inset;
+	position: relative;
+	filter: brightness(1.5);
+	-webkit-filter: brightness(1.5);
+	transition: all 0.5s;
+	background-repeat: no-repeat;
+}
+.button .hp > div {
+	width: 6px;
+	height: 6px;
+	background: white;
+	box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.5);
+	border: 1px solid #fff;
+}
+.button .hp > .shield {
+	background: rgba(63, 119, 173, 1);
+	border: 1px solid rgba(63, 119, 173, 1);
+}
+.hp[data-condition="hidden"] > div:not(.lost):not(.shield) {
+	background-image: url("../../../theme/style/hp/image/hidden_hp.png") !important;
+	width: 12px;
+	height: 12px;
+	background-size: 100% 100%;
+	box-shadow: none;
+}
+.hp[data-condition="high"] > div:not(.lost):not(.shield) {
+	background: rgba(57, 123, 4, 1);
+	border: 1px solid rgba(39, 79, 7, 1);
+}
+.hp[data-condition="mid"] > div:not(.lost):not(.shield) {
+	background: rgba(166, 140, 6, 1);
+	border: 1px solid rgba(79, 64, 7, 1);
+}
+.hp[data-condition="low"] > div:not(.lost):not(.shield) {
+	background: rgba(148, 27, 27, 1);
+	border: 1px solid rgba(79, 7, 7, 1);
+}
+.hp.actcount > div:not(.lost):not(.shield) {
+	background: rgba(63, 119, 173, 1);
+	border: 1px solid rgba(31, 82, 131, 1);
+}
+.treasure > .hp > div:not(.lost):not(.shield) {
+	background: rgba(63, 119, 173, 1) !important;
+	border: 1px solid rgba(31, 82, 131, 1) !important;
+}
+.hp.actcount > div.overflow:not(.lost):not(.shield) {
+	background: rgb(154, 154, 154);
+	border: 1px solid rgb(109, 109, 109);
+}
+.hp.actcount.overflow2 > div.overflow:not(.lost):not(.shield) {
+	background: rgb(173, 129, 63);
+	border: 1px solid rgb(131, 109, 31);
+}
+.hp.actcount > .lost {
+	background: rgba(63, 119, 173, 1);
+	border: 1px solid rgba(31, 82, 131, 1);
+	filter: grayscale(1);
+	-webkit-filter: grayscale(1);
+}
+
+.hp > .lost {
+	background: rgba(57, 123, 4, 1);
+	border: 1px solid rgba(39, 79, 7, 1);
+	filter: grayscale(1);
+	-webkit-filter: grayscale(1);
+}
+.hp > .shield {
+	background: rgba(63, 119, 173, 1);
+	border: 1px solid rgba(31, 82, 131, 1);
+}
+.hp.text[data-condition="low"],
+.hp.textstyle[data-condition="low"] {
+	text-shadow: black 0 0 1px, rgba(232, 53, 53, 1) 0 0 2px, rgba(232, 53, 53, 1) 0 0 5px, rgba(232, 53, 53, 1) 0 0 10px;
+}
+.hp.text[data-condition="mid"],
+.hp.textstyle[data-condition="mid"] {
+	text-shadow: black 0 0 1px, rgba(255, 203, 0, 1) 0 0 2px, rgba(255, 203, 0, 1) 0 0 5px, rgba(255, 203, 0, 1) 0 0 10px;
+}
+.hp.text[data-condition="high"],
+.hp.textstyle[data-condition="high"] {
+	text-shadow: rgba(57, 123, 4, 1) 0 0 2px, rgba(57, 123, 4, 1) 0 0 5px, rgba(57, 123, 4, 1) 0 0 10px;
+}
+
+.player::after,
+.card::after,
+.button::after,
+.player::before,
+.card::before,
+.button::before {
+	content: "";
+	position: absolute;
+	z-index: -1;
+	width: 100%;
+	height: 100%;
+	left: 0;
+	top: 0;
+	margin: 0;
+	padding: 0;
+	opacity: 0;
+	border-radius: 8px;
+	transition: opacity 0.5s;
+}
+
+.player::after,
+.card::after,
+.button::after {
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgba(255, 0, 0, 0.4) 0 0 5px, rgba(255, 0, 0, 0.4) 0 0 12px, rgba(255, 0, 0, 0.8) 0 0 15px;
+}
+
+.player::before,
+.card::before,
+.button::before {
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgba(0, 133, 255, 0.5) 0 0 5px, rgba(0, 133, 255, 0.6) 0 0 12px, rgba(0, 133, 255, 0.8) 0 0 15px;
+}
+
+/*.hp>div{width: 6px;height: 6px;margin-left: 3px;position: relative;}*/
+.count.p2 {
+	right: 174px;
+}
+.count {
+	right: 140px;
+	top: 86px;
+	text-align: right;
+	font-size: 14px;
+}
+.player.minskin .count {
+	right: 20px;
+}
+.identity {
+	left: 90px;
+	top: 5px;
+}
+.identity {
+	text-align: center;
+}
+.identity > div {
+	line-height: 16px;
+	position: relative;
+	text-align: right;
+	top: 2px;
+}
+
+	.identity .identitycircle {
+		position: relative;
+		width: 20px;
+		height: 20px;
+		left: 1px;
+		top: 1px;
+		border-radius: 100%;
+	}
+
+		.identitycircle > div {
+			width: 18px;
+			height: 18px;
+			left: 1px;
+			top: 1px;
+			border-radius: 100%;
+			overflow: hidden;
+		}
+
+				.identitycircle > div > div {
+	width: 9px;
+	height: 9px;
+	left: 9px;
+	top: 0px;
+	transform-origin: bottom left;
+}
+
+.identitycircle > div > div[data-color="wei"] {
+	background-image: radial-gradient(circle at bottom left, rgb(157, 198, 255), rgb(117, 147, 189));
+}
+
+.identitycircle > div > div[data-color="shu"] {
+	background-image: radial-gradient(circle at bottom left, rgb(185, 72, 36), rgb(158, 62, 31));
+}
+
+.identitycircle > div > div[data-color="wu"] {
+	background-image: radial-gradient(circle at bottom left, rgb(120, 218, 83), rgb(104, 189, 73));
+}
+
+.identitycircle > div > div[data-color="qun"] {
+	background-image: radial-gradient(circle at bottom left, rgb(255, 218, 71), rgb(224, 191, 62));
+}
+
+.identitycircle > div > div[data-color="jin"] {
+	background-image: radial-gradient(circle at bottom left, rgb(100, 74, 139), rgb(96, 72, 136));
+}
+
+.identitycircle > div > div[data-color="key"] {
+	background-image: radial-gradient(circle at bottom left, rgb(203, 177, 255), rgb(203, 177, 255));
+}
+
+.unseen > .avatar,
+.unseen > .name:not(.name2),
+.unseen2 > .avatar2,
+.unseen2 > .name2 {
+	opacity: 0 !important;
+}
+
+#arena:not(.observe) .player[data-position="0"].unseen > .avatar,
+#arena:not(.observe) .player[data-position="0"].unseen2 > .avatar2,
+#arena:not(.observe) .player[data-position="0"].unseen > .name:not(.name2):not(.name_seat),
+#arena:not(.observe) .player[data-position="0"].unseen2 > .name2,
+#arena:not(.observe) .unseen_v > .avatar,
+#arena:not(.observe) .unseen2_v > .avatar2,
+#arena:not(.observe) .unseen_v > .name:not(.name2):not(.name_seat),
+#arena:not(.observe) .unseen2_v > .name2 {
+	opacity: 0.2 !important;
+}
+
+.player > .unseen_show > .avatar,
+.player > .unseen2_show > .avatar2 {
+	opacity: 0;
+}
+
+#arena:not(.observe) .player:not([data-position="0"]).unseen_show > .avatar,
+#arena:not(.observe) .player:not([data-position="0"]).unseen2_show > .avatar2 {
+	opacity: 1 !important;
+	background-image: url("../../../image/character/hidden_image.jpg") !important;
+}
+
+.player > .name_seat {
+	opacity: 0;
+	white-space: nowrap;
+	writing-mode: vertical-rl;
+	-webkit-writing-mode: vertical-rl;
+}
+.player:not([data-position="0"]).unseen.unseen2 > .name_seat,
+.player:not([data-position="0"]):not(.fullskin2).unseen > .name_seat {
+	opacity: 1 !important;
+}
+
+.linked > .avatar,
+.linked > .avatar2 {
+	transform: rotate(-90deg);
+}
+.linked > .avatar2 {
+	top: 5px;
+}
+.linked > .identity {
+	top: 88px;
+}
+.linked > .count {
+	right: 154px;
+}
+.acted > .identity > div {
+	transform: rotate(180deg);
+}
+

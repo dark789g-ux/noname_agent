@@ -1,0 +1,13 @@
+
+.cardpiledelete {
+	position: absolute;
+	right: 5px;
+	top: 50%;
+	transform: translateY(-50%);
+	color: #aaa;
+	cursor: pointer;
+	font-size: 12px;
+}
+.cardpiledelete:hover {
+	color: #f44;
+}

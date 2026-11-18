@@ -1,0 +1,16 @@
+@import "./layout/01-tags-and-shortcut.css";
+@import "./layout/02-splash-and-arena.css";
+@import "./layout/03-roundmenu-and-handcards.css";
+@import "./layout/04-system-and-goto.css";
+@import "./layout/05-card.css";
+@import "./layout/06-dialog-and-control.css";
+@import "./layout/07-player-core.css";
+@import "./layout/08-player-nodes.css";
+@import "./layout/09-positions-multi.css";
+@import "./layout/10-positions-few-and-motion.css";
+@import "./layout/11-style-state.css";
+@import "./layout/12-style-identity-and-frame.css";
+@import "./layout/13-style-fullskin-and-tempname.css";
+@import "./layout/14-style-timer-and-dice.css";
+@import "./layout/15-keyframes-core.css";
+@import "./layout/16-keyframes-and-misc.css";

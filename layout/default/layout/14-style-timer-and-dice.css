@@ -1,0 +1,361 @@
+#arena.oldlayout .player > .timerbar > div {
+	top: 100px;
+	left: 15px;
+	width: 90px;
+}
+#arena.oldlayout .player > .nameol {
+	left: 15px;
+	top: 85px;
+	text-align: left;
+}
+
+.timerbar > div {
+	left: 25px;
+	box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.3);
+	border-radius: 8px;
+	height: 5px;
+	width: 100px;
+}
+.timerbar > div:first-child {
+	background: rgba(255, 255, 255, 0.6);
+}
+.timerbar > div {
+	top: 165px;
+}
+.timerbar > div:last-child {
+	background: linear-gradient(#ffda47, #ce0404);
+	transition-timing-function: linear;
+	float: left;
+	transform-origin: left;
+}
+/*.timerbar>div:last-child{background: linear-gradient(#FFFFFF,#F0F0F0);}
+.timerbar[data-color="red"]>div:last-child{background: linear-gradient(#FF0000, #CE0404)}
+.timerbar[data-color="blue"]>div:last-child{background: linear-gradient(#8EE0FA, #0F637E)}
+.timerbar[data-color="green"]>div:last-child{background: linear-gradient(#7AFF00, #589103)}
+.timerbar[data-color="purple"]>div:last-child{background: linear-gradient(#E247FF, #CE0404)}
+.timerbar[data-color="orange"]>div:last-child{background: linear-gradient(#FFDA47, #CE0404)}*/
+
+/*阴影*/
+/*.player.selectable{
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgba(0, 133, 255, 0.5) 0 0 5px, rgba(0, 133, 255, 0.6) 0 0 12px, rgba(0, 133, 255, 0.8) 0 0 15px;
+}*/
+.player.selectable:not(.selected)::before,
+.card.glow::before,
+.button.glow::before {
+	opacity: 1;
+}
+
+.player.selected::after,
+.card.selected::after,
+.button.selected::after {
+	opacity: 1;
+}
+
+.selected:not(.tdnodes):not(.text):not(.player):not(.card):not(.button),
+.selectedx {
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgba(255, 0, 0, 0.4) 0 0 5px, rgba(255, 0, 0, 0.4) 0 0 12px, rgba(255, 0, 0, 0.8) 0 0 15px !important;
+}
+
+#me .card.selected::after {
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgb(255, 0, 0) 0 0 5px, rgba(255, 0, 0, 1) 0 0 10px;
+}
+#me .card.glow::before {
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgb(0, 133, 255) 0 0 5px, rgba(0, 133, 255, 1) 0 0 10px;
+}
+
+#me > #handcards1:not(.scrollh),
+#me > #handcards2:not(.scrollh) {
+	z-index: 3;
+}
+/*#me>div:not(.scrollh)>.handcards>.card{
+	top:0;
+}
+#me>div:not(.scrollh)>.handcards>.card.selected{
+	top:-20px;
+}*/
+
+#me .card.glows {
+	opacity: 1;
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgb(255, 153, 51) 0 0 5px, rgba(255, 153, 51, 1) 0 0 10px;
+}
+.glow:not(.button):not(.card) {
+	box-shadow: rgba(0, 0, 0, 0.2) 0 0 0 1px, rgba(0, 133, 255, 0.4) 0 0 5px, rgba(0, 133, 255, 0.5) 0 0 12px, rgba(0, 133, 255, 0.8) 0 0 15px !important;
+}
+.glow2:not(.player.glow_phase) > .avatar {
+	/*-webkit-animation:control_glow 4s infinite;*/
+	box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgba(10, 155, 67, 1) 0 0 15px, rgba(10, 155, 67, 1) 0 0 15px !important;
+}
+.glow3 {
+	box-shadow: rgba(0, 0, 0, 0.4) 0 0 0 1px, rgba(0, 133, 255, 0.8) 0 0 10px, rgba(0, 133, 255, 0) 0 0 40px, rgba(0, 133, 255, 0.8) 0 0 60px !important;
+}
+.selectedx3 {
+	box-shadow: rgba(0, 0, 0, 0.4) 0 0 0 1px, rgba(255, 0, 0, 0.8) 0 0 10px, rgba(255, 0, 0, 0) 0 0 40px, rgba(255, 0, 0, 0.8) 0 0 60px !important;
+}
+.glow4 {
+	box-shadow: rgba(0, 0, 0, 0.4) 0 0 0 1px, rgba(0, 133, 255, 0.8) 0 0 10px, rgba(0, 133, 255, 0) 0 0 40px, rgba(0, 133, 255, 0.8) 0 0 40px !important;
+}
+.selectedx4 {
+	box-shadow: rgba(0, 0, 0, 0.4) 0 0 0 1px, rgba(255, 0, 0, 0.6) 0 0 10px, rgba(255, 0, 0, 0) 0 0 40px, rgba(255, 0, 0, 0.8) 0 0 40px !important;
+}
+.player:not(.glow_phase) > .avatar.glow2,
+.button.glow2:not(.selected) {
+	box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px, rgba(10, 155, 67, 1) 0 0 5px, rgba(10, 155, 67, 1) 0 0 5px, rgba(10, 155, 67, 1) 0 0 10px, rgba(10, 155, 67, 1) 0 0 10px !important;
+}
+
+.control.blue {
+	background-image: linear-gradient(rgba(47, 101, 150, 1), rgba(43, 90, 132, 1));
+}
+.control.red {
+	background-image: linear-gradient(rgba(150, 47, 47, 1), rgba(132, 43, 43, 1));
+}
+.control.red,
+.control.blue {
+	color: white;
+	text-shadow: black 0 0 2px;
+}
+
+.dialog.scroll1,
+.dialog.scroll2,
+.dialog.withbg {
+	background: rgba(0, 0, 0, 0.2);
+	box-shadow: rgba(0, 0, 0, 0.3) 0 0 0 1px;
+	border-radius: 8px;
+	min-height: 200px;
+}
+
+.dice-container {
+	background: rgba(0, 0, 0, 0.3);
+	z-index: 50;
+	perspective: 1000px;
+}
+.dice {
+	position: absolute;
+	width: 200px;
+	height: 200px;
+	transform-style: preserve-3d;
+	left: calc(50% - 100px);
+	top: calc(50% - 100px);
+	transition: transform 2s ease;
+}
+.dice[data-side="1"] {
+	transform: rotateX(75deg) rotateY(0deg) rotateZ(45deg);
+}
+.dice[data-side="1"].up-front {
+	transform: rotateX(0deg) rotateY(0deg) rotateZ(45deg);
+}
+.dice[data-side="2"] {
+	transform: rotateX(-15deg) rotateY(45deg);
+}
+.dice[data-side="2"].up-front {
+	transform: rotateX(-90deg) rotateY(45deg);
+}
+.dice[data-side="3"] {
+	transform: rotateX(165deg) rotateY(-45deg) rotateZ(90deg);
+}
+.dice[data-side="3"].up-front {
+	transform: rotateX(90deg) rotateY(-45deg) rotateZ(90deg);
+}
+.dice[data-side="4"] {
+	transform: rotateX(345deg) rotateY(-45deg) rotateZ(90deg);
+}
+.dice[data-side="4"].up-front {
+	transform: rotateX(270deg) rotateY(-45deg) rotateZ(90deg);
+}
+.dice[data-side="5"] {
+	transform: rotateX(345deg) rotateY(-45deg) rotateZ(180deg);
+}
+.dice[data-side="5"].up-front {
+	transform: rotateX(270deg) rotateY(-45deg) rotateZ(180deg);
+}
+.dice[data-side="6"] {
+	transform: rotateX(255deg) rotateY(0deg) rotateZ(135deg);
+}
+.dice[data-side="6"].up-front {
+	transform: rotateX(180deg) rotateY(0deg) rotateZ(135deg);
+}
+.dice > div {
+	position: absolute;
+	width: 200px;
+	height: 200px;
+	background: #fff;
+	box-shadow: inset 0 0 40px #ccc;
+	border-radius: 40px;
+}
+.dice .cover,
+.dice .inner {
+	background: #e0e0e0;
+	box-shadow: none;
+}
+.dice .cover {
+	border-radius: 0;
+	transform: translateZ(0px);
+}
+.dice .cover.x {
+	transform: rotateY(90deg);
+}
+.dice .cover.z {
+	transform: rotateX(90deg);
+}
+
+.dice .front {
+	transform: translateZ(100px);
+}
+.dice .front.inner {
+	transform: translateZ(98px);
+}
+.dice .back {
+	transform: rotateX(-180deg) translateZ(100px);
+}
+.dice .back.inner {
+	transform: rotateX(-180deg) translateZ(98px);
+}
+.dice .right {
+	transform: rotateY(90deg) translateZ(100px);
+}
+.dice .right.inner {
+	transform: rotateY(90deg) translateZ(98px);
+}
+.dice .left {
+	transform: rotateY(-90deg) translateZ(100px);
+}
+.dice .left.inner {
+	transform: rotateY(-90deg) translateZ(98px);
+}
+.dice .top {
+	transform: rotateX(90deg) translateZ(100px);
+}
+.dice .top.inner {
+	transform: rotateX(90deg) translateZ(98px);
+}
+.dice .bottom {
+	transform: rotateX(-90deg) translateZ(100px);
+}
+.dice .bottom.inner {
+	transform: rotateX(-90deg) translateZ(98px);
+}
+
+.dice .dot {
+	position: absolute;
+	width: 46px;
+	height: 46px;
+	border-radius: 23px;
+	background: #444;
+	box-shadow: inset 5px 0 10px #000;
+}
+.dice .dot.center {
+	margin: 77px 0 0 77px;
+}
+.dice .dot.dtop {
+	margin-top: 20px;
+}
+.dice .dot.dleft {
+	margin-left: 134px;
+}
+.dice .dot.dright {
+	margin-left: 20px;
+}
+.dice .dot.dbottom {
+	margin-top: 134px;
+}
+.dice .dot.center.dleft {
+	margin: 77px 0 0 20px;
+}
+.dice .dot.center.dright {
+	margin: 77px 0 0 134px;
+}
+
+#window.dicepaused > #arena,
+#window.dicepaused > #system,
+#window.dicepaused > #historybar {
+	opacity: 0.3 !important;
+}
+
+#window[data-radius_size="reduce"] .dialog.scroll1,
+#window[data-radius_size="reduce"] .dialog.scroll2,
+#window[data-radius_size="reduce"] .dialog.withbg {
+	border-radius: 4px;
+}
+
+#window[data-radius_size="off"] .dialog.scroll1,
+#window[data-radius_size="off"] .dialog.scroll2,
+#window[data-radius_size="off"] .dialog.withbg {
+	border-radius: 0px;
+}
+
+#window[data-radius_size="increase"] .dialog.scroll1,
+#window[data-radius_size="increase"] .dialog.scroll2,
+#window[data-radius_size="increase"] .dialog.withbg {
+	border-radius: 16px;
+}
+
+#window[data-radius_size="reduce"] #system > div > div,
+#window[data-radius_size="reduce"] #mebg,
+#window[data-radius_size="reduce"] .control,
+#window[data-radius_size="reduce"] .player,
+#window[data-radius_size="reduce"] .player > .turned,
+#window[data-radius_size="reduce"] .player::after,
+#window[data-radius_size="reduce"] .card,
+#window[data-radius_size="reduce"] .card::after,
+#window[data-radius_size="reduce"] .avatar,
+#window[data-radius_size="reduce"] .avatar2,
+#window[data-radius_size="reduce"] .button,
+#window[data-radius_size="reduce"] .button,
+::after,
+#window[data-radius_size="reduce"] #window > .dialog.popped,
+#window[data-radius_size="reduce"] .player.unseen .equips:not(*:empty),
+#window[data-radius_size="reduce"] .menu,
+#window[data-radius_size="reduce"] .left.pane > .menubutton,
+#window[data-radius_size="reduce"] #splash > div,
+#window[data-radius_size="reduce"].mobile:not(.chess) .player[data-position="0"] .equips {
+	border-radius: 4px;
+}
+
+#window[data-radius_size="off"] #system > div > div,
+#window[data-radius_size="off"] #mebg,
+#window[data-radius_size="off"] .control,
+#window[data-radius_size="off"] .player,
+#window[data-radius_size="off"] .player > .turned,
+#window[data-radius_size="off"] .player::after,
+#window[data-radius_size="off"] .card,
+#window[data-radius_size="off"] .card::after,
+#window[data-radius_size="off"] .avatar,
+#window[data-radius_size="off"] .avatar2,
+#window[data-radius_size="off"] .button,
+#window[data-radius_size="off"] .button::after,
+#window[data-radius_size="off"] #window > .dialog.popped,
+#window[data-radius_size="off"] .player.unseen .equips:not(*:empty),
+#window[data-radius_size="off"] .menu,
+#window[data-radius_size="off"] .left.pane > .menubutton,
+#window[data-radius_size="off"] #splash > div,
+#window[data-radius_size="off"].mobile:not(.chess) .player[data-position="0"] .equips {
+	border-radius: 0px;
+}
+
+#window[data-radius_size="increase"] #system > div > div,
+#window[data-radius_size="increase"] #mebg,
+#window[data-radius_size="increase"] .control,
+#window[data-radius_size="increase"] .player,
+#window[data-radius_size="increase"] .player > .turned,
+#window[data-radius_size="increase"] .player::after,
+#window[data-radius_size="increase"] .card,
+#window[data-radius_size="increase"] .card::after,
+#window[data-radius_size="increase"] .avatar,
+#window[data-radius_size="increase"] .avatar2,
+#window[data-radius_size="increase"] .button,
+#window[data-radius_size="increase"] .button::after,
+#window[data-radius_size="increase"] #window > .dialog.popped,
+#window[data-radius_size="increase"] .player.unseen .equips:not(*:empty),
+#window[data-radius_size="increase"] .menu,
+#window[data-radius_size="increase"] .left.pane > .menubutton,
+#window[data-radius_size="increase"] #splash > div,
+#window[data-radius_size="increase"].mobile:not(.chess) .player[data-position="0"] .equips {
+	border-radius: 16px;
+}
+
+.loading-screen {
+	background-color: black;
+	height: 100%;
+	width: 100%;
+	z-index: 31415926;
+}
+

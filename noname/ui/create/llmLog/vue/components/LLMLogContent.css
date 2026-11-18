@@ -1,0 +1,37 @@
+
+.llm-log-content[data-v-4d0fea1d] { margin: 4px 0; border: 1px solid #3a3a3a; border-radius: 3px; overflow: hidden;
+}
+.llm-log-content-header[data-v-4d0fea1d] { display: flex; align-items: center; gap: 8px; padding: 4px 6px; background: #2a2a2a; border-bottom: 1px solid #3a3a3a;
+}
+.llm-log-content-label[data-v-4d0fea1d] { flex: 1; min-width: 0; color: #aaa; font-size: 11px; font-weight: bold; word-break: break-all;
+}
+.llm-log-content-actions[data-v-4d0fea1d] { display: flex; flex: 0 0 auto; gap: 4px;
+}
+.llm-log-content-button[data-v-4d0fea1d] { border: 1px solid #555; border-radius: 3px; padding: 1px 5px; color: #ddd; background: #333; cursor: pointer; font-size: 11px;
+}
+.llm-log-content-button[data-v-4d0fea1d]:hover, .llm-log-content-button[data-v-4d0fea1d]:focus-visible { outline: 2px solid #64b5f6; outline-offset: 1px; background: #444;
+}
+.llm-log-content-body[data-v-4d0fea1d] { box-sizing: border-box; padding: 6px 8px; overflow: hidden;
+}
+.llm-log-content-body.is-collapsed[data-v-4d0fea1d] { max-height: 200px;
+}
+.llm-log-content-json[data-v-4d0fea1d] { margin: 0; color: #ccc; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all;
+}
+.llm-log-markdown[data-v-4d0fea1d] { color: #ddd; line-height: 1.5; overflow-wrap: anywhere;
+}
+.llm-log-markdown[data-v-4d0fea1d] p, .llm-log-markdown[data-v-4d0fea1d] ul, .llm-log-markdown[data-v-4d0fea1d] ol, .llm-log-markdown[data-v-4d0fea1d] blockquote, .llm-log-markdown[data-v-4d0fea1d] pre, .llm-log-markdown[data-v-4d0fea1d] table { margin: 0 0 8px;
+}
+.llm-log-markdown[data-v-4d0fea1d] :last-child { margin-bottom: 0;
+}
+.llm-log-markdown[data-v-4d0fea1d] pre { overflow-x: auto; padding: 6px; background: #202020; border-radius: 3px;
+}
+.llm-log-markdown[data-v-4d0fea1d] code { font-family: monospace;
+}
+.llm-log-markdown[data-v-4d0fea1d] table { max-width: 100%; border-collapse: collapse;
+}
+.llm-log-markdown[data-v-4d0fea1d] th, .llm-log-markdown[data-v-4d0fea1d] td { border: 1px solid #555; padding: 3px 5px;
+}
+.llm-log-markdown[data-v-4d0fea1d] a { color: #64b5f6;
+}
+.llm-log-markdown[data-v-4d0fea1d] .llm-markdown-image-placeholder { color: #ffb74d;
+}
