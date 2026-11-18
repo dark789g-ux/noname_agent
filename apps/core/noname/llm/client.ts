@@ -41,6 +41,7 @@ export async function callLLMWithTimeout(
 	tools: ChatCompletionTool[],
 	config: LLMConfig,
 	callbacks?: Pick<StreamCallbacks, "onUsage">,
+	signal?: AbortSignal,
 ): Promise<ToolCallResult> {
 	assertLLMURL(config.url);
 	const client = new OpenAI({
@@ -67,8 +68,8 @@ export async function callLLMWithTimeout(
 
 		const resp = await requestWithParallelToolFallback((includeParameter, timeout) => {
 			const { parallel_tool_calls, ...withoutParallel } = body;
-			return client.chat.completions.create(includeParameter ? body : withoutParallel, { timeout });
-		}, config.timeoutSec * 1000);
+			return client.chat.completions.create(includeParameter ? body : withoutParallel, { timeout, signal });
+		}, config.timeoutSec * 1000, signal);
 		const usage = extractOpenAIUsage((resp as any)?.usage);
 		if (usage) {
 			try {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDeciderRuntime, choiceEvent, stageTool } from "./decider-runtime.mjs";
+import { tool } from "./skill-runtime.mjs";
 
 test("guicai cost uses the actual player and card mods without get.player UI state", async () => {
 	const f = await createDeciderRuntime();
@@ -164,4 +165,40 @@ test("chooseCardTarget pre-filters dead-end cards and auto-cancels if no card ha
 	assert.equal(res2.handled, true);
 	assert.equal(res2.result.bool, false);
 	assert.equal(f.requests.length, 2);
+});
+
+test("non-forced chooseToDiscard auto-cancels when no candidate matches filterCard, and discards normally when matched", async () => {
+	const f = await createDeciderRuntime();
+	f.get.filter = filter => card => Object.entries(filter).every(([key, value]) => card[key] === value);
+	const owner = f.player("owner", [
+		{ name: "sha", suit: "spade", number: 6 },
+		{ name: "shan", suit: "heart", number: 13 },
+	]);
+	const resEmpty = await f.decide({
+		name: "chooseToDiscard",
+		player: owner,
+		forced: false,
+		selectCard: 1,
+		filterCard: f.get.filter({ suit: "club" }),
+	});
+	assert.equal(resEmpty.handled, true);
+	assert.equal(resEmpty.result.bool, false);
+	assert.equal(f.requests.length, 0);
+
+	const ownerWithClub = f.player("ownerWithClub", [
+		{ name: "sha", suit: "spade", number: 6 },
+		{ name: "guohe", suit: "club", number: 4 },
+	]);
+	f.queue.push(tool("discard_cards", { card_refs: ["c0"] }));
+	const resMatched = await f.decide({
+		name: "chooseToDiscard",
+		player: ownerWithClub,
+		forced: false,
+		selectCard: 1,
+		filterCard: f.get.filter({ suit: "club" }),
+	});
+	assert.equal(resMatched.handled, true);
+	assert.equal(resMatched.result.bool, true);
+	assert.equal(resMatched.result.cards[0], ownerWithClub.cards[1]);
+	assert.equal(f.requests.length, 1);
 });

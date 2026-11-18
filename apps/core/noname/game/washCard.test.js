@@ -1,3 +1,4 @@
+import { getTestText } from "../get/testing/testSource.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -11,7 +12,7 @@ const source = gameTestSource();
 const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Game");
 const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === "washCard");
 assert.ok(method);
-const getSource = ts.createSourceFile("get.js", readFileSync(new URL("../get/index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const getSource = ts.createSourceFile("get.js", getTestText(), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const getClass = getSource.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Get");
 const itemtype = getClass.members.find(node => node.name?.getText(getSource) === "itemtype");
 assert.ok(itemtype);
@@ -92,26 +93,36 @@ test("washing rejects malformed discard nodes instead of silently omitting them"
 function connectPileParser(state) {
 	const parser = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === "cardsGotoPile");
 	assert.ok(parser);
-	const removed = [], moved = [];
+	const removed = [],
+		moved = [];
 	state._status.event = { next: { remove: event => removed.push(event) } };
 	state.game.createEvent = name => ({
 		name,
-		set(key, value) { this[key] = value; },
-		setContent(value) { this.content = value; },
+		set(key, value) {
+			this[key] = value;
+		},
+		setContent(value) {
+			this.content = value;
+		},
 	});
 	state.game.$cardsGotoPile = event => moved.push(event.cards.slice());
 	const lib = {
 		element: { Card, Player: class {}, VCard: class {}, Button: class {}, Dialog: class {}, GameEvent: class {} },
 		card: { sha: {}, shan: {} },
-		natureSeparator: "|", nature: new Set(), experimental: { symbol: { itemType } },
+		natureSeparator: "|",
+		nature: new Set(),
+		experimental: { symbol: { itemType } },
 	};
 	const get = { is: { object: value => value !== null && typeof value === "object" && !Array.isArray(value) } };
 	get.itemtype = new Function("lib", "get", "HTMLDivElement", `return ({${itemtype.getText(getSource)}}).itemtype;`)(lib, get, class {});
-	state.game.cardsGotoPile = runInNewContext(`
+	state.game.cardsGotoPile = runInNewContext(
+		`
 		Array.prototype.add = function (value) { if (!this.includes(value)) this.push(value); };
 		Array.prototype.addArray = function (values) { for (const value of values) this.add(value); };
 		({ ${parser.getText(source)} }).cardsGotoPile
-	`, { game: state.game, _status: state._status, lib, get });
+	`,
+		{ game: state.game, _status: state._status, lib, get }
+	);
 	return { removed, moved };
 }
 
@@ -119,7 +130,8 @@ test("washing mixed DOM snapshots retains the parser's whole-array rejection", (
 	const dom = new JSDOM();
 	try {
 		for (const node of [dom.window.document.createTextNode("text"), dom.window.document.createElement("div")]) {
-			const first = new Card("sha"), second = new Card("shan");
+			const first = new Card("sha"),
+				second = new Card("shan");
 			const state = setup([first, node], [second]);
 			const { removed, moved } = connectPileParser(state);
 			const event = state.wash();
@@ -134,7 +146,8 @@ test("washing mixed DOM snapshots retains the parser's whole-array rejection", (
 });
 
 test("the pile parser copies pure card arrays in order and washing preserves identities", () => {
-	const first = new Card("sha"), second = new Card("shan");
+	const first = new Card("sha"),
+		second = new Card("shan");
 	const state = setup([first], [second]);
 	const { removed, moved } = connectPileParser(state);
 	const input = [first, second];

@@ -74,7 +74,7 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 			providerLabel: backend.label,
 			...decisionTrace(event),
 		},
-		player?.getSeatNum?.(),
+		resolvePlayerSeatIndex(player, _status as any),
 		deadline
 	);
 
@@ -105,7 +105,7 @@ export async function tryLLMDecide(event: any): Promise<{ handled: boolean; resu
 		let discardInspected = false;
 
 		const gameId = statusObj.llmGameId || "game_unknown";
-		const seatNum = resolvePlayerSeatIndex(player);
+		const seatNum = resolvePlayerSeatIndex(player, _status as any);
 		const existingSession = seatSessionRegistry.get(`${gameId}:seat_${seatNum}`);
 		const eventWindow = getEventsSince(existingSession ? existingSession.lastEventSeq : 0);
 		const initialAllowedToolNames = resolveAllowedToolNames(decisionPoint, snapshot, decision.stage, !!event.forced, {

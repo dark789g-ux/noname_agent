@@ -1,3 +1,4 @@
+import { getTestText } from "./testing/testSource.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -7,8 +8,8 @@ import { getRegisteredSkill, type SkillRegistry } from "../library/skillRegistry
 
 function readInfoMethod() {
 	const path = join(process.cwd(), "noname/get/index.js");
-	const source = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
-	const getClass = source.statements.find(statement => ts.isClassDeclaration(statement) && statement.name?.text === "Get");
+	const source = ts.createSourceFile(path, getTestText(), ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+	const getClass = source.statements.find((statement): statement is ts.ClassDeclaration => ts.isClassDeclaration(statement) && statement.name?.text === "Get");
 	if (!getClass) {
 		throw new Error("Get class is missing");
 	}
@@ -26,11 +27,7 @@ test("Get.info excludes metadata keys while retaining string and symbol skills",
 	const warnings: string[] = [];
 	console.warn = message => warnings.push(String(message));
 	try {
-		const info = new Function("lib", "get", "getRegisteredSkill", `return ${source}`)(
-			{ skill: registry },
-			{},
-			getRegisteredSkill
-		);
+		const info = new Function("lib", "get", "getRegisteredSkill", `return ${source}`)({ skill: registry }, {}, getRegisteredSkill);
 		if (typeof info !== "function") {
 			throw new Error("Get.info extraction did not produce a function");
 		}

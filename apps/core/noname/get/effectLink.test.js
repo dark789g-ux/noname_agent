@@ -1,3 +1,4 @@
+import { getTestText } from "./testing/testSource.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -5,9 +6,12 @@ import ts from "typescript";
 
 function readSource(path) {
 	const url = new URL(path, import.meta.url);
-	let text = readFileSync(url, "utf8");
+	let text = path === "./index.js" ? getTestText() : readFileSync(url, "utf8");
 	if (path.endsWith("/Skill.d.ts")) {
-		text = ts.preProcessFile(text).referencedFiles.map(reference => readFileSync(new URL(reference.fileName, url), "utf8")).join("\n");
+		text = ts
+			.preProcessFile(text)
+			.referencedFiles.map(reference => readFileSync(new URL(reference.fileName, url), "utf8"))
+			.join("\n");
 	}
 	const scriptKind = path.endsWith(".d.ts") ? ts.ScriptKind.TS : ts.ScriptKind.JS;
 	return ts.createSourceFile(path, text, ts.ScriptTarget.ESNext, true, scriptKind);
@@ -93,7 +97,10 @@ test("连环上下文精确描述 canLink 和四类 effect 回调", () => {
 	for (const name of ["player", "target", "player_use", "target_use"]) {
 		const callback = findMember(resultConfig.members, name);
 		assert.ok(callback.type && ts.isUnionTypeNode(callback.type));
-		assert.ok(callback.type.types.some(type => type.getText(resultDeclaration) === "AIResultScore"), `${name} should include a result callback`);
+		assert.ok(
+			callback.type.types.some(type => type.getText(resultDeclaration) === "AIResultScore"),
+			`${name} should include a result callback`
+		);
 		const functionType = score.type;
 		assert.equal(functionType.parameters.length, 4, `${name} should receive linking as its fourth argument`);
 		assert.deepEqual(

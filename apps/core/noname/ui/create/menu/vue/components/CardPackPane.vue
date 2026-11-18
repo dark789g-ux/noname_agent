@@ -50,8 +50,8 @@
 import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { lib, game, get, _status, ui } from "noname";
 import type { RightPaneContext } from "../types";
-import CardPileEditor from "./editors/CardPileEditor.vue";
-import CardPileManager from "./editors/CardPileManager.vue";
+import CardPileEditor from "./editors/card-pile/CardPileEditor.vue";
+import CardPileManager from "./editors/card-pile/CardPileManager.vue";
 import NonameToggle from "./NonameToggle.vue";
 
 interface Props {

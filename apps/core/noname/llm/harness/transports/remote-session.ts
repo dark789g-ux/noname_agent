@@ -1,5 +1,6 @@
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
+import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions.js";
 import {
+	buildCliDecisionJsonSchema,
 	CLI_INCREMENTAL_JSON_REMINDER,
 	formatCliSystemToolsManual,
 	parseCliEnvelopeToToolCall,
@@ -10,6 +11,7 @@ import type { StreamUsage } from "../../logger-types.js";
 import { remainingTimeoutSec } from "../../protocol.js";
 import { STATIC_DECISION_TOOL_NAMES } from "../../tools.js";
 import type { SeatTransport, TransportCallbacks, TransportTurnInput, TransportTurnResult } from "../types.js";
+import { assertNotAborted } from "../../character-selection/abort.js";
 
 function extractMessageText(content: ChatCompletionMessageParam["content"]): string {
 	if (typeof content === "string") return content.trim();
@@ -32,10 +34,10 @@ function formatAssistantMessage(msg: ChatCompletionMessageParam): string {
 	return content ? `## AI 回复\n${content}` : "";
 }
 
-export function formatRemoteSessionPrompt(messages: ChatCompletionMessageParam[], includeHeaderPrompt: boolean): string {
+export function formatRemoteSessionPrompt(messages: ChatCompletionMessageParam[], includeHeaderPrompt: boolean, tools?: ChatCompletionTool[]): string {
 	const sections: string[] = [];
 	if (includeHeaderPrompt) {
-		const manual = formatCliSystemToolsManual();
+		const manual = formatCliSystemToolsManual(tools);
 		for (const msg of messages) {
 			const content = extractMessageText(msg.content);
 			if (msg.role === "system") {
@@ -80,15 +82,18 @@ export class RemoteSessionTransport implements SeatTransport {
 	readonly stateful = true;
 
 	async sendTurn(input: TransportTurnInput, callbacks?: TransportCallbacks): Promise<TransportTurnResult> {
-		const schema = STATIC_CLI_DECISION_SCHEMA as unknown as Record<string, unknown>;
-		const allowedTools = [...STATIC_DECISION_TOOL_NAMES];
+		assertNotAborted(input.signal);
+		const cliSchema = input.remoteSessionTools ? buildCliDecisionJsonSchema(input.remoteSessionTools) : STATIC_CLI_DECISION_SCHEMA;
+		const schema = cliSchema as unknown as Record<string, unknown>;
+		const allowedTools = input.remoteSessionTools ? [...cliSchema.properties.tool.enum] : [...STATIC_DECISION_TOOL_NAMES];
 		const promptMessages = input.resetRemoteSession ? input.fullTranscript : input.deltaMessages;
-		const prompt = formatRemoteSessionPrompt(promptMessages, input.resetRemoteSession);
+		const prompt = formatRemoteSessionPrompt(promptMessages, input.resetRemoteSession, input.remoteSessionTools);
 
 		try {
 			const turnResult = await this.executeSseTurn(input, prompt, schema, allowedTools, input.resetRemoteSession, callbacks);
 			return { ...turnResult, syncedRemote: true };
 		} catch (err: any) {
+			assertNotAborted(input.signal);
 			let activeErr: any = err;
 			// 若是 ACP 无 schema 导致的单次 parse 错误，先在同会话内纠错一次
 			if (activeErr?.stage === "parse" && activeErr?.code !== "session_lost") {
@@ -100,6 +105,7 @@ export class RemoteSessionTransport implements SeatTransport {
 					const repaired = await this.executeSseTurn(input, repairPrompt, schema, allowedTools, false, callbacks);
 					return { ...repaired, syncedRemote: true };
 				} catch (repairErr: any) {
+					assertNotAborted(input.signal);
 					activeErr = repairErr;
 				}
 			}
@@ -107,7 +113,7 @@ export class RemoteSessionTransport implements SeatTransport {
 			// 增量轮次远端会话丢失/崩溃时，使用 fullTranscript 原地以 reset=true 重建常驻会话
 			if (!input.resetRemoteSession) {
 				const degradeReason = activeErr?.message || String(activeErr);
-				const rebuildPrompt = formatRemoteSessionPrompt(input.fullTranscript, true);
+				const rebuildPrompt = formatRemoteSessionPrompt(input.fullTranscript, true, input.remoteSessionTools);
 				const rebuilt = await this.executeSseTurn(input, rebuildPrompt, schema, allowedTools, true, callbacks);
 				return {
 					...rebuilt,
@@ -148,6 +154,9 @@ export class RemoteSessionTransport implements SeatTransport {
 	): Promise<{ toolCall: ToolCallResult; usage?: StreamUsage; transport: "stream" }> {
 		const timeoutSec = remainingTimeoutSec(input.backend.timeoutSec || 60, input.deadline);
 		const controller = new AbortController();
+		const abort = () => controller.abort();
+		input.signal?.addEventListener("abort", abort, { once: true });
+		if (input.signal?.aborted) controller.abort();
 		let timedOut = false;
 		const timer = setTimeout(() => {
 			timedOut = true;
@@ -263,6 +272,7 @@ export class RemoteSessionTransport implements SeatTransport {
 			});
 		} finally {
 			clearTimeout(timer);
+			input.signal?.removeEventListener("abort", abort);
 		}
 	}
 }

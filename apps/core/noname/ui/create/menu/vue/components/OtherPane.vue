@@ -37,10 +37,10 @@
 import { inject } from "vue";
 import type { RightPaneContext } from "../types";
 import InfoPages from "./editors/InfoPages.vue";
-import CheatPanel from "./editors/CheatPanel.vue";
-import CommandConsole from "./editors/CommandConsole.vue";
+import CheatPanel from "./editors/debug/CheatPanel.vue";
+import CommandConsole from "./editors/debug/CommandConsole.vue";
 import VideoManager from "./editors/VideoManager.vue";
-import LLMLogViewer from "./editors/LLMLogViewer.vue";
+import LLMLogViewer from "./editors/llm/LLMLogViewer.vue";
 import { menuBridge } from "../utils/menuBridge";
 
 interface Props {

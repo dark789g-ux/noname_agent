@@ -28,24 +28,29 @@ test("身份模式独立构建复用 noname 公共服务，不重复打包 LLM �
 	assert.ok(!Object.keys(chunk.modules).some(path => path.replaceAll("\\", "/").includes("/llm/character-selection/")));
 });
 
-test("选将日志 Vue 模板和脚本可编译", async () => {
-	const filename = fileURLToPath(new URL("../../ui/create/menu/vue/components/editors/llm-timeline/LLMDecisionBlock.vue", import.meta.url));
-	const { descriptor, errors } = parse(await readFile(filename, "utf8"), { filename });
-	assert.deepEqual(errors, []);
-	const script = compileScript(descriptor, { id: "llm-decision-block" });
-	const template = compileTemplate({
-		filename,
-		id: "llm-decision-block",
-		source: descriptor.template!.content,
-		compilerOptions: { bindingMetadata: script.bindings },
-	});
-	assert.deepEqual(template.errors, []);
+test("选将日志与选将进度 Vue 模板和脚本可编译", async () => {
+	for (const [relativePath, id] of [
+		["../../ui/create/llmLog/vue/components/LLMDecisionBlock.vue", "llm-decision-block"],
+		["./OpeningProgress.vue", "llm-opening-progress"],
+	]) {
+		const filename = fileURLToPath(new URL(relativePath, import.meta.url));
+		const { descriptor, errors } = parse(await readFile(filename, "utf8"), { filename });
+		assert.deepEqual(errors, []);
+		const script = compileScript(descriptor, { id });
+		const template = compileTemplate({
+			filename,
+			id,
+			source: descriptor.template!.content,
+			compilerOptions: { bindingMetadata: script.bindings },
+		});
+		assert.deepEqual(template.errors, []);
+	}
 });
 
 test("新增选将实现及测试文件均不超过 500 行", async () => {
 	const directory = new URL("./", import.meta.url);
 	for (const filename of await readdir(directory)) {
-		if (!/\.(?:ts|mjs)$/.test(filename)) continue;
+		if (!/\.(?:ts|mjs|vue)$/.test(filename)) continue;
 		const source = await readFile(new URL(filename, directory), "utf8");
 		assert.ok(source.trimEnd().split("\n").length <= 500, filename);
 	}

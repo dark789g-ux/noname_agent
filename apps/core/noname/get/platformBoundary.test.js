@@ -1,9 +1,10 @@
+import { getTestText, skinTestSource } from "./testing/testSource.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const source = ts.createSourceFile("index.js", getTestText(), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const getClass = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Get");
 assert.ok(getClass);
 
@@ -101,14 +102,15 @@ test("child iterator preserves every child identity and order without assuming H
 });
 
 test("skin file enumeration preserves game receiver and fails only when the API is needed", () => {
+	const skinSource = skinTestSource();
 	let declaration;
 	const visit = node => {
-		if (ts.isVariableDeclaration(node) && node.name.getText(source) === "createButtons" && node.initializer && ts.isFunctionExpression(node.initializer)) declaration = node.initializer;
+		if (ts.isVariableDeclaration(node) && node.name.getText(skinSource) === "createButtons" && node.initializer && ts.isFunctionExpression(node.initializer)) declaration = node.initializer;
 		ts.forEachChild(node, visit);
 	};
 	const nodeintro = getClass.members.find(member => ts.isMethodDeclaration(member) && member.name.getText(source) === "nodeintro");
 	assert.ok(nodeintro);
-	visit(nodeintro);
+	visit(skinSource);
 	assert.ok(declaration);
 	let calls = 0;
 	const game = {
@@ -120,7 +122,7 @@ test("skin file enumeration preserves game receiver and fails only when the API 
 		},
 	};
 	const get = { skinPath: () => "skins/" };
-	const createButtons = new Function("game", "get", `let created = false; const uiintro = {}; return (${declaration.getText(source)});`)(game, get);
+	const createButtons = new Function("game", "get", `let created = false; const uiintro = {}; return (${declaration.getText(skinSource)});`)(game, get);
 	createButtons("character");
 	assert.equal(calls, 1);
 	delete game.getFileList;

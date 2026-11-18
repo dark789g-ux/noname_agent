@@ -125,8 +125,8 @@ function toBackendInput(status: PlayerButtonStatusSnapshot, config: PlayerButton
 
 /** Resolves LLM log button state and top AI name badge for a player from snapshot or config. */
 export function resolvePlayerButtonState(player: PlayerButtonSubject, status: PlayerButtonStatusSnapshot, config: PlayerButtonConfig): PlayerButtonState {
-	const enabled = status.llmEnabledAtGameStart ?? !!config.llm_enabled;
-	const controlSelf = status.llmSelfControlledAtGameStart ?? (enabled && !!config.llm_control_self);
+	const enabled = status.llmEnabledAtGameStart ?? status.llmConfigAtGameStart?.enabled ?? !!config.llm_enabled;
+	const controlSelf = status.llmSelfControlledAtGameStart ?? (enabled && (status.llmConfigAtGameStart?.controlSelf ?? !!config.llm_control_self));
 	const effectiveConfig = toBackendInput(status, config, enabled, controlSelf);
 	const seatIndex = resolvePlayerSeatIndex(player, status);
 	const kind = resolveSeatBackendKind(seatIndex, effectiveConfig);
@@ -137,7 +137,7 @@ export function resolvePlayerButtonState(player: PlayerButtonSubject, status: Pl
 		{
 			gameId: status.llmGameId,
 			playerName: player.getName(),
-			playerSeatNum: player.getSeatNum(),
+			playerSeatNum: seatIndex,
 		},
 		{
 			enabled: enabled && isExternal,

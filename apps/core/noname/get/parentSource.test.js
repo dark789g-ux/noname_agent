@@ -1,3 +1,4 @@
+import { getTestText } from "./testing/testSource.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -5,7 +6,7 @@ import ts from "typescript";
 import { gameEventTestSource } from "../library/element/GameEvent/testSource.js";
 
 function readClass(path, name) {
-	const source = name === "GameEvent" ? gameEventTestSource() : ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+	const source = name === "GameEvent" ? gameEventTestSource() : ts.createSourceFile(path, name === "Get" ? getTestText() : readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
 	const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === name);
 	assert.ok(declaration);
 	return { source, declaration };
@@ -42,7 +43,12 @@ test("card information follows the current source event and native undefined tra
 	assert.equal(cardsetion(player, true), parent);
 	status.event = new GameEvent("gain");
 	let reads = 0;
-	Object.defineProperty(lib.translate, "undefined", { get() { reads++; return "undefined key"; } });
+	Object.defineProperty(lib.translate, "undefined", {
+		get() {
+			reads++;
+			return "undefined key";
+		},
+	});
 	assert.equal(cardsetion(player, true), false);
 	assert.equal(reads, 1);
 });
@@ -51,7 +57,10 @@ test("missing local player still fails only at the required capability, after op
 	const { cardsetion, game, get } = harness();
 	game.me = null;
 	const formatted = [];
-	get.slimName = name => { formatted.push(name); return name; };
+	get.slimName = name => {
+		formatted.push(name);
+		return name;
+	};
 	assert.throws(() => cardsetion(null, true), TypeError);
 	assert.deepEqual(formatted, [undefined]);
 	game.online = true;
@@ -64,7 +73,12 @@ test("judgment information reads its card once and only requires it for display"
 	status.event = new GameEvent("phaseJudge");
 	let reads = 0;
 	let card;
-	Object.defineProperty(status.event, "card", { get() { reads++; return card; } });
+	Object.defineProperty(status.event, "card", {
+		get() {
+			reads++;
+			return card;
+		},
+	});
 	assert.equal(cardsetion(player, true), false);
 	assert.equal(reads, 0);
 	assert.throws(() => cardsetion(player), TypeError);

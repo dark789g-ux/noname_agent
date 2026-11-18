@@ -5,6 +5,8 @@ import console from "node:console";
 import { setTimeout, clearTimeout } from "node:timers";
 import { createContext, runInContext, SourceTextModule, SyntheticModule } from "node:vm";
 import ts from "typescript";
+import * as vue from "vue";
+import { parse, compileScript } from "vue/compiler-sfc";
 
 const core = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -15,6 +17,7 @@ export async function createModuleRuntime(engine = {}, globals = {}, overrides =
 	const singletons = { lib: {}, game: {}, get: {}, ui: {}, ai: {}, _status: {}, ...engine };
 	const replacements = {
 		noname: singletons,
+		vue,
 		"@/util/index.js": { delay: async () => {} },
 		"@/llm/index.js": { tryLLMDecide: async () => ({ handled: false }) },
 		[resolve(core, "noname/library/element/gameEvent.js")]: { GameEvent: class GameEvent {}, initializeEvent: event => event },
@@ -41,7 +44,13 @@ export async function createModuleRuntime(engine = {}, globals = {}, overrides =
 		if (!existsSync(id) && id.endsWith(".js")) id = id.slice(0, -3) + ".ts";
 		if (modules.has(id)) return modules.get(id);
 		let text = readFileSync(id, "utf8");
-		if (id.endsWith(".ts")) text = ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext } }).outputText;
+		if (id.endsWith(".vue")) {
+			const { descriptor } = parse(text, { filename: id });
+			const script = compileScript(descriptor, { id: id.replace(/[^a-zA-Z0-9]/g, "_"), inlineTemplate: true });
+			text = ts.transpileModule(script.content, { compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext } }).outputText;
+		} else if (id.endsWith(".ts")) {
+			text = ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext } }).outputText;
+		}
 		const module = new SourceTextModule(text, { context, identifier: id });
 		modules.set(id, module);
 		return module;

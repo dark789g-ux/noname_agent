@@ -1,9 +1,10 @@
+import { getTestText } from "./testing/testSource.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
-const getText = readFileSync(new URL("./index.js", import.meta.url), "utf8");
+const getText = getTestText();
 const getFile = ts.createSourceFile("index.js", getText, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
 
 function findInfoVCardOL() {

@@ -107,6 +107,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { get, game, lib } from "noname";
+import { getCharactersWithSkillsOptions } from "./shared/entityOptions.js";
 
 // ---------------------------------------------------------------------------
 // Props —— 由 OptionsRightPane 传入 skill mode 的 SelectConfigData 列表
@@ -273,22 +274,8 @@ function confirmAddBanSkill() {
 }
 
 onMounted(() => {
-	// 构建武将列表 —— 对应旧版 214-237
-	let list: [string, string][] = [];
-	for (let i in lib.character) {
-		if (lib.character[i][3].length) {
-			list.push([i, lib.translate[i]]);
-		}
-	}
+	const list = getCharactersWithSkillsOptions();
 	if (!list.length) return;
-
-	list.sort(function (a, b) {
-		let aa = a[0], bb = b[0];
-		if (aa.includes("_")) aa = aa.slice(aa.lastIndexOf("_") + 1);
-		if (bb.includes("_")) bb = bb.slice(bb.lastIndexOf("_") + 1);
-		if (aa != bb) return aa > bb ? 1 : -1;
-		return a[0] > b[0] ? 1 : -1;
-	});
 
 	characterList.value = list;
 	selectedChar1.value = list[0][0];

@@ -23,7 +23,7 @@ export function createConfigMenuLlm() {
 			llm_control_self: {
 				name: "玩家角色接入 LLM",
 				init: false,
-				intro: "需同时启用「LLM AI 助手」，并在下一局生效。开启后，开局选将仍由玩家完成，进入对局后玩家角色完全交由 LLM 操控（失败或超时自动回退本地 AI），对局期间不可手动操作。",
+				intro: "需同时启用「LLM AI 助手」，并在下一局生效。单机普通身份模式下，开局选将也由对应座位的 LLM 完成（可跳过，失败或超时回退本地 AI）；其他模式仍沿用原选将流程。进入对局后玩家角色完全交由 LLM 操控，对局期间不可手动操作。",
 				onclick(bool) {
 					game.saveConfig("llm_control_self", bool);
 					try {

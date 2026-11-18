@@ -45,6 +45,8 @@ export interface TransportTurnInput {
 	seatNum: number;
 	backend: ResolvedBackend;
 	tools: ChatCompletionTool[];
+	/** 常驻 CLI 会话的专用工具集；省略时保留正式对局的静态工具集。 */
+	remoteSessionTools?: ChatCompletionTool[];
 	/** 完整对话历史（供无状态通道或远端重建时使用）。 */
 	fullTranscript: ChatCompletionMessageParam[];
 	/** 本次未同步给有状态远端的新增消息切片。 */
@@ -54,6 +56,8 @@ export interface TransportTurnInput {
 	/** true 表示允许流式请求。 */
 	allowStream: boolean;
 	deadline: number;
+	/** 调用方主动取消；取消后不得重试或重建远端会话。 */
+	signal?: AbortSignal;
 }
 
 export interface TransportTurnResult {

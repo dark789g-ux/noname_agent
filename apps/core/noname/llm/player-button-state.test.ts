@@ -8,6 +8,14 @@ function entry(id: string, gameId: string, playerName: string, playerSeatNum?: n
 
 test.afterEach(reset);
 
+test("选将时 getSeatNum 为 0，按冻结初始座位匹配活动日志", () => {
+	const player = { getName: () => "未选将", getSeatNum: () => 0, isUnderControl: () => false, dataset: { position: "2" } };
+	start(entry("opening", "game_1", "3号位（选将）", 3));
+	const result = resolvePlayerButtonState(player, { llmGameId: "game_1", llmInitialSeatIndices: new WeakMap([[player, 3]]) }, { llm_enabled: true });
+	assert.equal(result.active, true);
+	assert.equal(result.highlighted, true);
+});
+
 test("优先按 gameId 与座位匹配，旧日志回退到名称", () => {
 	start(entry("seat", "game_1", "张角", 2));
 	start(entry("legacy", "game_1", "华佗"));

@@ -18,6 +18,9 @@ export class DecisionSession extends DecisionSelection {
 	}
 
 	completeAutomatic(): { result: any } | undefined {
+		if (this.event?.name === "chooseToDiscard" && !this.event?.forced && !this.candidates.cards.length) {
+			return { result: { bool: false } };
+		}
 		if ((this.directKind || this.backupKind) && !this.event.forced && !(this.directKind && this.event.skill) && this.isInitialStageImpossible()) {
 			return { result: { bool: false } };
 		}

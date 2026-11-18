@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { renderStatelessContextMessages, type PromptFacts } from "../prompt-facts.js";
+import { LLM_SYSTEM_PROMPT_PREFIX, renderStatelessContextMessages, type PromptFacts } from "../prompt-facts.js";
 import { sliceEventsSince } from "../prompt-history.js";
 import { buildProfileHashes, planPrompt } from "./prompt-planner.js";
 
@@ -133,4 +133,19 @@ test("武将技能变化时增量补发，事件窗口截断时自动触发全�
 	assert.equal(rebuilt.mode, "full");
 	assert.equal(rebuilt.rebuilt, true);
 	assert.equal(rebuilt.rebuildReason, "event_window_truncated");
+});
+
+test("系统提示词前缀保留原约束并包含不超过 100 字的花色与火攻基础规则", () => {
+	const originalPrefix =
+		"你是三国杀的 AI 玩家。根据当前场面从可用工具中选择最优动作，只返回一个工具调用。重要要求：你的整个内部思考过程（reasoning_content）与工具参数中的原因说明（reason），除了必要的短引用代号与工具名外，必须全程使用简体中文。";
+	assert.ok(LLM_SYSTEM_PROMPT_PREFIX.startsWith(originalPrefix));
+	const addedRules = LLM_SYSTEM_PROMPT_PREFIX.slice(originalPrefix.length).trim();
+	assert.ok(addedRules.length > 0 && addedRules.length <= 100, `added rules length=${addedRules.length}`);
+	assert.match(addedRules, /花色/);
+	assert.match(addedRules, /颜色/);
+	assert.match(addedRules, /同颜色≠同花色/);
+	assert.match(addedRules, /火攻/);
+
+	const initialPlan = planPrompt(sampleFacts(), { initialized: false, profileHashes: {} }, { eventWindow: sliceEventsSince([], 0, 0) });
+	assert.ok(initialPlan.systemMessage?.includes(addedRules));
 });

@@ -99,7 +99,7 @@ ui/create/menu/vue/data/otherMenuData.ts  注册左栏项 { name: "LLM 日志", 
 ui/create/menu/vue/components/OtherPane.vue  <LLMLogViewer v-else-if="ctx.item.key === 'llm_log'" />
   │
   ▼
-ui/create/menu/vue/components/editors/LLMLogViewer.vue
+ui/create/menu/vue/components/editors/llm/LLMLogViewer.vue
                          └─ loadSessions/openSession() → llmLogger.getGameSessions()/getLogsByGame()
                          └─ clearAll() → llmLogger.clearLogs()
 
@@ -109,7 +109,8 @@ AI 武将牌旁「AI」按钮
 openLLMPlayerLog.ts       创建专属 Dialog，传入 gameId、playerName、playerSeatNum
   │
   ▼
-LLMPlayerLogPanel.vue     先订阅 start/chunk/end
+ui/create/llmLog/vue/LLMPlayerLogPanel.vue
+                         先订阅 start/chunk/end
                          ├─ 读取活动快照，恢复正在生成的 partialArgs 与耗时
                          ├─ 异步查询已完成历史，按日志 ID 合并并按时间倒序
                          └─ end 即使没有对应 start 事件，也会合并到历史
@@ -135,7 +136,7 @@ LLMPlayerLogPanel.vue     先订阅 start/chunk/end
 
 多轮决策可在 `LogEntry.turns`（可选字段）中记录每轮的阶段、候选短引用、`thinking`（思维链正文）、`thinkingMs`（思考耗时）、`usage`（token 与上下文占用）、tool call、校验结论和降级原因；`LogEntry.session` 记录 `mode`（`"full"` / `"incremental"`）、`rebuilt`、`degraded`、`addedEventsCount` 及上下文水位；新日志会在每轮及最终响应的 `toolCall` 顶层保存 `reason`。敏感牌面和完整内部对象不写入轮次日志，仅保留面向模型的短引用和标签。
 
-`LLMPlayerLogPanel.vue` 默认以 Session Timeline 时间线展示单玩家本局决策流（`llm-timeline/`）：
+`LLMPlayerLogPanel.vue` 默认以 Session Timeline 时间线展示单玩家本局决策流（`ui/create/llmLog/vue/`）：
 - 顶部 `LLMSessionStatusBar` 显示当前后端、模型、会话模式与上下文占用条；
 - 时间线按时间顺序平铺 `LLMSessionMarker`（会话建立 / 会话重建 / 增量事件数 / 已降级提示）与 `LLMDecisionBlock`；
 - 思考块（`LLMThinkingBlock`）在生成中实时展示 `✻ 思考中… (Ns)` 与 Markdown 流式思维链，完成后自动折叠为 `∴ 已思考 Ns ▸`，点击可展开；

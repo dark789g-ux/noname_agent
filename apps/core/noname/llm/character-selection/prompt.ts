@@ -57,7 +57,7 @@ export const CHARACTER_SELECTION_TOOLS: ChatCompletionTool[] = [
 						description: "顺序为主将、副将；单将只填一项。ref 为候选短引用，version 为该候选下具体版本 ID。",
 						items: { type: "object", properties: { ref: { type: "string" }, version: { type: "string" } }, required: ["ref", "version"], additionalProperties: false },
 					},
-					group: { type: "string", description: "仅当主将有可选势力时填写其 groups 中的 ID，否则省略。" },
+					group: { type: "string", description: "仅当主将有多个可选势力（groups 长度大于 1）时必填其 groups 中的 ID；单势力武将可省略。" },
 					reason: { type: "string", description: "1~200 字简体中文简短选将理由，不要复述内部思考。" },
 				},
 				required: ["characters", "reason"],

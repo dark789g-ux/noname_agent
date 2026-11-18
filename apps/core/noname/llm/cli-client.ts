@@ -49,9 +49,9 @@ const CLI_OUTPUT_FORMAT_RULES = [
 export const CLI_INCREMENTAL_JSON_REMINDER =
 	"## 输出格式提醒\n仅输出 1 个符合约定 JSON Schema 的对象（tool / reason / arguments_json），勿输出多余文本或代码块，且 tool 必须来自上方「本步允许工具」。";
 
-/** 生成写入 CLI 首轮/重建系统指令中的全量 14 工具手册与输出规范。 */
-export function formatCliSystemToolsManual(): string {
-	return `${formatCliToolsSection(STATIC_DECISION_TOOLS as ChatCompletionTool[])}\n\n${CLI_OUTPUT_FORMAT_RULES}`;
+/** 生成写入 CLI 首轮/重建系统指令中的工具手册与输出规范。 */
+export function formatCliSystemToolsManual(tools: ChatCompletionTool[] = STATIC_DECISION_TOOLS as ChatCompletionTool[]): string {
+	return `${formatCliToolsSection(tools)}\n\n${CLI_OUTPUT_FORMAT_RULES}`;
 }
 
 /** 将多轮对话历史与工具定义组装为适合 CLI stdin 传入的单段完整 Prompt。 */

@@ -3,7 +3,7 @@ import test from "node:test";
 import { getOpeningSummary, resetOpeningSummaries, setOpeningSummary } from "./summary.js";
 import { planPrompt } from "../harness/prompt-planner.js";
 import type { PromptFacts } from "../prompt-facts.js";
-import { buildTimelineMarkers, formatToolCallSummary } from "../../ui/create/menu/vue/components/editors/llm-timeline/types.js";
+import { buildTimelineMarkers, formatToolCallSummary } from "../../ui/create/llmLog/vue/timelineTypes.js";
 import type { LogEntry } from "../logger-types.js";
 
 test("正式会话首次及重建只带自己的最终结果与短理由，不串座、不保留旧局", () => {

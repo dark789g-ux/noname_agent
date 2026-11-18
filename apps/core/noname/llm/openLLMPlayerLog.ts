@@ -1,10 +1,12 @@
 import { lib, ui, _status } from "noname";
 import { createApp } from "vue";
-import LLMPlayerLogPanel from "@/ui/create/menu/vue/components/editors/LLMPlayerLogPanel.vue";
+import LLMPlayerLogPanel from "@/ui/create/llmLog/vue/LLMPlayerLogPanel.vue";
+import { resolvePlayerSeatIndex } from "./backends.js";
 
 interface PlayerLike {
 	getName(): string;
 	getSeatNum(): number;
+	dataset?: { position?: string };
 }
 
 let activeDialog: { player: PlayerLike; dialog: { close(): unknown } } | undefined;
@@ -28,7 +30,7 @@ export function openLLMPlayerLog(player: PlayerLike): void {
 
 	const gameId = (_status as { llmGameId?: string }).llmGameId || "game_unknown";
 
-	const seatNum = player.getSeatNum();
+	const seatNum = resolvePlayerSeatIndex(player, _status as any);
 	const playerName = player.getName();
 
 	const dialog = ui.create.dialog(`${playerName} [座位${seatNum}] 的 LLM 思考`, "hidden");

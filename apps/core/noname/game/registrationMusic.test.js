@@ -1,3 +1,4 @@
+import { getTestText } from "../get/testing/testSource.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -6,7 +7,7 @@ import { requireRegisteredSkill } from "../library/skillRegistry.js";
 import { gameTestSource } from "./testSource.js";
 
 function methodBody(path, className, methodName) {
-	const source = path === "./index.js" ? gameTestSource() : ts.createSourceFile(path, readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+	const source = path === "./index.js" ? gameTestSource() : ts.createSourceFile(path, path === "../get/index.js" ? getTestText() : readFileSync(new URL(path, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 	const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === className);
 	const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === methodName);
 	assert.ok(method);
@@ -21,7 +22,9 @@ test("finishCards initializes cards then ordinary skills, excluding only registr
 	const status = {};
 	const calls = [];
 	const game = {
-		finishCard(name) { calls.push(["card", name]); },
+		finishCard(name) {
+			calls.push(["card", name]);
+		},
 		finishSkill(name) {
 			requireRegisteredSkill(lib.skill, name);
 			calls.push(["skill", name]);
@@ -31,8 +34,12 @@ test("finishCards initializes cards then ordinary skills, excluding only registr
 	finish();
 	assert.equal(status.cardsFinished, true);
 	assert.deepEqual(calls, [
-		["card", "sha"], ["card", "shan"],
-		["skill", "storage"], ["skill", "undist"], ["skill", "land_used"], ["skill", "sample"],
+		["card", "sha"],
+		["card", "shan"],
+		["skill", "storage"],
+		["skill", "undist"],
+		["skill", "land_used"],
+		["skill", "sample"],
 	]);
 });
 

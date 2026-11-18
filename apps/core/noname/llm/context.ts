@@ -1,5 +1,6 @@
 import { game, get, lib } from "noname";
 import { getRegisteredSkill } from "../library/skillRegistry.js";
+import { getOpeningSummary } from "./character-selection/summary.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import type { CandidateCard, CandidateTarget } from "./candidates.js";
 import type { DecisionCandidateSnapshot } from "./action-candidates.js";
@@ -71,7 +72,7 @@ export function collectDecisionPromptFacts(
 			canInspectDiscard: options?.canInspectDiscard,
 		},
 		roundHistory,
-		decisionHeaderText: parts.headerText,
+		decisionHeaderText: [parts.headerText, getOpeningSummary(event.player)].filter(Boolean).join("\n\n"),
 		decisionChoicesText: parts.choicesText,
 		refLabels: buildRefLabels(normalizedCandidates, states),
 	};

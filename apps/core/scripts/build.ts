@@ -1,10 +1,11 @@
 import { build } from "vite";
-import { join, dirname } from "path";
+import { join } from "path";
 import { existsSync, readdirSync } from "fs";
 import { Target, viteStaticCopy } from "vite-plugin-static-copy";
 import generateImportMap from "./vite-plugin-importmap";
 import jit from "@noname/jit";
 import { isMain } from "./isMain";
+import { individualSourceTargets } from "./individualSourceTargets.js";
 
 import { moderned_characters } from "../game/config.json";
 const root = join(import.meta.dirname, "..");
@@ -63,7 +64,7 @@ async function main() {
 
 	// #3446 - 通过moderned_characters配置更新character内容
 	for (const name of moderned_characters) {
-		let index = `character/${name}/index.ts`
+		let index = `character/${name}/index.ts`;
 		if (!existsSync(join(root, index))) {
 			index = `character/${name}/index.js`;
 		}
@@ -86,9 +87,7 @@ async function main() {
 	// 将单独构建的包体全部复制到dist/src中
 	for (const [type, content] of Object.entries(individuals)) {
 		for (const { index, moderned } of content) {
-			const src = moderned ? dirname(index) : index;
-			const dest = `src/${type}`;
-			staticModules.push({ src, dest });
+			staticModules.push(...individualSourceTargets(type, index, moderned));
 		}
 	}
 

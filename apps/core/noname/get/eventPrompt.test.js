@@ -1,3 +1,4 @@
+import { getTestText } from "./testing/testSource.ts";
 import { contentTestSource } from "../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -6,7 +7,7 @@ import ts from "typescript";
 
 const realContentSource = await contentTestSource();
 
-const source = ts.createSourceFile("get.js", readFileSync(new URL("index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true);
+const source = ts.createSourceFile("get.js", getTestText(), ts.ScriptTarget.Latest, true);
 const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Get");
 const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === "evtprompt");
 assert.ok(method);

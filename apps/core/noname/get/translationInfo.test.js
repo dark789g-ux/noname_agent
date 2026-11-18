@@ -1,9 +1,11 @@
+import { getTestText } from "./testing/testSource.ts";
+import { loadGet } from "./testing/runtimeFixture.ts";
+import { gameTestSource } from "../game/testSource.js";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
-const source = ts.createSourceFile("index.js", readFileSync(new URL("./index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const source = ts.createSourceFile("index.js", getTestText(), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const declaration = source.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Get");
 const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === "translation");
 assert.ok(method);
@@ -40,7 +42,7 @@ test("info translation retains existing translated text, fallback keys and text 
 });
 
 test("skill registration preserves explicit undefined translations and existing-entry short circuits", () => {
-	const gameSource = ts.createSourceFile("index.js", readFileSync(new URL("../game/index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+	const gameSource = gameTestSource();
 	const gameClass = gameSource.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Game");
 	const addSkill = gameClass.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(gameSource) === "addSkill");
 	assert.ok(addSkill);
@@ -58,27 +60,28 @@ test("skill registration preserves explicit undefined translations and existing-
 	assert.equal(lib.translate.sample, undefined);
 });
 
-test("card intro rereads translated info after dialog update hooks", () => {
-	const intro = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(source) === "nodeintro");
-	assert.ok(intro);
-	const branches = [];
-	function visit(node) {
-		if (ts.isIfStatement(node) && node.expression.getText(source) === 'lib.translate[name + "_info"]' && ts.isBlock(node.thenStatement) && node.thenStatement.statements.some(statement => ts.isIfStatement(statement) && statement.expression.getText(source).includes(".startsWith("))) branches.push(node.thenStatement);
-		ts.forEachChild(node, visit);
-	}
-	visit(intro);
-	assert.equal(branches.length, 1);
-	const render = new Function("lib", "uiintro", "name", `"use strict"; ${branches[0].getText(source)}`);
-	const lib = { translate: { sample_info: "before update" } };
+test("card intro rereads translated info after dialog update hooks", async () => {
+	const lib = { config: {}, card: { sample: {} }, translate: { sample_info: "before update" } };
+	const { module } = await loadGet({ lib, ui: { arena: { classList: { contains: () => false } } } });
+	module.get.translation = () => "sample";
+	module.get.position = () => "h";
 	const rendered = [];
 	const dialog = {
+		nosub: true,
+		setAttribute() {},
 		add(html) {
-			rendered.push(html);
-			lib.translate.sample_info = undefined;
+			if (html.startsWith('<div class="text"')) {
+				rendered.push(html);
+				lib.translate.sample_info = undefined;
+			}
 			return {};
 		},
 	};
-	assert.throws(() => render(lib, dialog, "sample"), TypeError);
+	const card = { name: "sample", classList: { contains: name => name === "card" }, parentNode: {} };
+	assert.throws(
+		() => module.get.nodeintro(card, false, undefined, dialog),
+		error => error.name === "TypeError" && error.message.includes("card info translation is missing")
+	);
 	assert.deepEqual(rendered, ['<div class="text" style="display:inline">before update</div>']);
 	assert.equal(Object.hasOwn(dialog, "_place_text"), false);
 });

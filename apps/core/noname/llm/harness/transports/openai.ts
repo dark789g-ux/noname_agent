@@ -3,6 +3,7 @@ import type { LLMConfig } from "../../index.js";
 import type { StreamUsage } from "../../logger-types.js";
 import { remainingTimeoutSec } from "../../protocol.js";
 import type { SeatTransport, TransportCallbacks, TransportTurnInput, TransportTurnResult } from "../types.js";
+import { assertNotAborted } from "../../character-selection/abort.js";
 
 function toLLMConfig(input: TransportTurnInput): LLMConfig {
 	const b = input.backend;
@@ -31,6 +32,7 @@ export class OpenAITransport implements SeatTransport {
 	readonly stateful = false;
 
 	async sendTurn(input: TransportTurnInput, callbacks?: TransportCallbacks): Promise<TransportTurnResult> {
+		assertNotAborted(input.signal);
 		let latestUsage: StreamUsage | undefined;
 		const forwardCallbacks: StreamCallbacks = {
 			onFirstChunk: () => callbacks?.onFirstChunk?.(),
@@ -51,11 +53,12 @@ export class OpenAITransport implements SeatTransport {
 		if (input.allowStream) {
 			callbacks?.onAttemptStart?.(attemptIndex, "stream");
 			try {
-				const toolCall = await callLLMStream(input.fullTranscript, input.tools, cfg, forwardCallbacks);
+				const toolCall = await callLLMStream(input.fullTranscript, input.tools, cfg, forwardCallbacks, input.signal);
 				callbacks?.onAttemptFinish?.(attemptIndex, "success");
 				return { toolCall, usage: latestUsage, transport: "stream", syncedRemote: false };
 			} catch (streamError: any) {
 				callbacks?.onAttemptFinish?.(attemptIndex, "error", streamError?.stage);
+				assertNotAborted(input.signal);
 				if (["parse", "config"].includes(streamError?.stage)) throw streamError;
 				attemptIndex++;
 			}
@@ -69,7 +72,7 @@ export class OpenAITransport implements SeatTransport {
 					latestUsage = usage;
 					callbacks?.onUsage?.(usage);
 				},
-			});
+			}, input.signal);
 			callbacks?.onAttemptFinish?.(attemptIndex, "success");
 			return { toolCall, usage: latestUsage, transport: "nonstream", syncedRemote: false };
 		} catch (error: any) {

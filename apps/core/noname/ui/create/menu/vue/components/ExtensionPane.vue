@@ -21,8 +21,8 @@ import { lib } from "noname";
 import type { RightPaneContext } from "../types";
 import { createConfig } from "../utils/configBuilder";
 import { togglePack, buildExtensionConfigs } from "../data/extensionMenuData";
-import ExtensionMaker from "./editors/extensionMaker/ExtensionMaker.vue";
-import ExtensionGetter from "./editors/ExtensionGetter.vue";
+import ExtensionMaker from "./editors/extension/ExtensionMaker.vue";
+import ExtensionGetter from "./editors/extension/ExtensionGetter.vue";
 
 interface Props {
 	ctx: RightPaneContext;

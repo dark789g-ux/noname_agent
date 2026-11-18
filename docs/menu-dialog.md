@@ -220,9 +220,9 @@ ui.create.menu()                 (ui/create/index.js:3101 / 3109，挂在 lib.on
 | `PopupMenu.vue` | 弹出子菜单（下拉选项） |
 | `OptionsRightPane.vue` / `CharacterPackPane.vue` / `ExtensionPane.vue` / `OtherPane.vue` | 各 tab 的自定义右栏（tab 级右栏组件均自带单根包裹层，见契约第一层） |
 | `CardPackPane.vue` | 卡牌页右栏（tab 级组件，单根 `.menu-buttons.leftbutton`）：「开启」toggle 内嵌 `<NonameToggle />` 旋钮；包信息为 `<p v-html>` 直挂（p 非 div，天然在流内）；卡牌网格容器 `.card-pack-buttons`（`display: contents`，见契约第二层）；按左栏项内嵌 CardPileEditor / CardPileManager |
-| `editors/CardPileEditor.vue` | 卡牌页牌堆编辑器，**fragment 多根**（各行渲染后即父级 `.menu-buttons` 的直接子代）：「编辑牌堆」折叠/展开（各行初始 `display:none`，与旧版一致）；defaultcards 行带 `div>div` 旋钮（`ui.create.div(ui.create.div(cfgnode))`，同 `utils/configBuilder.ts:285` 的 toggle 结构）；添加面板为纯 v-if；命令式创建的行以 rowNodes 跟踪并在 `onBeforeUnmount` 手动清理 |
-| `editors/CardPileManager.vue` | 卡牌页「牌堆」左栏项视图，同为 **fragment 多根**：动态牌堆节点 `insertBefore` 到「重新启动」行锚点前；pileNodes 跟踪 + `onBeforeUnmount` 清理 |
-| `editors/`（其余） | 扩展页内嵌编辑器：扩展制作（`extensionMaker/`）、文件管理、禁将方案、命令控制台、作弊面板、视频管理、扩展获取、信息页等 |
+| `editors/card-pile/CardPileEditor.vue` | 卡牌页牌堆编辑器，**fragment 多根**（各行渲染后即父级 `.menu-buttons` 的直接子代）：「编辑牌堆」折叠/展开、defaultcards 行内嵌 `<NonameToggle />`，已全面转为响应式 `v-for` 列表渲染（配合 `cardPileService.ts`） |
+| `editors/card-pile/CardPileManager.vue` | 卡牌页「牌堆」左栏项视图，同为 **fragment 多根**：声明式 `v-for` 渲染动态牌堆条目与重启/保存面板 |
+| `editors/`（其余） | 菜单右栏各业务域：`extension/`、`llm/`、`file-manager/`、`debug/`、`shared/`，以及独立文件 `BanSkillEditor.vue`、`InfoPages.vue`、`VideoManager.vue` |
 
 ## 工具与共享状态（`menu/vue/utils/`、`menuState.ts`）
 

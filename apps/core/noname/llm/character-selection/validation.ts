@@ -44,7 +44,9 @@ export function validateCharacterSelection(snapshot: CharacterSelectionSnapshot,
 		main ??= version;
 	}
 	const groups = main?.groups ?? [];
-	if (groups.length && (typeof data.group !== "string" || !groups.includes(data.group))) throw new Error("势力不在合法范围内");
-	if (!groups.length && data.group !== undefined && data.group !== null && data.group !== "") throw new Error("该武将不需要选择势力");
-	return { characters, sources, ...(groups.length ? { group: data.group as string } : {}) };
+	if (groups.length > 1 && (typeof data.group !== "string" || !groups.includes(data.group))) {
+		throw new Error("势力不在合法范围内");
+	}
+	const group = groups.length === 1 ? groups[0] : groups.length > 1 ? (data.group as string) : undefined;
+	return { characters, sources, ...(group ? { group } : {}) };
 }

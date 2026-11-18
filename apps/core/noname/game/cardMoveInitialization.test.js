@@ -1,3 +1,4 @@
+import { getTestText } from "../get/testing/testSource.ts";
 import { contentTestSource } from "../llm/testing/content-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +17,7 @@ const eventSource = ts.createSourceFile("initializeEvent.ts", readFileSync(new U
 const initializer = eventSource.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "initializeEvent");
 assert.ok(method && initializer);
 const initializeEvent = new Function(ts.transpileModule(`${initializer.getText(eventSource).replace(/^export\s+/, "")}; return initializeEvent;`, { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText)();
-const getSource = ts.createSourceFile("get.js", readFileSync(new URL("../get/index.js", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+const getSource = ts.createSourceFile("get.js", getTestText(), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const getClass = getSource.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === "Get");
 const itemtype = getClass.members.find(node => node.name?.getText(getSource) === "itemtype");
 

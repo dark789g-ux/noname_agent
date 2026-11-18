@@ -55,8 +55,8 @@ import optionsMenuData, { handleImportDataButton, handleImportMusic } from "../d
 import { registerOptionsMenuLifecycle } from "../utils/optionsMenuLifecycle";
 import NonameConfig from "./NonameConfig.vue";
 import BanSkillEditor from "./editors/BanSkillEditor.vue";
-import FileManager from "./editors/FileManager.vue";
-import LLMConfigEditor from "./editors/LLMConfigEditor.vue";
+import FileManager from "./editors/file-manager/FileManager.vue";
+import LLMConfigEditor from "./editors/llm/LLMConfigEditor.vue";
 
 interface Props {
 	ctx: RightPaneContext;

@@ -99,15 +99,13 @@ Vite 别名（见 `apps/core/vite.config.ts`）：`noname` → `/noname.js`，`@
   - `docs/audio-guide.md`、`docs/skin-guide.md` —— 素材约定。
 
 ## 代码风格
-
-- **用 Tab 缩进，宽度 4**（`.editorconfig`、`prettier.config.js`）。LF 换行。
-- Prettier：`printWidth: Infinity`，加分号，`trailingComma: "es5"`，`arrowParens: "avoid"`，`quoteProps: "as-needed"`。
-- `.js` / `.ts` / `.vue` 混用。TypeScript 开启 `strict` 但 `noImplicitAny: false`，`moduleResolution: "Bundler"`，target 为 ESNext。
-- ESLint 配置较宽松：`no-unused-vars`、`no-console`、`no-explicit-any` 均**关闭**。真正需要注意的两条规则：
-  - `@typescript-eslint/ban-ts-comment` → **error**：用 `@ts-expect-error`，**禁止** `@ts-ignore` / `@ts-nocheck`。
-  - `no-fallthrough` → error，但如果注释匹配 `[falls...through]` 则允许穿透。
 - 新增武将/技能时，如适用请同步更新对应的翻译条目以及 `perfectPairs`/`rank` 等元数据。
 
 ## 常见组件
-- apps\core\noname\ui\create\menu\vue\components\editors\LLMPlayerLogPanel.vue: 用于显示玩家的 LLM 日志。
+- apps\core\noname\ui\create\llmLog\vue\LLMPlayerLogPanel.vue: 用于显示玩家的 LLM 日志。
 - apps\core\noname\ui\create\player\vue\components\PlayerCard.vue: 玩家卡牌组件，显示玩家的基本信息和状态。
+
+## SQLite 与 LLM 日志查询
+- 本地 SQLite 数据库位于仓库根目录 `data/noname.sqlite`（WAL 模式）。
+- 已完成日志存在 `llm_logs` 表（`id` 为 `logId`），活跃检查点在 `records` 表（`namespace='logs', store='llm_log_active'`）。
+- 快速按 `logId` 查询：用 `node` 加载 `./packages/fs/node_modules/better-sqlite3` 以只读模式打开数据库，执行 `SELECT summary_json, payload_json FROM llm_logs WHERE id = ?` 即可获取完整摘要与请求载荷。
